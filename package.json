@@ -1,0 +1,11 @@
+{
+  "name": "jaskinia",
+  "private": true,
+  "type": "module",
+  "description": "Warsztat do tworzenia i rozwijania gier, budowany razem z agentami AI.",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test",
+    "straznik": "node tools/straznik.mjs --tree HEAD"
+  }
+}

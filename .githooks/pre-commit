@@ -1,0 +1,3 @@
+#!/bin/sh
+# Strażnik granicy publiczne/prywatne. Prywatne wzorce: zmienna JASKINIA_WZORCE (ścieżka poza repo).
+node tools/straznik.mjs --staged || { echo "Strażnik zatrzymał commit."; exit 1; }
