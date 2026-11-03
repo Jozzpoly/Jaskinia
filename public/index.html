@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Jaskinia</title>
+<style>
+  :root { --tlo: #f4f1ea; --tekst: #24211c; --przygaszony: #6b645a; --akcent: #9a5b1e; --linia: #d8d1c4; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --tlo: #17150f; --tekst: #ece6da; --przygaszony: #a69d8f; --akcent: #e0a35e; --linia: #3a352c; color-scheme: dark; }
+  }
+  body { margin: 0; background: var(--tlo); color: var(--tekst); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 34rem; margin: 0 auto; padding: 3rem 1rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .5rem; color: var(--akcent); }
+  p { margin: 0 0 1rem; }
+  .male { color: var(--przygaszony); font-size: .9rem; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: .4rem 1rem; padding: 1rem 0; border-top: 1px solid var(--linia); }
+  dt { color: var(--przygaszony); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Jaskinia</h1>
+  <p>Pusty podgląd nowej Jaskini. Jeśli widzisz tę stronę na telefonie i na komputerze, droga do Twoich urządzeń działa.</p>
+  <dl id="stan">
+    <dt>Wdrożenie</dt><dd id="wersja">sprawdzam…</dd>
+    <dt>Logowanie Access</dt><dd id="access">sprawdzam…</dd>
+    <dt>Zmienne Access</dt><dd id="zmienne">sprawdzam…</dd>
+    <dt>Klucz do danych</dt><dd id="dane">sprawdzam…</dd>
+  </dl>
+  <p class="male">Tu nie ma żadnych danych. Strona pokazuje tylko, czy ustawienia wdrożenia są na miejscu, bez wartości sekretów.</p>
+</main>
+<script>
+  const pokaz = (id, tak, opisTak, opisNie) => {
+    document.getElementById(id).textContent = tak ? opisTak : opisNie;
+  };
+  fetch('/api/zdrowie', { cache: 'no-store' })
+    .then((r) => r.json())
+    .then((z) => {
+      document.getElementById('wersja').textContent = z.wersja;
+      pokaz('access', z.access, 'jesteś zalogowany', 'brak (strona otwarta bez Access)');
+      pokaz('zmienne', z.zmienneAccess, 'ustawione', 'brak');
+      pokaz('dane', z.sekretDanych, 'ustawiony', 'brak');
+    })
+    .catch(() => {
+      document.getElementById('wersja').textContent = 'API nie odpowiada (to normalne poza Cloudflare)';
+      for (const id of ['access', 'zmienne', 'dane']) document.getElementById(id).textContent = '—';
+    });
+</script>
+</body>
+</html>

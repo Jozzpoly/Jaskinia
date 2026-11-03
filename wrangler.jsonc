@@ -1,0 +1,12 @@
+// Szkielet wdrożenia na Cloudflare Workers: pliki statyczne z public/ i małe API w worker/.
+// Status: tymczasowe (zob. TYMCZASOWE.md). Nazwa musi zgadzać się z nazwą projektu w Workers Builds.
+{
+  "name": "jaskinia",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "observability": { "enabled": true }
+}
