@@ -6,3 +6,6 @@
 4. **Zapis rzeczy autorskiej jest gestem właściciela.** Agent przychodzi z propozycją opartą na konkretnej wersji i niczego nie nadpisuje.
 5. **Parametry światów mają szerokie zakresy.** Twarde ograniczenia chronią tylko przed rozpadem symulacji, a każde przycięcie jest widoczne.
 6. **Commit:** jedna sensowna zmiana, zdanie dlaczego, podpis agenta.
+7. **Tymczasowe zostaje tymczasowe.** Próba (`proby/`) i rzecz oznaczona jako tymczasowa nie stają się podstawą tylko dlatego, że działają. Awans wymaga zapisanej decyzji, dowodu i porównania z innymi dawcami. Każdy agent może zaproponować zburzenie; nikt nie broni rozwiązania tylko dlatego, że już działa.
+8. **Wymienialność:** formaty danych mają wersję i drogę migracji, moduły rozmawiają przez jawne adaptery, a dane autora są oddzielone od kodu. Zmiana fundamentu nie może wymagać od właściciela umiejętności programisty.
+9. **Strażnik ma dwie wagi:** blokada (sekrety, prywatne wzorce) i ostrzeżenie (cudzysłowy drukarskie, wzorce oznaczone `ostrzez:`). Feedback właściciela bywa dokumentacją, ale jego obecność w publicznym repo ma być świadoma.

@@ -34,6 +34,15 @@ test('łapie sekrety i cudzysłowy drukarskie', () => {
   assert.deepEqual(rules('README: ' + String.fromCharCode(0x201E) + 'to jest czyjś cytat' + String.fromCharCode(0x201D)), ['cytat-w-cudzyslowie']);
 });
 
+test('wagi: sekrety i prywatne wzorce blokują, cudzysłowy i wzorce z prefiksem ostrzez: tylko ostrzegają', () => {
+  const P = parsePatterns(['Tajne Repo Xyz', 'ostrzez: Kiedys Jawne Repo'].join('\n'));
+  const w = t => scanText(t, P).map(x => x.waga);
+  assert.deepEqual(w('tajne repo xyz'), ['blok']);
+  assert.deepEqual(w('kiedys-jawne-repo'), ['ostrzezenie']);
+  assert.deepEqual(w(String.fromCharCode(0x201E) + 'feedback wlasciciela' + String.fromCharCode(0x201D)), ['ostrzezenie']);
+  assert.deepEqual(w(fakeGh), ['blok']);
+});
+
 test('wynik nigdy nie zawiera dopasowanego tekstu (logi CI są publiczne)', () => {
   const f = scanText(`Tajne Repo Xyz i ${fakeGh}`, FAKE);
   const shown = JSON.stringify(f);

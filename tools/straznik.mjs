@@ -5,6 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
+// Każda reguła ma wagę: 'blok' zatrzymuje commit, 'ostrzezenie' tylko informuje.
 export const SECRET_RULES = [
   { id: 'token-github', re: /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b/ },
   { id: 'klucz-prywatny', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
@@ -13,7 +14,8 @@ export const SECRET_RULES = [
   { id: 'token-cloudflare', re: /CLOUDFLARE_API_TOKEN\s*[=:]\s*['"]?[A-Za-z0-9_-]{30,}/ },
 ];
 // Polskie cudzysłowy drukarskie zwykle oznaczają cytat z prywatnej rozmowy; w publicznym kodzie nie powinny się pojawiać.
-export const QUOTE_RULE = { id: 'cytat-w-cudzyslowie', re: /„[^”\n]{3,}”/ };
+// Ostrzeżenie, nie blokada: feedback właściciela bywa wartościową dokumentacją, ale warto go zauważyć.
+export const QUOTE_RULE = { id: 'cytat-w-cudzyslowie', re: /„[^”\n]{3,}”/, waga: 'ostrzezenie' };
 
 const PL = { ł: 'l', Ł: 'l' };
 export function normalize(s) {
@@ -23,18 +25,21 @@ export function normalize(s) {
 export const hashTerm = s => createHash('sha256').update(normalize(s)).digest('hex').slice(0, 32);
 
 // Plik wzorców: jedna linia = jedno słowo albo fraza; linia sha256:<32 znaki> = sam skrót; # komentarz.
+// Prefiks ostrzez: oznacza wzorzec, który tylko ostrzega (np. nazwa repo, które kiedyś może być jawne).
 export function parsePatterns(text) {
-  const plain = [], hashes = new Set();
+  const plain = [], hashes = new Set(), warnPlain = [], warnHashes = new Set();
   for (const raw of text.split(/\r?\n/)) {
-    const l = raw.trim();
+    let l = raw.trim();
     if (!l || l.startsWith('#')) continue;
-    if (l.startsWith('sha256:')) hashes.add(l.slice(7).toLowerCase());
-    else plain.push(normalize(l));
+    const warn = l.startsWith('ostrzez:');
+    if (warn) l = l.slice(8).trim();
+    if (l.startsWith('sha256:')) (warn ? warnHashes : hashes).add(l.slice(7).toLowerCase());
+    else (warn ? warnPlain : plain).push(normalize(l));
   }
-  return { plain: plain.filter(Boolean), hashes };
+  return { plain: plain.filter(Boolean), hashes, warnPlain: warnPlain.filter(Boolean), warnHashes };
 }
 export function loadPatterns(path) {
-  return path && existsSync(path) ? parsePatterns(readFileSync(path, 'utf8')) : { plain: [], hashes: new Set() };
+  return path && existsSync(path) ? parsePatterns(readFileSync(path, 'utf8')) : { plain: [], hashes: new Set(), warnPlain: [], warnHashes: new Set() };
 }
 
 function* ngrams(words, max = 4) {
@@ -43,18 +48,23 @@ function* ngrams(words, max = 4) {
 }
 
 // Zwraca znaleziska bez treści dopasowania: tylko reguła i numer linii.
+function matches(norm, plain = [], hashes = new Set()) {
+  if (plain.some(p => norm.includes(' ' + p + ' '))) return true;
+  if (!hashes.size) return false;
+  for (const g of ngrams(norm.trim().split(' ').filter(Boolean)))
+    if (hashes.has(createHash('sha256').update(g).digest('hex').slice(0, 32))) return true;
+  return false;
+}
+
 export function scanText(text, pats, { quotes = true } = {}) {
   const out = [];
   const lines = text.split(/\r?\n/);
   lines.forEach((line, i) => {
-    for (const r of SECRET_RULES) if (r.re.test(line)) out.push({ rule: r.id, line: i + 1 });
-    if (quotes && QUOTE_RULE.re.test(line)) out.push({ rule: QUOTE_RULE.id, line: i + 1 });
+    for (const r of SECRET_RULES) if (r.re.test(line)) out.push({ rule: r.id, line: i + 1, waga: 'blok' });
+    if (quotes && QUOTE_RULE.re.test(line)) out.push({ rule: QUOTE_RULE.id, line: i + 1, waga: 'ostrzezenie' });
     const norm = ' ' + normalize(line) + ' ';
-    if (pats.plain.some(p => norm.includes(' ' + p + ' '))) out.push({ rule: 'wzorzec-prywatny', line: i + 1 });
-    else if (pats.hashes.size) {
-      for (const g of ngrams(norm.trim().split(' ').filter(Boolean)))
-        if (pats.hashes.has(createHash('sha256').update(g).digest('hex').slice(0, 32))) { out.push({ rule: 'wzorzec-prywatny', line: i + 1 }); break; }
-    }
+    if (matches(norm, pats.plain, pats.hashes)) out.push({ rule: 'wzorzec-prywatny', line: i + 1, waga: 'blok' });
+    else if (matches(norm, pats.warnPlain, pats.warnHashes)) out.push({ rule: 'wzorzec-do-sprawdzenia', line: i + 1, waga: 'ostrzezenie' });
   });
   return out;
 }
@@ -97,7 +107,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   else if (a.includes('--tree')) found = scanTree(pats, a[a.indexOf('--tree') + 1] && !a[a.indexOf('--tree') + 1].startsWith('--') ? a[a.indexOf('--tree') + 1] : 'HEAD');
   else if (a.includes('--commits')) found = scanCommits(pats, a[a.indexOf('--commits') + 1]);
   if (!pats.plain.length && !pats.hashes.size) console.error('Uwaga: brak prywatnych wzorców, sprawdzam tylko sekrety i cudzysłowy.');
-  for (const f of found) console.log([f.file ?? f.commit, f.field, 'linia ' + f.line, f.rule].filter(Boolean).join(' · '));
-  console.log(found.length ? `Strażnik: ${found.length} znalezisk, zatrzymuję.` : 'Strażnik: czysto.');
-  process.exit(found.length ? 1 : 0);
+  for (const f of found) console.log([f.waga === 'blok' ? 'BLOK' : 'uwaga', f.file ?? f.commit, f.field, 'linia ' + f.line, f.rule].filter(Boolean).join(' · '));
+  const blocks = found.filter(f => f.waga === 'blok').length;
+  console.log(blocks ? `Strażnik: ${blocks} blokad, zatrzymuję.` : found.length ? `Strażnik: ${found.length} uwag, przepuszczam.` : 'Strażnik: czysto.');
+  process.exit(blocks ? 1 : 0);
 }
