@@ -184,3 +184,11 @@ test('propozycja zmieniająca klucz z kropką nie rusza zagnieżdżonego pola au
   const v3 = s.accept(p, OWNER);
   assert.deepEqual(s.get(v3).content, { 'a.b': 2, a: { b: 3 } });
 });
+
+test('treść skalarna (liczba) przechodzi przez propozycję i przyjęcie bez zmiany w obiekt', () => {
+  // Kontrprzykład K4 Opusa Code z 4 XI.
+  const s = new Store();
+  const pid = s.propose('skalar', null, 42, OWNER, 'liczba jako treść rzeczy');
+  s.accept(pid, OWNER);
+  assert.equal(s.get(s.head('skalar')).content, 42);
+});

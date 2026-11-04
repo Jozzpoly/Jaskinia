@@ -59,7 +59,17 @@ export function diff(a, b) {
   return changed; // ścieżka -> nowa wartość (kanoniczna) albo undefined = usunięta
 }
 
-const overlaps = (p, q) => p === q || p.startsWith(q + '.') || q.startsWith(p + '.');
+// Ścieżka pusta to cała treść (np. liczba jako treść rzeczy), więc nachodzi na każdą inną.
+const overlaps = (p, q) => p === '' || q === '' || p === q || p.startsWith(q + '.') || q.startsWith(p + '.');
+
+// Zapis pod ścieżką; zwraca nowy korzeń, bo ścieżka pusta podmienia całą treść
+// (kontrprzykład K4 Opusa Code: skalar wracał jako obiekt z pustym kluczem).
+function applyPath(root, path, canonValue) {
+  if (path === '') return canonValue === undefined ? undefined : JSON.parse(canonValue);
+  if (root === null || typeof root !== 'object' || Array.isArray(root)) root = {};
+  setPath(root, path, canonValue);
+  return root;
+}
 
 function setPath(obj, path, canonValue) {
   const parts = parsePath(path);
@@ -105,8 +115,7 @@ export class Store {
   edit(thing, path, value, by) {
     const d = this.draft(thing);
     path = toPath(path); // tablica kluczy albo ścieżka z kropkami (kropka w kluczu jako \\.)
-    setPath(d, path, value === undefined ? undefined : canonical(value));
-    this.drafts.set(thing, d);
+    this.drafts.set(thing, applyPath(d, path, value === undefined ? undefined : canonical(value)));
     this.#log({ type: 'edit-draft', thing, path, by: by?.who });
   }
 
@@ -148,13 +157,14 @@ export class Store {
     const agent = diff(baseC, propC), owner = diff(baseC, headC);
     if (agent.size === 0) return { status: 'no-op', head, conflicts: [], changes: [] };
     if (head === p.base) return { status: 'fast-forward', head, conflicts: [], changes: [...agent.keys()], preview: clone(propC) };
-    const conflicts = [], preview = clone(headC);
+    const conflicts = [];
+    let preview = clone(headC);
     for (const [path, val] of agent) {
       const clash = [...owner.keys()].filter(q => overlaps(path, q));
       const same = clash.length === 1 && clash[0] === path && owner.get(path) === val;
       if (clash.length && !same) {
         conflicts.push({ path, base: flatten(baseC).get(path), owner: owner.get(path) ?? flatten(headC).get(path), agent: val });
-      } else if (!same) setPath(preview, path, val);
+      } else if (!same) preview = applyPath(preview, path, val);
     }
     return { status: conflicts.length ? 'conflict' : 'mergeable', head, conflicts, changes: [...agent.keys()], preview: conflicts.length ? undefined : preview };
   }
@@ -171,7 +181,7 @@ export class Store {
       content = clone(this.versions.get(ev.head).content);
       for (const [path] of diff(p.base ? this.versions.get(p.base).content : {}, this.versions.get(p.proposed).content)) {
         const c = ev.conflicts.find(x => x.path === path);
-        setPath(content, path, c ? canonical(resolution[path]) : flatten(this.versions.get(p.proposed).content).get(path));
+        content = applyPath(content, path, c ? canonical(resolution[path]) : flatten(this.versions.get(p.proposed).content).get(path));
       }
     } else content = ev.preview ?? clone(this.versions.get(ev.head).content);
     const from = this.head(p.thing);

@@ -38,6 +38,14 @@ export function parsePatterns(text) {
   }
   return { plain: plain.filter(Boolean), hashes, warnPlain: warnPlain.filter(Boolean), warnHashes };
 }
+// Ścieżka w stylu Git Bash (/c/Users/...) na Windows: Node widzi ją jako C:\\c\\Users,
+// więc wzorce cicho się nie wczytywały (znalezisko Opusa Code, 4 XI 2026).
+export function resolvePatternsPath(p, platform = process.platform) {
+  if (!p) return p;
+  const m = /^\/([a-zA-Z])\/(.*)$/.exec(p);
+  return platform === 'win32' && m ? `${m[1].toUpperCase()}:/${m[2]}` : p;
+}
+
 export function loadPatterns(path) {
   return path && existsSync(path) ? parsePatterns(readFileSync(path, 'utf8')) : { plain: [], hashes: new Set(), warnPlain: [], warnHashes: new Set() };
 }
@@ -101,12 +109,20 @@ export function scanCommits(pats, range) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const a = process.argv.slice(2);
   const wi = a.indexOf('--wzorce');
-  const pats = loadPatterns(wi >= 0 ? a[wi + 1] : process.env.JASKINIA_WZORCE);
+  const given = wi >= 0 ? a[wi + 1] : process.env.JASKINIA_WZORCE;
+  const patsPath = resolvePatternsPath(given);
+  if (given && !existsSync(patsPath)) {
+    // Wskazany plik, którego nie ma, to błąd, a nie tryb bez wzorców: inaczej strażnik udaje sprawdzenie.
+    console.error('Strażnik: wskazany plik prywatnych wzorców nie istnieje. Zatrzymuję. Sprawdź ścieżkę (w Git Bash na Windows działa też C:/...).');
+    process.exit(2);
+  }
+  const pats = loadPatterns(patsPath);
+  const nBlok = pats.plain.length + pats.hashes.size, nOstrz = pats.warnPlain.length + pats.warnHashes.size;
+  console.log(nBlok || nOstrz ? `Strażnik: tryb z prywatnymi wzorcami (${nBlok} blokujących, ${nOstrz} ostrzegających).` : 'Strażnik: tryb bez prywatnych wzorców, sprawdzam tylko sekrety i cudzysłowy.');
   let found = [];
   if (a.includes('--staged')) found = scanStaged(pats);
   else if (a.includes('--tree')) found = scanTree(pats, a[a.indexOf('--tree') + 1] && !a[a.indexOf('--tree') + 1].startsWith('--') ? a[a.indexOf('--tree') + 1] : 'HEAD');
   else if (a.includes('--commits')) found = scanCommits(pats, a[a.indexOf('--commits') + 1]);
-  if (!pats.plain.length && !pats.hashes.size) console.error('Uwaga: brak prywatnych wzorców, sprawdzam tylko sekrety i cudzysłowy.');
   for (const f of found) console.log([f.waga === 'blok' ? 'BLOK' : 'uwaga', f.file ?? f.commit, f.field, 'linia ' + f.line, f.rule].filter(Boolean).join(' · '));
   const blocks = found.filter(f => f.waga === 'blok').length;
   console.log(blocks ? `Strażnik: ${blocks} blokad, zatrzymuję.` : found.length ? `Strażnik: ${found.length} uwag, przepuszczam.` : 'Strażnik: czysto.');

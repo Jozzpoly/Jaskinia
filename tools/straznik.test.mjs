@@ -75,3 +75,22 @@ test('na prawdziwym repo: zatrzymuje brudny commit w indeksie i brudnego autora 
     assert.deepEqual(scanCommits(FAKE, 'HEAD~1..HEAD').map(x => x.field), ['author', 'committer']);
   } finally { process.chdir(cwd); }
 });
+
+// Znalezisko Opusa Code z 4 XI: zła ścieżka do wzorców dawała cichy wynik "czysto".
+import { spawnSync } from 'node:child_process';
+import { resolvePatternsPath } from './straznik.mjs';
+
+test('wskazany, ale nieistniejący plik wzorców zatrzymuje strażnika zamiast udawać sprawdzenie', () => {
+  const cli = new URL('./straznik.mjs', import.meta.url).pathname;
+  const r = spawnSync(process.execPath, [cli, '--tree', 'HEAD'], {
+    env: { ...process.env, JASKINIA_WZORCE: '/nie/ma/takiego/pliku-wzorcow.txt' }, encoding: 'utf8',
+  });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /nie istnieje/);
+});
+
+test('ścieżka w stylu Git Bash zamienia się na ścieżkę Windows tylko na Windows', () => {
+  assert.equal(resolvePatternsPath('/c/Users/ktos/wzorce.txt', 'win32'), 'C:/Users/ktos/wzorce.txt');
+  assert.equal(resolvePatternsPath('/c/Users/ktos/wzorce.txt', 'linux'), '/c/Users/ktos/wzorce.txt');
+  assert.equal(resolvePatternsPath(undefined, 'win32'), undefined);
+});
