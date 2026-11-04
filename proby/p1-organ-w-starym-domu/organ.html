@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><title>Organ nowej Jaskini</title>
+<body style="font:16px system-ui;padding:1rem">Organ nowej Jaskini: próba kontraktu przyrządu<div id="u"></div>
+<script src="jaskinia-przyrzad.js"></script>
+<script>
+  Jaskinia.hello({ name: 'Nowa Jaskinia: organ próbny', version: 'p1', wants: ['remark'] });
+  window.addEventListener('message', e => { if (e.data && e.data.jaskinia) document.getElementById('u').textContent = 'od Jaskini: ' + JSON.stringify(e.data).slice(0, 200); });
+</script>
