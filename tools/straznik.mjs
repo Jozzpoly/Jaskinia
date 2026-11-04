@@ -2,6 +2,7 @@
 // Kod jest jawny, wzorce prywatne leżą poza repo. Wyniki nigdy nie pokazują dopasowanego tekstu,
 // bo logi CI publicznego repo są publiczne. Node >= 18, bez zależności.
 import { readFileSync, existsSync } from 'node:fs';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
@@ -106,7 +107,11 @@ export function scanCommits(pats, range) {
 
 // Uruchomienie: node straznik.mjs --staged | --tree [rev] | --commits <zakres>
 // Wzorce: zmienna JASKINIA_WZORCE (ścieżka poza repo) albo --wzorce <ścieżka>.
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Na Windows `file://${process.argv[1]}` nigdy nie zgadza się z import.meta.url
+// (backslashe i trzy ukośniki), więc cały ten blok się nie wykonywał, a strażnik
+// kończył się cicho kodem 0. Hook pre-commit był przez to martwy na maszynie właściciela.
+// Znalezisko Opusa Code z 4 XI, 02:00.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const a = process.argv.slice(2);
   const wi = a.indexOf('--wzorce');
   const given = wi >= 0 ? a[wi + 1] : process.env.JASKINIA_WZORCE;

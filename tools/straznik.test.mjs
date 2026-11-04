@@ -78,10 +78,11 @@ test('na prawdziwym repo: zatrzymuje brudny commit w indeksie i brudnego autora 
 
 // Znalezisko Opusa Code z 4 XI: zła ścieżka do wzorców dawała cichy wynik "czysto".
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { resolvePatternsPath } from './straznik.mjs';
 
 test('wskazany, ale nieistniejący plik wzorców zatrzymuje strażnika zamiast udawać sprawdzenie', () => {
-  const cli = new URL('./straznik.mjs', import.meta.url).pathname;
+  const cli = fileURLToPath(new URL('./straznik.mjs', import.meta.url));
   const r = spawnSync(process.execPath, [cli, '--tree', 'HEAD'], {
     env: { ...process.env, JASKINIA_WZORCE: '/nie/ma/takiego/pliku-wzorcow.txt' }, encoding: 'utf8',
   });
