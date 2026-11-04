@@ -152,3 +152,35 @@ test('zmiana struktury: autor zmienił gałąź, agent jej liść — to konflik
   assert.equal(ev.status, 'conflict');
   assert.equal(ev.conflicts[0].path, 'tłumienie.dobicie');
 });
+
+// Kontrprzykład Browsera GPT z 4 XI: klucz z kropką i zagnieżdżony obiekt to różne pola.
+import { diff, flatten, parsePath, joinPath } from './versions.mjs';
+
+test('klucz "a.b" i zagnieżdżone a → b nie zlewają się w jedno pole', () => {
+  const dosłowny = { 'a.b': 1 };
+  const zagnieżdżony = { a: { b: 1 } };
+  assert.notEqual(diff(dosłowny, zagnieżdżony).size, 0, 'różne struktury muszą dawać różnicę');
+  assert.deepEqual([...flatten(dosłowny).keys()], ['a\\.b']);
+  assert.deepEqual([...flatten(zagnieżdżony).keys()], ['a.b']);
+  for (const parts of [['a.b'], ['a', 'b'], ['x\\y', ''], ['', 'z.'], ['ą.ę', 'ż']]) {
+    assert.deepEqual(parsePath(joinPath(parts)), parts, 'ścieżka wraca bez zmian: ' + JSON.stringify(parts));
+  }
+});
+
+test('propozycja zmieniająca klucz z kropką nie rusza zagnieżdżonego pola autora', () => {
+  const s = new Store();
+  s.edit(PART, ['a.b'], 1, OWNER);
+  s.edit(PART, 'a.b', 1, OWNER);
+  const v1 = s.save(PART, OWNER, 'oba pola');
+  assert.deepEqual(s.get(v1).content, { 'a.b': 1, a: { b: 1 } });
+
+  const p = s.propose(PART, v1, { 'a.b': 2, a: { b: 1 } }, AGENT, 'tylko dosłowny klucz');
+  s.edit(PART, 'a.b', 3, OWNER);
+  s.save(PART, OWNER, 'autor zmienia zagnieżdżone');
+
+  const ev = s.evaluate(p);
+  assert.equal(ev.status, 'mergeable', 'to dwa różne pola, więc nie ma konfliktu');
+  assert.deepEqual(ev.preview, { 'a.b': 2, a: { b: 3 } });
+  const v3 = s.accept(p, OWNER);
+  assert.deepEqual(s.get(v3).content, { 'a.b': 2, a: { b: 3 } });
+});

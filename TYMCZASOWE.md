@@ -6,7 +6,7 @@ Rozwiązania techniczne, których używamy, choć nie są docelowe. Żadne z nic
 
 | Co | Status | Dlaczego teraz | Co może to zastąpić | Kiedy wracamy |
 | --- | --- | --- | --- | --- |
-| `proby/e1-wersje`: model wersji, propozycji, przypięć i werdyktów | próba | sprawdza założenia na małym kodzie dla jednego przypadku: dzieła właściciela | wynik porównania z innymi rdzeniami (sesje edycji z cofaniem, rewizje lokalne) | przy zapisie architektury v1. Znana wada: ścieżki pól łączone kropką, więc klucz `a.b` i zagnieżdżone `a` → `b` zlewają się w porównaniu; E1 umie też tylko przypinać wersje, a nie przyjmować ulepszeń bazowego assetu |
+| `proby/e1-wersje`: model wersji, propozycji, przypięć i werdyktów | próba | sprawdza założenia na małym kodzie dla jednego przypadku: dzieła właściciela | wynik porównania z innymi rdzeniami (sesje edycji z cofaniem, rewizje lokalne) | przy zapisie architektury v1. Ścieżki pól mają od 4 XI jednoznaczny zapis (kontrprzykład z kluczem `a.b` jest testem). Nadal E1 umie tylko przypinać wersje, a nie przyjmować ulepszeń bazowego assetu |
 | Czysty JavaScript (moduły `.mjs`) bez TypeScriptu | tymczasowe | zero zależności, ten sam kod w Node i przeglądarce | TypeScript albo JSDoc z typami | przed pierwszym kodem o statusie fundamentu |
 | Brak zależności npm i `node --test` jako jedyne narzędzie testów | tymczasowe | wystarcza dla prób i strażnika | bundler i narzędzia testów przeglądarkowych | gdy pierwszy interfejs będzie wymagał budowania |
 | Node 22 w CI | tymczasowe | stabilna wersja LTS | wersja zgodna z podpinanymi światami (np. 24.x) | przy pierwszym świecie podpiętym adapterem |

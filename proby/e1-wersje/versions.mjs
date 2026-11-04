@@ -20,6 +20,26 @@ export function versionId(thing, content) {
 const clone = v => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
 // ---------- różnice ----------
+// Ścieżka to klucze połączone kropką. Kropka i ukośnik wsteczny w samym kluczu są poprzedzane
+// ukośnikiem, a pusty klucz to \e. Bez tego klucz "a.b" i zagnieżdżone a → b dawały tę samą
+// ścieżkę (kontrprzykład Browsera GPT, 4 XI 2026).
+const escapeKey = k => (k === '' ? '\\e' : k.replace(/\\/g, '\\\\').replace(/\./g, '\\.'));
+export const joinPath = parts => parts.map(escapeKey).join('.');
+export function parsePath(path) {
+  if (Array.isArray(path)) return path.map(String);
+  const parts = [];
+  let cur = '';
+  for (let i = 0; i < path.length; i++) {
+    const c = path[i];
+    if (c === '\\') { const n = path[++i]; if (n !== 'e') cur += n ?? ''; }
+    else if (c === '.') { parts.push(cur); cur = ''; }
+    else cur += c;
+  }
+  parts.push(cur);
+  return parts;
+}
+const toPath = path => (Array.isArray(path) ? joinPath(path) : path);
+
 // Spłaszcza obiekt do ścieżek. Tablice i wartości proste są liśćmi (świadome uproszczenie).
 export function flatten(obj, prefix = '', out = new Map()) {
   if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
@@ -28,7 +48,7 @@ export function flatten(obj, prefix = '', out = new Map()) {
   }
   const keys = Object.keys(obj);
   if (keys.length === 0 && prefix) out.set(prefix, '{}');
-  for (const k of keys) flatten(obj[k], prefix ? prefix + '.' + k : k, out);
+  for (const k of keys) flatten(obj[k], prefix ? prefix + '.' + escapeKey(k) : escapeKey(k), out);
   return out;
 }
 
@@ -42,7 +62,7 @@ export function diff(a, b) {
 const overlaps = (p, q) => p === q || p.startsWith(q + '.') || q.startsWith(p + '.');
 
 function setPath(obj, path, canonValue) {
-  const parts = path.split('.');
+  const parts = parsePath(path);
   let cur = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     if (cur[parts[i]] === null || typeof cur[parts[i]] !== 'object' || Array.isArray(cur[parts[i]])) cur[parts[i]] = {};
@@ -84,6 +104,7 @@ export class Store {
   // Edycja zmienia tylko szkic. Żaden autozapis nie tworzy wersji.
   edit(thing, path, value, by) {
     const d = this.draft(thing);
+    path = toPath(path); // tablica kluczy albo ścieżka z kropkami (kropka w kluczu jako \\.)
     setPath(d, path, value === undefined ? undefined : canonical(value));
     this.drafts.set(thing, d);
     this.#log({ type: 'edit-draft', thing, path, by: by?.who });
