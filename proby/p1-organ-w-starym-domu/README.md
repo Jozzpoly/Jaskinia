@@ -14,10 +14,12 @@ Starą Jaskinię zbudowałem z jej źródeł (`Jozzpoly/Jozz-Cave-Workbench`, `m
 | Czy stara Jaskinia odpowiada organowi? | tak, organ dostał `{"jaskinia":1,"type":"hi","v":1}` |
 | Błędy w konsoli | brak |
 
+**Drugi przebieg, tej samej nocy (`sprawdz-origin-i-telefon.py`):** organ podany z innego originu (`localhost:8766` obok `127.0.0.1:8765`) działa tak samo, na ekranie PC i na emulowanym iPhonie 13. Stara Jaskinia zapamiętuje organ, ten słyszy powitanie, a ramka jest widoczna (766 × 538 px na PC, 390 × 481 px na telefonie). Błędów brak. Na telefonie okno przyrządu nosi nazwę, którą podał organ.
+
 ## Granice
 
-- Obie strony stały na tym samym adresie (`127.0.0.1`). Prawdziwy układ to inny origin (Cloudflare Workers obok GitHub Pages). Kontrakt używa `postMessage` z `'*'`, więc powinien działać, ale nie zostało to sprawdzone. Trzeba też sprawdzić, czy nagłówki hosta organu pozwalają na osadzenie.
-- Nie sprawdziłem dalszej części kontraktu (stan, sygnały, uwagi właściciela wracające do organu) ani telefonu.
+- Różne originy sprawdziłem lokalnie, a nie na prawdziwych hostach (GitHub Pages i Cloudflare Workers). Ich nagłówki i ewentualna polityka treści mogą zabronić osadzania.
+- Nie sprawdziłem dalszej części kontraktu: stanu, sygnałów i uwag właściciela wracających do organu. Telefon był tylko emulowany.
 - `organ.html` ładuje skrypt kontraktu `jaskinia-przyrzad.js` ze starego repo (`docs/przyrzad/`). Do uruchomienia trzeba go położyć obok.
 
 ## Uruchomienie

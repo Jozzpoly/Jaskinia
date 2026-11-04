@@ -11,4 +11,4 @@ Zasady:
 | Próba | Pytanie | Stan |
 | --- | --- | --- |
 | `e1-wersje/` | Czy tożsamość wersji z treści, jawny zapis, propozycje na starszej podstawie, przypięcia i werdykty przy wersji działają tak samo w Node i w przeglądarce? | wynik dodatni w testach; nie porównana jeszcze z innymi rdzeniami dokumentu; do porównania przed jakimkolwiek awansem |
-| `p1-organ-w-starym-domu/` | Czy strona z nowego repo żyje w oknie starej Jaskini i rozmawia z nią przez kontrakt przyrządu, bez zmian w starym kodzie? | tak, na jednym adresie (4 XI); inny origin i telefon niesprawdzone |
+| `p1-organ-w-starym-domu/` | Czy strona z nowego repo żyje w oknie starej Jaskini i rozmawia z nią przez kontrakt przyrządu, bez zmian w starym kodzie? | tak, także z innego originu i na emulowanym telefonie (4 XI); prawdziwe hosty i reszta kontraktu niesprawdzone |
