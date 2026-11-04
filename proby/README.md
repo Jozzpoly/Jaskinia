@@ -12,3 +12,4 @@ Zasady:
 | --- | --- | --- |
 | `e1-wersje/` | Czy tożsamość wersji z treści, jawny zapis, propozycje na starszej podstawie, przypięcia i werdykty przy wersji działają tak samo w Node i w przeglądarce? | wynik dodatni w testach; nie porównana jeszcze z innymi rdzeniami dokumentu; do porównania przed jakimkolwiek awansem |
 | `p1-organ-w-starym-domu/` | Czy strona z nowego repo żyje w oknie starej Jaskini i rozmawia z nią przez kontrakt przyrządu, bez zmian w starym kodzie? | tak, także z innego originu i na emulowanym telefonie (4 XI); prawdziwe hosty i reszta kontraktu niesprawdzone |
+| `r1-rdzen-minimalny/` | Czy trzej różni konsumenci (ustawienia, uwagi, próba agenta) mieszczą się na rdzeniu z samych zapisów, głów i dziennika? | tak w testach (4 XI); atomowość między prawdziwymi kartami niesprawdzona |
