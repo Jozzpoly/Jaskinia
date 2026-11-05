@@ -1,0 +1,10 @@
+<script>
+(()=>{
+const decoder=s=>new TextDecoder().decode(Uint8Array.from(atob(s),c=>c.charCodeAt(0)));
+const origin=location.origin||'null';
+const gameSource=decoder('__GAME_B64__').replaceAll('__PARENT_ORIGIN__',origin);
+const editorSource=decoder('__EDITOR_B64__').replaceAll('__PARENT_ORIGIN__',origin);
+document.querySelector('#studio').srcdoc=editorSource;
+document.querySelector('#game').srcdoc=gameSource;
+})();
+</script>
