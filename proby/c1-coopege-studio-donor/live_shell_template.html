@@ -1,0 +1,46 @@
+<!DOCTYPE html><html lang="pl"><meta charset="utf-8"><title>C1 · Żywy świat + pracownia</title><style>
+:root{color-scheme:dark}body{margin:0;font:14px system-ui;background:#111923;color:#e7e9ef}.bar{height:48px;display:flex;align-items:center;gap:16px;padding:0 18px;border-bottom:1px solid #38506a}.layout{height:calc(100vh - 49px);display:grid;grid-template-columns:minmax(460px,1fr) 350px;gap:6px;padding:6px;box-sizing:border-box}.layout iframe{border:1px solid #314660;border-radius:10px;width:100%;height:100%;background:#0a0d17}small{color:#98abc1}button{background:#263c51;color:#f0f8ff;border:1px solid #48617b;border-radius:6px;padding:5px 10px;cursor:pointer}strong{color:#adecc7}
+</style><div class="bar"><strong>C1 • TIBIA × JASKINIA R&D</strong><small>Historyczna Tibia v14.1 • pracownia modyfikuje jeden żywy świat • demonstrator, nie najnowsze Coopege</small><button id="backtoplay">Wróć do gry (bez ruchu)</button><button id="reload">Przeładuj grę</button><small id="log">Start</small></div><div class="layout"><iframe id="game" sandbox="allow-scripts" title="Gra"></iframe><iframe id="studio" sandbox="allow-scripts" title="Pracownia"></iframe></div><script>
+(()=>{
+const PROTO='coopege-c1-live/v1', EDITOR_ORIGIN='null',GAME_ORIGIN='null';
+const game=document.querySelector('#game'),studio=document.querySelector('#studio'),log=document.querySelector('#log');
+let engineReady=false;
+let persisted=[];try{persisted=JSON.parse(localStorage.getItem('c1-world-deltas-v1')||'[]')}catch(e){}
+const pendingRestore=new Map();let rid=1000000;
+const sendToGame=data=>game.contentWindow.postMessage(data,'*');
+function forwardToEditor(d){studio.contentWindow.postMessage(d,'*')}
+window.addEventListener('message',e=>{
+ const d=e.data;if(!d||d.proto!==PROTO)return;
+ if(e.source===game.contentWindow&&e.origin===GAME_ORIGIN){
+   if(d.kind==='ready'){
+     engineReady=true;log.textContent='Gra gotowa';
+     for(const edit of persisted){pendingRestore.set(++rid,edit);sendToGame({proto:PROTO,kind:'request',id:rid,action:'set',cell:edit.cell,tile:edit.tile,expected:edit.before});}
+     forwardToEditor({proto:PROTO,kind:'engine-ready'});
+   }else if(d.kind==='reply'){
+     if(pendingRestore.has(d.id)){
+       const edit=pendingRestore.get(d.id);pendingRestore.delete(d.id);
+       if(!d.ok){log.textContent='Błąd odtworzenia mapy: '+d.error;console.warn('RESTORE FAILED',edit,d)}
+     }else{
+       if(d.action==='set'&&d.ok){
+         const key=c=>[c.z,c.x,c.y].join('/');const idx=persisted.findIndex(x=>key(x.cell)===key(d.cell));
+         if(idx<0)persisted.push({cell:d.cell,before:d.before,tile:d.after});
+         else if(persisted[idx].before===d.after)persisted.splice(idx,1);
+         else persisted[idx].tile=d.after;
+         try{localStorage.setItem('c1-world-deltas-v1',JSON.stringify(persisted))}catch(e){};
+         log.textContent=`Świat zmieniony: ${d.cell.x},${d.cell.y} → ${d.after}`;
+       }
+       forwardToEditor(d)
+     }
+   }
+ }else if(e.source===studio.contentWindow&&e.origin===EDITOR_ORIGIN){
+   if(d.kind==='request'){
+      if(!engineReady){forwardToEditor({proto:PROTO,kind:'reply',id:d.id,ok:false,error:'Engine loading'});return}
+      sendToGame(d);
+   }
+ }
+});
+ game.addEventListener('load',()=>{engineReady=false;log.textContent='Gra ładuje się'});
+ document.getElementById('backtoplay').onclick=()=>sendToGame({proto:PROTO,kind:'request',id:++rid,action:'focus'});
+ document.getElementById('reload').onclick=()=>{engineReady=false;game.srcdoc=game.srcdoc};
+})();
+</script></html>
