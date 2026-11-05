@@ -34,10 +34,10 @@
         }else throw Error('Unknown request');
       }
     }catch(err){ack.error=String(err.message||err)}
-    e.source.postMessage(ack,HOST_ORIGIN);
+    e.source.postMessage(ack,HOST_ORIGIN==='null'?'*':HOST_ORIGIN);
   }
   window.addEventListener('message',onReq);
-  function announce(){if(ready()){window.parent.postMessage({proto:PROTO,kind:'ready'},HOST_ORIGIN)}else setTimeout(announce,100)}
+  function announce(){if(ready()){window.parent.postMessage({proto:PROTO,kind:'ready'},HOST_ORIGIN==='null'?'*':HOST_ORIGIN)}else setTimeout(announce,100)}
   announce();
 })();
 </script>
