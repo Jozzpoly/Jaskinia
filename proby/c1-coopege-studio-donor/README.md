@@ -34,3 +34,24 @@ Test nie używał prawdziwych danych/zapisów użytkownika i nie nadpisywał Bib
 - Nie badałem wygody Studia dla człowieka ani współczesnego feel Coopege.
 
 **Wyższy cel:** odizolować rozwój gry od warsztatu, a w starej Jaskini sprawdzać realną pętlę autorstwa i powrotu. Raport i ograniczenia przekazane nowej Jaskini: [issue #2](https://github.com/Jozzpoly/Jaskinia/issues/2).
+
+## C1-LIVE — odrębne Studio, *jedna* żywa gra (6 XI 2026)
+
+**Kolejny, odrębny eksperyment, NIE realizacja w starej Jaskini ani w październikowym Coopege.** Używa tego samego historycznego dawcy Tibia v14.1. Tym razem gra działa w osobnej sandboxowanej ramce, a małe Studio w drugiej; Studio **nie uruchamia kopii silnika**. Przez ograniczone wiadomości `postMessage` edytuje rzeczywiste `TibiaMapAPI` jedynego runtime.
+
+Reprodukowalne źródła w tej samej gałęzi: `live_shell_template.html`, `live_editor_template.html`, `live_game_bridge_snippet.html`, `live_bootstrap_template.html`, generator `build_live_c1.py`, automatyczny smoke `smoke_live_c1.py`. Nie kopiujemy całego historycznego silnika do repo Jaskini: należy go przekazać jako wejście ze znanego `Coopege/main/legacy/reference/Tibia_Enhanced_v14_1_DevAPI.html` (blob Git `ee03e6250585d8ee9d5965d17abf73e1c0403cdc`, SHA-256 `cd7d0d7527847ebd3f4ddb2c5a8c18d292517815c4989b8f4bd40b0fc5ce900c`).
+
+```text
+python build_live_c1.py Tibia_Enhanced_v14_1_DevAPI.html --out C1-lokalny.html
+python smoke_live_c1.py Tibia_Enhanced_v14_1_DevAPI.html
+```
+
+Przy dokładnie wskazanym donorze i obecnych źródłach generator dał **464057 B**, SHA-256 `7eb8b2b3e749200399ec874ae3562bb385a9827ff8530dbe3bbba88af832723a`; porównano bajty z samodzielnym HTML-em użytym do testu. Test Chrome/Chromium: **PASS** odczytu i edycji pola, rzeczywistego cofnięcia nawet przy oryginalnym tile `5` (drewno), ochrony przed `STALE_WRITE`, odzyskania patcha po reload *samej ramki gry*, contextualizacji edytora przy aktywnym wojowniku, braku respawnu 338 potworów po punktowej edycji, oraz odzyskania fokusu bez niezamierzonego click-to-move (po powrocie `D` porusza postać). Bez błędów JS w badanym przebiegu.
+
+**Ważna negatywna lekcja:** pierwsza wersja ograniczała również undo do terenów `0/4`; przy zmianie drewnianej posadzki `5→4` nie dawało się jej przywrócić. Naprawiono zakres akceptacji *poprzednich wartości* zgodnie z `TibiaMapAPI.getCapabilities().maxTile` i powtórzono test `5→4→5` — PASS. Nie kopiować z poligonu arbitralnego ograniczenia palety przy cofnięciu.
+
+**Ważna druga lekcja:** samo kliknięcie ramki gry przy powrocie z edytora wydało komendę ruchu postaci. Sam `iframe.focus()` z powłoki nie wystarczył. Dodatkowa, jawna wiadomość `focus` do instrumentu i fokusu ustawionego *przez samą grę* na canvas zadziałała bez kliknięcia w świat.
+
+**Granice:** test używał `page.set_content`, `srcdoc` i sandboxowanych origins `null`, **nie** dwóch rzeczywistych domen HTTP(S), produkcyjnego kontraktu zabezpieczeń, normalnego `file://` ani Opery właściciela. Odświeżenie tylko ramki gry działa; nie wykazano długotrwałej trwałości świata po pełnym zamknięciu strony i nie zapisuje to postaci. To nie jest jeszcze prawdziwa Jaskinia ani 26-X Coopege i nie uprawnia do uznania nowej koncepcji Studio za gotową. Mapy nie walidowano pod kątem każdej konsekwencji przebudowania szlaków i interakcji NPC. Własność danych świata powinna pozostać jawna, nie być automatycznie przejmowana przez powłokę.
+
+Kontekst użytkowy i feedback dla nowej Jaskini: [issue #2](https://github.com/Jozzpoly/Jaskinia/issues/2). Hipoteza: **najbardziej wartościową jednostką integracji może być możliwość tworzenia w miejscu, zdarzeniu lub przedmiocie, który właściciel właśnie zauważył w grze**, z płynnym powrotem do sterowania, a nie sama ramka HTML. To należy sfalsyfikować praktycznym użyciem na Coopege i drugim odmiennym projekcie, nie zamrażać jako uniwersalnego API.
