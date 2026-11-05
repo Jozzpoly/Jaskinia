@@ -1,0 +1,36 @@
+<!DOCTYPE html><html lang="pl"><meta charset="utf-8"><title>C1 Studio</title><style>:root{color-scheme:dark}body{font:14px system-ui;margin:20px;background:#111827;color:#e2e9f3}label{display:block;margin:10px 0}input,select{background:#202d3e;color:white;border:1px solid #52667e;border-radius:6px;padding:8px;width:100px}button{background:#234967;color:white;border:1px solid #4d7695;border-radius:8px;padding:12px 18px;margin:7px 4px 5px 0;cursor:pointer}h2{font-size:19px}pre{background:#0b1220;padding:14px;white-space:pre-wrap;border-radius:7px;min-height:140px}small{color:#91a5bc}.footer{border-top:1px solid #495367;padding-top:12px;margin-top:20px}</style>
+<h2>Pracownia żywego świata</h2><p><small>Nie wczytuje kopii gry. Rozmawia z tą po lewej przez ograniczony protokół, mimo innego originu.</small></p>
+<label>X <input id="x" type="number" value="30" min="0" max="199"> Y <input id="y" type="number" value="83" min="0" max="199"></label>
+<label>Warstwa <select id="z"><option>0</option><option>-1</option><option>-2</option><option>1</option><option>2</option></select></label>
+<label>Nowy teren <select id="tile"><option value="4">Ziemia (4)</option><option value="0">Trawa (0)</option></select></label>
+<button id="nearby">Obok gracza</button><button id="read">Sprawdź pole</button><button id="set">Zastosuj zmianę</button><button id="undo">Cofnij ostatnią</button>
+<pre id="status">Oczekiwanie na silnik…</pre><div class="footer"><small>To eksperyment z fragmentem Studia, a nie kompletna aplikacja ani finalny interfejs Jaskini.</small></div>
+<script>
+(()=>{
+ const PROTO='coopege-c1-live/v1',HOST='__PARENT_ORIGIN__';let sequence=0,seen=null,history=[],nearbyRequest=0,undoPending=new Map();const status=document.querySelector('#status');
+ const cell=()=>({z:Number(document.querySelector('#z').value),x:Number(document.querySelector('#x').value),y:Number(document.querySelector('#y').value)});
+ const same=(a,b)=>a&&b&&a.x===b.x&&a.y===b.y&&a.z===b.z;
+ const ask=(action,details={})=>{const id=++sequence;const d={proto:PROTO,kind:'request',id,action,cell:cell(),...details};window.parent.postMessage(d,HOST==='null'?'*':HOST);return id};
+ window.addEventListener('message',e=>{
+  if(e.source!==window.parent||e.origin!==HOST||!e.data||e.data.proto!==PROTO)return;
+  const d=e.data;
+  if(d.kind==='engine-ready'){status.textContent='Gra jest gotowa. Kliknij „Sprawdź pole”.';ask('ping');return}
+  if(d.kind==='reply'){
+   if(!d.ok){if(undoPending.has(d.id)){history.push(undoPending.get(d.id));undoPending.delete(d.id)}status.textContent='Odrzucono: '+d.error+'\nPoprzedni odczyt: '+JSON.stringify(seen);return}
+   if(d.action==='ping'){if(d.id===nearbyRequest&&d.player){document.querySelector('#z').value=d.player.z;document.querySelector('#x').value=Math.min(199,d.player.tx+3);document.querySelector('#y').value=d.player.ty;nearbyRequest=0;ask('read');return}status.textContent='Połączono z jednym żywym silnikiem.\n'+JSON.stringify(d.world)+'\nGracz: '+JSON.stringify(d.player);return}
+   if(d.action==='read'){seen={cell:d.cell,tile:d.before};status.textContent='Pole '+JSON.stringify(d.cell)+' ma teren '+d.before;return}
+   if(d.action==='set'){if(undoPending.has(d.id))undoPending.delete(d.id);else history.push({cell:d.cell,before:d.before,after:d.after});seen={cell:d.cell,tile:d.after};status.textContent='ZMIENIONO NA ŻYWO: '+JSON.stringify(d.cell)+' '+d.before+' → '+d.after+'\nZmiana zapisana oddzielnie od postaci.';return}
+  }
+ });
+ document.querySelector('#nearby').onclick=()=>{nearbyRequest=ask('ping')};
+ document.querySelector('#read').onclick=()=>ask('read');
+ document.querySelector('#set').onclick=()=>{
+   const c=cell();if(!seen||!same(c,seen.cell)){status.textContent='Najpierw sprawdź to pole — edytor musi znać jego aktualną wersję.';return}
+   ask('set',{expected:seen.tile,tile:Number(document.querySelector('#tile').value)});
+ };
+ document.querySelector('#undo').onclick=()=>{const prev=history.pop();if(!prev){status.textContent='Brak lokalnych zmian do cofnięcia';return}
+   document.querySelector('#x').value=prev.cell.x;document.querySelector('#y').value=prev.cell.y;document.querySelector('#z').value=prev.cell.z;
+   seen={cell:prev.cell,tile:prev.after};const id=ask('set',{expected:prev.after,tile:prev.before});undoPending.set(id,prev);
+ };
+})();
+</script></html>
