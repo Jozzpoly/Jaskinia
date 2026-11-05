@@ -1,0 +1,44 @@
+<script id="local-c1-live-bridge">
+(()=>{
+  'use strict';
+  const PROTO='coopege-c1-live/v1';
+  const HOST_ORIGIN='__PARENT_ORIGIN__';
+  const ALLOW=new Set([0,4]);
+  const get=()=>window.TibiaMapAPI;
+  const ready=()=>!!get();
+  function onReq(e){
+    if(e.source!==window.parent||e.origin!==HOST_ORIGIN)return;
+    const d=e.data;
+    if(!d||d.proto!==PROTO||d.kind!=='request')return;
+    const ack={proto:PROTO,kind:'reply',id:d.id,action:d.action,ok:false};
+    try{
+      if(!ready())throw Error('Engine not ready');
+      const a=get();
+      if(d.action==='focus'){const canvas=document.getElementById('game');canvas.tabIndex=0;canvas.focus();window.focus();ack.ok=true;}else if(d.action==='ping'){
+        ack.ok=true;ack.world={floors:a.floors,width:a.width,height:a.height,revision:'C1-old-v14.1'};
+        ack.player=a.getPlayerState();
+      }else{
+        const p=d.cell||{}, z=p.z,x=p.x,y=p.y;
+        if(![z,x,y].every(Number.isInteger)||!a.floors.includes(z)||x<0||y<0||x>=a.width||y>=a.height)throw Error('Invalid cell');
+        const before=a.getTile(z,x,y);
+        ack.cell={z,x,y};ack.before=before;
+        if(d.action==='read')ack.ok=true;
+        else if(d.action==='set'){
+          if(!ALLOW.has(d.tile))throw Error('Tile not allowed by bounded probe');
+          if(before!==d.expected)throw Error('STALE_WRITE');
+          // Keep actor on a passable surface during this bounded test.
+          const player=a.getPlayerState();
+          if(z===player.z&&x===player.tx&&y===player.ty&&d.tile!==0&&d.tile!==4)throw Error('Player occupied cell');
+          const changed=a.setTile(z,x,y,d.tile);
+          if(!changed)throw Error('Engine declined tile change');
+          ack.ok=true;ack.after=a.getTile(z,x,y);
+        }else throw Error('Unknown request');
+      }
+    }catch(err){ack.error=String(err.message||err)}
+    e.source.postMessage(ack,HOST_ORIGIN==='null'?'*':HOST_ORIGIN);
+  }
+  window.addEventListener('message',onReq);
+  function announce(){if(ready()){window.parent.postMessage({proto:PROTO,kind:'ready'},HOST_ORIGIN==='null'?'*':HOST_ORIGIN)}else setTimeout(announce,100)}
+  announce();
+})();
+</script>
