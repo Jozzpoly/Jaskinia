@@ -3,7 +3,6 @@
   'use strict';
   const PROTO='coopege-c1-live/v1';
   const HOST_ORIGIN='__PARENT_ORIGIN__';
-  const ALLOW=new Set([0,4]);
   const get=()=>window.TibiaMapAPI;
   const ready=()=>!!get();
   function onReq(e){
@@ -24,7 +23,7 @@
         ack.cell={z,x,y};ack.before=before;
         if(d.action==='read')ack.ok=true;
         else if(d.action==='set'){
-          if(!ALLOW.has(d.tile))throw Error('Tile not allowed by bounded probe');
+          if(!Number.isInteger(d.tile)||d.tile<0||d.tile>a.getCapabilities().maxTile)throw Error('Invalid tile type');
           if(before!==d.expected)throw Error('STALE_WRITE');
           // Keep actor on a passable surface during this bounded test.
           const player=a.getPlayerState();
@@ -35,10 +34,10 @@
         }else throw Error('Unknown request');
       }
     }catch(err){ack.error=String(err.message||err)}
-    e.source.postMessage(ack,HOST_ORIGIN==='null'?'*':HOST_ORIGIN);
+    e.source.postMessage(ack,HOST_ORIGIN);
   }
   window.addEventListener('message',onReq);
-  function announce(){if(ready()){window.parent.postMessage({proto:PROTO,kind:'ready'},HOST_ORIGIN==='null'?'*':HOST_ORIGIN)}else setTimeout(announce,100)}
+  function announce(){if(ready()){window.parent.postMessage({proto:PROTO,kind:'ready'},HOST_ORIGIN)}else setTimeout(announce,100)}
   announce();
 })();
 </script>
