@@ -35,7 +35,7 @@ def build(jaskinia: Path, donor: Path, out: Path) -> None:
     # The source donor remains untouched. Only a copy is instrumented.
     game = game.replace('</body>', bridge + '\n</body>', 1)
     # The editor is deliberately thin; layout/window chrome belongs to native Jaskinia.
-    addon = '''<button id="back" type="button">Wróć do gry</button>
+    addon = '''<div style="margin-top:12px"><button id="back" type="button">Wróć do gry</button></div>
 <script>document.querySelector('#back').onclick=()=>window.parent.postMessage({proto:'coopege-c1-live/v1',kind:'request',id:987654,action:'focus'},location.origin==='null'?'*':location.origin);</script>
 '''
     editor = editor.replace('To eksperyment z fragmentem Studia,', 'Zmiany mapy w tym wariancie nie przetrwają zamknięcia całego pliku. To eksperyment z fragmentem Studia,')
