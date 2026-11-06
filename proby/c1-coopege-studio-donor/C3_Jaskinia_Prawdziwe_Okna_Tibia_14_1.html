@@ -6998,8 +6998,8 @@ const ALL_FINDINGS = D.repos.flatMap(r => r.findings || []);
 const CH = D.estate.changes || null;
 const NEWF = new Set(CH?.findings_new || []);
 const MOVED = Object.fromEntries((CH?.moved || []).map(m => [m.repo, m]));
-function loadPref(k, d0) { try { const v = localStorage.getItem('bib:' + k); return v == null ? d0 : JSON.parse(v); } catch { return d0; } }
-function savePref(k, v) { try { localStorage.setItem('bib:' + k, JSON.stringify(v)); } catch { /* per-viewer convenience only */ } }
+function loadPref(k, d0) { try { const v = localStorage.getItem('c3-lab-bib-2026-11-06:' + k); return v == null ? d0 : JSON.parse(v); } catch { return d0; } }
+function savePref(k, v) { try { localStorage.setItem('c3-lab-bib-2026-11-06:' + k, JSON.stringify(v)); } catch { /* per-viewer convenience only */ } }
 /* view state that must survive the full re-render a snapshot triggers; localStorage only remembers it between visits */
 const UI = {
   feedAll: false,
@@ -14725,7 +14725,7 @@ function bbModel(j, mgr, missing) {
    in IndexedDB ("jaskinia-materialy"); a material is a main file with what it needs. Dropping a changed file with the
    same name makes a new version of that material, never a silent replacement. Orientation and scale are the material's
    defaults (non-destructive), checked against a body 1.8 m tall. Nothing here enters layout undo; deleting is soft. */
-const MDB = 'jaskinia-materialy';
+const MDB = 'c3-lab-materialy-2026-11-06';
 const MAT_MODEL = /\.(glb|gltf|obj|bbmodel)$/i, MAT_PIC = /\.(png|jpe?g|webp|gif|bmp|tga)$/i, MAT_SIDE = /\.(bin|mtl|png|jpe?g|webp|gif|bmp|tga|ktx2)$/i;
 let mdbP = null;
 function mdb() {
@@ -14784,7 +14784,7 @@ const extOf = n => (/\.([^.]+)$/.exec(baseName(n)) || [])[1]?.toLowerCase() || '
    would no longer find its look (GPT's real-browser run, 18 Oct); two new tabs could also both number their change 2.
    The revisions now also live in a second database that older builds never open, and a new revision is numbered and
    written there in one transaction, so two tabs never take the same number. */
-const SDB = 'jaskinia-materialy-ustawienia';
+const SDB = 'c3-lab-materialy-ustawienia-2026-11-06';
 const MAT_APPLY_GRACE = 60e3; // how long a record may stay behind a revision another tab is applying (see matSets)
 let sdbP = null;
 function sdb() {
@@ -14828,7 +14828,7 @@ async function setsWrite(id, list, cfg) {
 }
 
 /* every tab of this Jaskinia shares the library: a change in one tab tells the others, which read it again (v6.1) */
-const MAT_BC = (() => { try { return new BroadcastChannel('jaskinia-materialy'); } catch { return null; } })();
+const MAT_BC = (() => { try { return new BroadcastChannel('c3-lab-materialy-2026-11-06'); } catch { return null; } })();
 function matEmit(detail, fromOther) {
   document.dispatchEvent(new CustomEvent('jk:materialy', { detail }));
   if (!fromOther && MAT_BC) { const { target, ...rest } = detail || {}; void target; try { MAT_BC.postMessage(rest); } catch { /* a closed channel: the other tabs read on their next start */ } }
