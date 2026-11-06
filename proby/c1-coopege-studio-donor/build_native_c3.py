@@ -26,6 +26,12 @@ def build(jaskinia: Path, donor: Path, out: Path) -> None:
     # such as the instrument protocol field `jaskinia: 1`.
     for prefix in ("'jaskinia:", '"jaskinia:', '`jaskinia:'):
         shell = shell.replace(prefix, prefix[0] + 'c3-lab-2026-11-06:')
+    # IndexedDB and BroadcastChannel also share an origin. Material store
+    # names must not collide with the Owner's normal Jaskinia on file:// or web.
+    shell = shell.replace("'jaskinia-materialy-ustawienia'", "'c3-lab-materialy-ustawienia-2026-11-06'")
+    shell = shell.replace("'jaskinia-materialy'", "'c3-lab-materialy-2026-11-06'")
+    # The older Library app additionally writes its own `bib:` preferences.
+    shell = shell.replace("'bib:'", "'c3-lab-bib-2026-11-06:'")
     if not ('window.Jaskinia' in shell and 'JASKINIA_API' in shell):
         raise ValueError('Input is not an old Jaskinia build with public ext API')
     if '</body>' not in shell or 'window.TibiaMapAPI' not in game or '</body>' not in game:
