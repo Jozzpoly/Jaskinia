@@ -72,3 +72,15 @@ test('eksport i import zachowują tożsamości, a podrobiony zapis jest odrzucan
   const zly = JSON.parse(r.eksport()); zly.zapisy[0].content.a = 999;
   assert.throws(() => Rdzen.importuj(JSON.stringify(zly)), /Zła tożsamość/);
 });
+
+test('zapis jest niezmienny także w głąb (powtórzenie błędu znalezionego przez Astrę 5 XI)', () => {
+  const r = new Rdzen();
+  const id = r.zapisz('ustawienia', { suspension: { hertz: 2.4 } }, JOZZ);
+  const z = r.zapis(id);
+  assert.throws(() => { z.content.suspension.hertz = 999; }, TypeError);
+  assert.equal(r.zapis(id).content.suspension.hertz, 2.4);
+  assert.equal(r.dziennik().length, 1);
+  const r2 = Rdzen.importuj(r.eksport());
+  assert.equal(r2.zapis(id).content.suspension.hertz, 2.4);
+  assert.throws(() => { r2.zapis(id).content.suspension.hertz = 999; }, TypeError);
+});

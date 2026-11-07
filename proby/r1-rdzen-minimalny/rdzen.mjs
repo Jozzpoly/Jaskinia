@@ -6,6 +6,13 @@ import { canonical } from '../e1-wersje/versions.mjs';
 
 export const recordId = (kind, content) => 'z_' + sha256hex(canonical({ kind, content })).slice(0, 16);
 
+// Treść zapisu zamrożona w głąb. Bez tego zapis oddany przez referencję dało się zmienić pod tym samym id,
+// bez zdarzenia w dzienniku, a eksport takiego magazynu odrzucał potem własny import (błąd znaleziony przez Astrę, 5 XI).
+const zamroz = o => {
+  if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); for (const v of Object.values(o)) zamroz(v); }
+  return o;
+};
+
 // Prawa głowy: 'wlasciciel' (przesuwa tylko właściciel), 'agent:<kto>' (tylko ten agent), 'wspolna' (każdy, ze śladem w dzienniku).
 export class Rdzen {
   #zapisy = new Map();
@@ -15,7 +22,7 @@ export class Rdzen {
   zapisz(kind, content, kto, links = []) {
     const id = recordId(kind, { content, links });
     if (!this.#zapisy.has(id)) {
-      this.#zapisy.set(id, Object.freeze({ id, kind, content: JSON.parse(canonical(content)), links: Object.freeze([...links]), kto: kto.who }));
+      this.#zapisy.set(id, Object.freeze({ id, kind, content: zamroz(JSON.parse(canonical(content))), links: Object.freeze([...links]), kto: kto.who }));
       this.#log({ typ: 'zapis', id, kind, kto: kto.who });
     }
     return id;
@@ -59,7 +66,7 @@ export class Rdzen {
     const r = new Rdzen();
     for (const z of d.zapisy) {
       if (recordId(z.kind, { content: z.content, links: z.links }) !== z.id) throw new Error('Zła tożsamość zapisu: ' + z.id);
-      r.#zapisy.set(z.id, Object.freeze({ ...z, links: Object.freeze([...z.links]) }));
+      r.#zapisy.set(z.id, Object.freeze({ ...z, content: zamroz(z.content), links: Object.freeze([...z.links]) }));
     }
     for (const [n, g] of Object.entries(d.glowy)) r.#glowy.set(n, { na: g.na, prawa: g.prawa });
     r.#dziennik = d.dziennik.map(e => ({ ...e }));
