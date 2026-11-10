@@ -17,19 +17,30 @@
   dl { display: grid; grid-template-columns: auto 1fr; gap: .4rem 1rem; padding: 1rem 0; border-top: 1px solid var(--linia); }
   dt { color: var(--przygaszony); }
   dd { margin: 0; font-variant-numeric: tabular-nums; }
+  h2 { font-size: 1.1rem; margin: 2rem 0 .3rem; }
+  a { color: var(--akcent); }
+  #swiezosc.stare, #swiezosc.brak { color: var(--akcent); font-weight: 600; }
+  ol { list-style: none; padding: 0; margin: .5rem 0 0; border-top: 1px solid var(--linia); }
+  li { padding: .55rem 0; border-bottom: 1px solid var(--linia); display: grid; grid-template-columns: 1fr auto; gap: .1rem 1rem; }
+  li .opis { grid-column: 1 / -1; color: var(--przygaszony); font-size: .9rem; overflow-wrap: anywhere; }
+  li .kiedy { color: var(--przygaszony); font-size: .9rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>
 </head>
 <body>
 <main>
   <h1>Jaskinia</h1>
-  <p>Pusty podgląd nowej Jaskini. Jeśli widzisz tę stronę na telefonie i na komputerze, droga do Twoich urządzeń działa.</p>
+  <p>Pierwszy podgląd nowej Jaskini. Jeśli widzisz tę stronę na telefonie i na komputerze, droga do Twoich urządzeń działa.</p>
+  <p><a href="/dom/">Twój dzisiejszy Dom pod tym adresem →</a></p>
   <dl id="stan">
     <dt>Wdrożenie</dt><dd id="wersja">sprawdzam…</dd>
     <dt>Logowanie Access</dt><dd id="access">sprawdzam…</dd>
     <dt>Zmienne Access</dt><dd id="zmienne">sprawdzam…</dd>
     <dt>Klucz do danych</dt><dd id="dane">sprawdzam…</dd>
   </dl>
-  <p class="male">Tu nie ma żadnych danych. Strona pokazuje tylko, czy ustawienia wdrożenia są na miejscu, bez wartości sekretów.</p>
+  <p class="male">Strona pokazuje, czy ustawienia wdrożenia są na miejscu, bez wartości sekretów.</p>
+  <h2>Twoje publiczne repo, prosto z GitHuba</h2>
+  <p id="swiezosc" class="male">sprawdzam…</p>
+  <ol id="repos"></ol>
 </main>
 <script>
   const pokaz = (id, tak, opisTak, opisNie) => {
@@ -41,12 +52,39 @@
       document.getElementById('wersja').textContent = z.wersja;
       pokaz('access', z.access, 'jesteś zalogowany', 'brak (strona otwarta bez Access)');
       pokaz('zmienne', z.zmienneAccess, 'ustawione', 'brak');
-      pokaz('dane', z.sekretDanych, 'ustawiony', 'brak');
+      pokaz('dane', z.sekretDanych, 'ustawiony', 'brak (fakty bez klucza: GitHub pozwala na mniej zapytań)');
     })
     .catch(() => {
       document.getElementById('wersja').textContent = 'API nie odpowiada (to normalne poza Cloudflare)';
       for (const id of ['access', 'zmienne', 'dane']) document.getElementById(id).textContent = '—';
     });
+  // fakty o repo: zawsze z wiekiem, a nie wiadomo nigdy nie udaje zera
+  const ile = (s) => s < 90 ? 'przed chwilą' : s < 5400 ? Math.round(s / 60) + ' min temu' : s < 129600 ? Math.round(s / 3600) + ' godz. temu' : Math.round(s / 86400) + ' dni temu';
+  fetch('/api/fakty', { cache: 'no-store' })
+    .then((r) => r.json())
+    .then((f) => {
+      const el = document.getElementById('swiezosc');
+      if (!f.repos) {
+        const l = (f.luki || [])[0] || {};
+        const czemu = l.status ? ' (GitHub: ' + l.status + (l.zostalo_zapytan === '0' ? ', wyczerpany limit zapytań' + (f.z_tokenem ? '' : ' bez klucza') : '') + ')' : l.blad ? ' (' + l.blad + ')' : '';
+        el.textContent = 'Nie wiadomo: GitHub nie podał faktów' + czemu + ', więc nie pokazuję żadnej listy.'; el.className = 'brak'; return;
+      }
+      const wiek = 'zebrane ' + ile(f.wiek_s) + ', ' + f.skad;
+      el.textContent = (f.swiezosc === 'stare' ? 'Stare fakty (obserwator milczy): ' : '') + wiek
+        + (f.stan === 'czesciowe' ? '. Lista niepełna: GitHub urwał odpowiedź w połowie.' : '')
+        + (f.ostatnia_proba ? '. Ostatnia próba nie powiodła się, pokazuję wcześniejsze fakty.' : '') + '.';
+      el.className = f.swiezosc === 'stare' ? 'stare' : 'male';
+      const teraz = Date.now(), ol = document.getElementById('repos');
+      for (const r of f.repos) {
+        const li = document.createElement('li');
+        const a = document.createElement('a'); a.href = r.url; a.textContent = r.nazwa + (r.archiwum ? ' (archiwum)' : ''); a.rel = 'noopener';
+        const k = document.createElement('span'); k.className = 'kiedy'; k.textContent = r.ostatni_push ? 'push ' + ile((teraz - Date.parse(r.ostatni_push)) / 1000) : '';
+        li.append(a, k);
+        if (r.opis) { const o = document.createElement('span'); o.className = 'opis'; o.textContent = r.opis; li.append(o); }
+        ol.append(li);
+      }
+    })
+    .catch(() => { document.getElementById('swiezosc').textContent = 'API faktów nie odpowiada (to normalne poza Cloudflare).'; });
 </script>
 </body>
 </html>

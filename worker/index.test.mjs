@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { zdrowie, dom, DOM_ZRODLO } from './index.mjs';
+import worker from './index.mjs';
+import { zdrowie, dom, DOM_ZRODLO } from './trasy.mjs';
 
 const SEKRET = 'wartosc-sekretu-testowa-7f3a';
 
@@ -16,7 +17,7 @@ test('zdrowie mówi tylko tak albo nie i nigdy nie pokazuje wartości sekretu', 
   assert.ok(!tekst.includes(SEKRET), 'wartość sekretu wyciekła');
   assert.ok(!tekst.includes('zespol.cloudflareaccess.com'), 'wartość zmiennej wyciekła');
   assert.deepEqual(JSON.parse(tekst), {
-    jaskinia: 'pusty podgląd', wersja: 'szkielet-1', access: true, zmienneAccess: true, sekretDanych: true,
+    jaskinia: 'pusty podgląd', wersja: 'szkielet-1', access: true, zmienneAccess: true, sekretDanych: true, pamiecFaktow: false,
   });
 });
 
