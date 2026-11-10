@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { zdrowie } from './index.mjs';
+import worker, { zdrowie, dom, DOM_ZRODLO } from './index.mjs';
 
 const SEKRET = 'wartosc-sekretu-testowa-7f3a';
 
@@ -37,4 +37,32 @@ test('inne ścieżki API dają 404, a reszta idzie do plików statycznych', asyn
   const res = await worker.fetch(new Request('https://x.dev/nie-ma-takiego.html'), env);
   assert.equal(await res.text(), 'plik');
   assert.equal(doPlikow, '/nie-ma-takiego.html');
+});
+
+test('/dom/ podaje dzisiejszy Dom z GitHub Pages pod adresem Workera, i tylko jego pliki', async () => {
+  const pytane = [];
+  const fakeFetch = async (u) => { pytane.push(u); return new Response('<title>Jaskinia</title>', { headers: { 'content-type': 'text/html; charset=utf-8' } }); };
+  const res = await dom(new URL('https://jaskinia.example.workers.dev/dom/'), {}, fakeFetch);
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), '<title>Jaskinia</title>');
+  assert.equal(pytane[0], DOM_ZRODLO);
+  assert.equal(res.headers.get('x-jaskinia-zrodlo'), DOM_ZRODLO);
+  await dom(new URL('https://x.dev/dom/status.json'), {}, fakeFetch);
+  assert.equal(pytane[1], DOM_ZRODLO + 'status.json');
+  const obcy = await dom(new URL('https://x.dev/dom/../../innej-strony'), {}, fakeFetch);
+  assert.equal(obcy.status, 404);
+  const inny = await dom(new URL('https://x.dev/dom/dane/library.json'), {}, fakeFetch);
+  assert.equal(inny.status, 404, 'tylko strona i status.json, żadnego otwartego pośrednika');
+  assert.equal(pytane.length, 2);
+});
+
+test('/dom bez ukośnika przekierowuje, a gdy Pages nie odpowiada, Worker mówi to wprost', async () => {
+  const r = await worker.fetch(new Request('https://x.dev/dom'), {});
+  assert.equal(r.status, 301);
+  assert.equal(r.headers.get('location'), 'https://x.dev/dom/');
+  const pada = await dom(new URL('https://x.dev/dom/'), {}, async () => new Response('', { status: 404 }));
+  assert.equal(pada.status, 502);
+  assert.equal((await pada.json()).status, 404);
+  const siec = await dom(new URL('https://x.dev/dom/'), {}, async () => { throw new Error('brak sieci'); });
+  assert.equal(siec.status, 502);
 });
