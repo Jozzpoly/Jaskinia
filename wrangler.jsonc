@@ -8,5 +8,8 @@
     "directory": "./public",
     "binding": "ASSETS"
   },
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  // Worker Previews (Wrangler 4.135+): every branch gets its own Preview with these settings. Required, may be empty.
+  // Empty on purpose: a Preview has no bindings, no secrets and no data (10 Nov 2026).
+  "previews": {}
 }
