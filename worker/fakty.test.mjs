@@ -40,6 +40,38 @@ test('gorszy wynik nie nadpisuje lepszego, ale nieudana próba zostaje zapisana 
   assert.equal(scal(dobre, { ...dobre, zebrane: '2026-11-10T22:00:00Z' }).zebrane, '2026-11-10T22:00:00Z');
 });
 
+test('częściowa lista nie przepada, gdy następna próba nie da nic (uwaga Menadżera, 10 XI)', () => {
+  const czesc = { stan: 'czesciowe', zebrane: '2026-11-10T21:00:00Z', repos: [{ nazwa: 'a' }, { nazwa: 'b' }], luki: [{ strona: 2, status: 403 }] };
+  const nic = { stan: 'brak', zebrane: '2026-11-10T22:00:00Z', repos: null, luki: [{ strona: 1, status: 403 }] };
+  const w = scal(czesc, nic);
+  assert.equal(w.repos.length, 2);
+  assert.equal(w.zebrane, czesc.zebrane);
+  assert.equal(w.ostatnia_proba.stan, 'brak');
+  assert.equal(w.ostatnia_proba.liczba_repo, null);
+});
+
+test('krótsza częściowa lista nie nadpisuje dłuższej; równa albo dłuższa, bo nowsza, tak', () => {
+  const dluga = { stan: 'czesciowe', zebrane: '2026-11-10T21:00:00Z', repos: [{ nazwa: 'a' }, { nazwa: 'b' }, { nazwa: 'c' }], luki: [{ strona: 2 }] };
+  const krotka = { stan: 'czesciowe', zebrane: '2026-11-10T22:00:00Z', repos: [{ nazwa: 'a' }], luki: [{ strona: 1 }] };
+  const w = scal(dluga, krotka);
+  assert.equal(w.repos.length, 3);
+  assert.equal(w.ostatnia_proba.liczba_repo, 1);
+  const rowna = { ...dluga, zebrane: '2026-11-10T22:00:00Z' };
+  assert.equal(scal(dluga, rowna).zebrane, rowna.zebrane);
+  assert.equal(scal(dluga, rowna).ostatnia_proba, null);
+});
+
+test('pełna lista zawsze wygrywa; brak po braku zostaje brakiem, ale nowszym', () => {
+  const czesc = { stan: 'czesciowe', zebrane: '2026-11-10T21:00:00Z', repos: [{ nazwa: 'a' }, { nazwa: 'b' }], luki: [{}] };
+  const pelna = { stan: 'ok', zebrane: '2026-11-10T22:00:00Z', repos: [{ nazwa: 'a' }], luki: [] };
+  assert.equal(scal(czesc, pelna).stan, 'ok');
+  const b1 = { stan: 'brak', zebrane: '2026-11-10T21:00:00Z', repos: null, luki: [{}] };
+  const b2 = { ...b1, zebrane: '2026-11-10T22:00:00Z' };
+  assert.equal(scal(b1, b2).zebrane, b2.zebrane);
+  assert.equal(scal(null, b1).stan, 'brak');
+  assert.equal(scal(b1, czesc).stan, 'czesciowe');
+});
+
 test('fakty mówią, ile mają lat; po zamilknięciu obserwatora są stare, nie świeże', () => {
   const f = { stan: 'ok', zebrane: new Date(T - 10 * 60e3).toISOString(), repos: [] };
   assert.equal(dlaStrony(f, T).swiezosc, 'swieze');

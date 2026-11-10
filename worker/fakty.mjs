@@ -49,10 +49,17 @@ export async function zbierz({ fetchFn = fetch, token = null, owner = WLASCICIEL
   };
 }
 
-// Co zapisać, gdy przyszedł nowy wynik: lepszego nigdy nie zastępuje gorszy.
+// Jak pełny jest wynik: pełna lista > dłuższa częściowa > krótsza częściowa > nic (nie wiadomo).
+const pelnosc = (f) => (!f ? -2 : f.stan === 'ok' ? Infinity : Array.isArray(f.repos) ? f.repos.length : -1);
+
+// Co zapisać, gdy przyszedł nowy wynik: lepszego nigdy nie zastępuje gorszy. Przy równej pełności wygrywa nowszy.
+// Gdy zostają stare fakty, nieudana próba jest zapisana obok nich (ostatnia_proba), żeby nie zniknęła po cichu.
 export function scal(stare, nowe) {
-  if (nowe.stan === 'ok' || !stare || stare.stan !== 'ok') return { ...nowe, ostatnia_proba: null };
-  return { ...stare, ostatnia_proba: { zebrane: nowe.zebrane, stan: nowe.stan, luki: nowe.luki } };
+  if (pelnosc(nowe) >= pelnosc(stare)) return { ...nowe, ostatnia_proba: null };
+  return {
+    ...stare,
+    ostatnia_proba: { zebrane: nowe.zebrane, stan: nowe.stan, luki: nowe.luki, liczba_repo: Array.isArray(nowe.repos) ? nowe.repos.length : null },
+  };
 }
 
 // Odpowiedź dla strony: fakty i ich wiek.

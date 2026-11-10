@@ -58,33 +58,63 @@
       document.getElementById('wersja').textContent = 'API nie odpowiada (to normalne poza Cloudflare)';
       for (const id of ['access', 'zmienne', 'dane']) document.getElementById(id).textContent = '—';
     });
-  // fakty o repo: zawsze z wiekiem, a nie wiadomo nigdy nie udaje zera
+  // Fakty o repo: zawsze z wiekiem, a nie wiadomo nigdy nie udaje zera. Strona może być otwarta godzinami (telefon),
+  // więc wiek rośnie na ekranie, fakty są dopytywane co kilka minut i po powrocie do karty, a nieudane pytanie nie
+  // zastępuje pokazanej listy, tylko mówi o sobie obok niej.
+  const SWIEZE_S = 45 * 60, PYTAJ_CO_MS = 5 * 60e3, RYSUJ_CO_MS = 30e3;
   const ile = (s) => s < 90 ? 'przed chwilą' : s < 5400 ? Math.round(s / 60) + ' min temu' : s < 129600 ? Math.round(s / 3600) + ' godz. temu' : Math.round(s / 86400) + ' dni temu';
-  fetch('/api/fakty', { cache: 'no-store' })
-    .then((r) => r.json())
-    .then((f) => {
-      const el = document.getElementById('swiezosc');
-      if (!f.repos) {
-        const l = (f.luki || [])[0] || {};
-        const czemu = l.status ? ' (GitHub: ' + l.status + (l.zostalo_zapytan === '0' ? ', wyczerpany limit zapytań' + (f.z_tokenem ? '' : ' bez klucza') : '') + ')' : l.blad ? ' (' + l.blad + ')' : '';
-        el.textContent = 'Nie wiadomo: GitHub nie podał faktów' + czemu + ', więc nie pokazuję żadnej listy.'; el.className = 'brak'; return;
-      }
-      const wiek = 'zebrane ' + ile(f.wiek_s) + ', ' + f.skad;
-      el.textContent = (f.swiezosc === 'stare' ? 'Stare fakty (obserwator milczy): ' : '') + wiek
-        + (f.stan === 'czesciowe' ? '. Lista niepełna: GitHub urwał odpowiedź w połowie.' : '')
-        + (f.ostatnia_proba ? '. Ostatnia próba nie powiodła się, pokazuję wcześniejsze fakty.' : '') + '.';
-      el.className = f.swiezosc === 'stare' ? 'stare' : 'male';
-      const teraz = Date.now(), ol = document.getElementById('repos');
-      for (const r of f.repos) {
-        const li = document.createElement('li');
-        const a = document.createElement('a'); a.href = r.url; a.textContent = r.nazwa + (r.archiwum ? ' (archiwum)' : ''); a.rel = 'noopener';
-        const k = document.createElement('span'); k.className = 'kiedy'; k.textContent = r.ostatni_push ? 'push ' + ile((teraz - Date.parse(r.ostatni_push)) / 1000) : '';
-        li.append(a, k);
-        if (r.opis) { const o = document.createElement('span'); o.className = 'opis'; o.textContent = r.opis; li.append(o); }
-        ol.append(li);
-      }
-    })
-    .catch(() => { document.getElementById('swiezosc').textContent = 'API faktów nie odpowiada (to normalne poza Cloudflare).'; });
+  const czemuBrak = (f) => {
+    const l = (f.luki || [])[0] || {};
+    return l.status ? ' (GitHub: ' + l.status + (l.zostalo_zapytan === '0' ? ', wyczerpany limit zapytań' + (f.z_tokenem ? '' : ' bez klucza') : '') + ')' : l.blad ? ' (' + l.blad + ')' : '';
+  };
+  let pokazane = null; // { f, odebrane }: ostatnia odpowiedź z listą; wiek liczony od chwili odbioru zegarem tej karty
+  let blad = null;     // { tekst, kiedy }: ostatnie pytanie, które listy nie dało
+  let pytano = 0, wToku = false;
+  const rysujListe = (f) => {
+    const teraz = Date.now(), ol = document.getElementById('repos');
+    ol.replaceChildren();
+    for (const r of f.repos) {
+      const li = document.createElement('li');
+      const a = document.createElement('a'); a.href = r.url; a.textContent = r.nazwa + (r.archiwum ? ' (archiwum)' : ''); a.rel = 'noopener';
+      const k = document.createElement('span'); k.className = 'kiedy'; k.dataset.push = r.ostatni_push || '';
+      k.textContent = r.ostatni_push ? 'push ' + ile((teraz - Date.parse(r.ostatni_push)) / 1000) : '';
+      li.append(a, k);
+      if (r.opis) { const o = document.createElement('span'); o.className = 'opis'; o.textContent = r.opis; li.append(o); }
+      ol.append(li);
+    }
+  };
+  const rysuj = () => {
+    const el = document.getElementById('swiezosc'), teraz = Date.now();
+    const oBledzie = blad ? ' Ostatnie pytanie ' + ile((teraz - blad.kiedy) / 1000) + ': ' + blad.tekst + ', więc zostaje to, co wyżej.' : '';
+    if (!pokazane) {
+      el.textContent = blad ? 'Nie wiadomo: ' + blad.tekst + ', więc nie pokazuję żadnej listy.' : 'sprawdzam…';
+      el.className = blad ? 'brak' : 'male';
+      return;
+    }
+    const f = pokazane.f, wiek = (f.wiek_s || 0) + (teraz - pokazane.odebrane) / 1000;
+    const stare = wiek > SWIEZE_S;
+    el.textContent = (stare ? 'Stare fakty: ' : '') + 'zebrane ' + ile(wiek) + ', ' + f.skad
+      + (f.stan === 'czesciowe' ? '. Lista niepełna: GitHub urwał odpowiedź w połowie' : '')
+      + (f.ostatnia_proba ? '. Nowsza próba obserwatora nie powiodła się, to wcześniejsze fakty' : '') + '.' + oBledzie;
+    el.className = stare ? 'stare' : 'male';
+    for (const k of document.querySelectorAll('#repos .kiedy')) {
+      if (k.dataset.push) k.textContent = 'push ' + ile((teraz - Date.parse(k.dataset.push)) / 1000);
+    }
+  };
+  const pytaj = async () => {
+    if (wToku) return;
+    wToku = true; pytano = Date.now();
+    try {
+      const f = await fetch('/api/fakty', { cache: 'no-store' }).then((r) => r.json());
+      if (Array.isArray(f.repos)) { pokazane = { f, odebrane: Date.now() }; blad = null; rysujListe(f); }
+      else blad = { tekst: 'GitHub nie podał faktów' + czemuBrak(f), kiedy: Date.now() };
+    } catch (e) {
+      blad = { tekst: 'API faktów nie odpowiada (to normalne poza Cloudflare)', kiedy: Date.now() };
+    } finally { wToku = false; rysuj(); }
+  };
+  pytaj();
+  setInterval(() => { if (!document.hidden && Date.now() - pytano >= PYTAJ_CO_MS) pytaj(); else rysuj(); }, RYSUJ_CO_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (Date.now() - pytano >= 60e3) pytaj(); else rysuj(); } });
 </script>
 </body>
 </html>
