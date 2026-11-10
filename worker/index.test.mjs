@@ -17,7 +17,7 @@ test('zdrowie mówi tylko tak albo nie i nigdy nie pokazuje wartości sekretu', 
   assert.ok(!tekst.includes(SEKRET), 'wartość sekretu wyciekła');
   assert.ok(!tekst.includes('zespol.cloudflareaccess.com'), 'wartość zmiennej wyciekła');
   assert.deepEqual(JSON.parse(tekst), {
-    jaskinia: 'pusty podgląd', wersja: 'szkielet-1', access: true, zmienneAccess: true, sekretDanych: true, pamiecFaktow: false,
+    jaskinia: 'pusty podgląd', wersja: 'szkielet-1', access: true, zmienneAccess: true, sekretDanych: true, pamiecFaktow: false, miejsce: false, klucze: false, podglad: false,
   });
 });
 

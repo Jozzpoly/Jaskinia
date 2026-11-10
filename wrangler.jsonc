@@ -9,7 +9,20 @@
     "binding": "ASSETS"
   },
   "observability": { "enabled": true },
-  // Worker Previews (Wrangler 4.135+): every branch gets its own Preview with these settings. Required, may be empty.
-  // Empty on purpose: a Preview has no bindings, no secrets and no data (10 Nov 2026).
-  "previews": {}
+  // Miejsce: shared state on the server side, one SQLite Durable Object (11 Nov 2026, status: proba, TYMCZASOWE.md).
+  "durable_objects": { "bindings": [{ "name": "MIEJSCE", "class_name": "Miejsce" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Miejsce"] }],
+  // Production has no KLUCZE here: the owner sets them as a secret, and until then Miejsce stays closed.
+  // Worker Previews (Wrangler 4.135+): every branch gets its own Preview, and Cloudflare gives each Preview its own
+  // Durable Object namespace and storage, so a Preview never touches production state.
+  // The Preview keys below are PUBLIC on purpose (their plain text is in README): anyone can write to a Preview's
+  // Miejsce, so nothing private goes there. They let agents test the whole path without asking the owner.
+  // podglad-jozz-klucz-publiczny (owner role), podglad-agent-klucz-publiczny (agent role).
+  "previews": {
+    "durable_objects": { "bindings": [{ "name": "MIEJSCE", "class_name": "Miejsce" }] },
+    "vars": {
+      "PODGLAD": "tak",
+      "KLUCZE": "{\"jozz\":\"89db28af24d86977c0b4065bf86cd23f4bb7b92b34ea02323685f8733b45e832\",\"agent-probny\":\"9fcce90d0a08b9b9583f760801ce1a54a452a7cef2e5710234343a1b24ced630\"}"
+    }
+  }
 }
