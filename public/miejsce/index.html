@@ -68,6 +68,15 @@
       <input id="klucz" type="password" autocomplete="current-password" placeholder="Twój klucz do Miejsca" minlength="16" required>
       <div class="rzad"><button>Wejdź</button><span class="male">Klucz zostaje tylko w tej przeglądarce.</span></div>
     </form>
+    <details style="margin-top:1rem">
+      <summary>Nie masz klucza? Zrób go tutaj</summary>
+      <p class="male">Klucz powstaje w tej przeglądarce i nigdzie nie jest wysyłany. Zapisz go u siebie (menedżer haseł). Do ustawienia <code>KLUCZE</code> w Cloudflare trafia tylko wiersz ze skrótem: z niego nie da się odtworzyć klucza. Agent może zrobić sobie klucz sam i podać właścicielowi tylko ten wiersz.</p>
+      <div class="rzad"><input id="imieKlucza" placeholder="imię, np. jozz albo opus-code" pattern="[a-z][a-z0-9_-]{0,39}"><button class="cichy" id="zrobKlucz" type="button">Zrób klucz</button></div>
+      <div id="nowyKlucz" hidden>
+        <p class="male" style="margin:.6rem 0 .2rem">Klucz (tylko dla Ciebie):</p><input id="kluczJawny" readonly>
+        <p class="male" style="margin:.6rem 0 .2rem">Wiersz do <code>KLUCZE</code> (cały JSON to obiekt z takimi wierszami, np. <code>{"jozz": "…", "opus-code": "…"}</code>):</p><input id="wierszKlucza" readonly>
+      </div>
+    </details>
     <div id="szybkie" class="rzad" hidden style="margin-top:.6rem">
       <button class="cichy" data-k="podglad-jozz-klucz-publiczny">Wejdź jako Jozz (podgląd)</button>
       <button class="cichy" data-k="podglad-agent-klucz-publiczny">Wejdź jako agent próbny</button>
@@ -220,6 +229,15 @@
   $('formKlucz').onsubmit = (e) => { e.preventDefault(); klucz = $('klucz').value.trim(); sch.set(KLUCZ, klucz); $('klucz').value = ''; wejdz(); };
   for (const b of $('szybkie').querySelectorAll('button')) b.onclick = () => { klucz = b.dataset.k; sch.set(KLUCZ, klucz); wejdz(); };
   $('wyloguj').onclick = wyloguj;
+  $('zrobKlucz').onclick = async () => {
+    const imie = $('imieKlucza').value.trim() || 'jozz';
+    if (!/^[a-z][a-z0-9_-]{0,39}$/.test(imie)) { komunikat('Imię: małe litery, cyfry, - i _, zaczyna się literą.'); return; }
+    const b = crypto.getRandomValues(new Uint8Array(24));
+    const k = btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(k)))].map((x) => x.toString(16).padStart(2, '0')).join('');
+    $('kluczJawny').value = k; $('wierszKlucza').value = JSON.stringify(imie) + ': ' + JSON.stringify(h); $('nowyKlucz').hidden = false;
+  };
+  for (const id of ['kluczJawny', 'wierszKlucza']) $(id).onfocus = () => $(id).select();
 
   // Wysyłka odporna na zerwane połączenie: op powstaje raz dla szkicu i zostaje przy ponowieniu, więc wiadomość
   // trafi do skrzynki dokładnie raz, choćby pierwsza próba doszła, a odpowiedź nie wróciła.
