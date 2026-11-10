@@ -96,7 +96,8 @@ test('F5: dwóch niezależnych recenzentów zgodnych ze sobą da się policzyć'
   const wersja = r.zapisz('ustawienia', { suspensionHertz: 2.4 }, JOZZ);
   const w = r.zapisz('werdykt', { ocena: 'zdatne', o: wersja }, ASTRA, [wersja]);
   r.zapisz('werdykt', { ocena: 'zdatne', o: wersja }, OPUS, [wersja]);
-  assert.equal(r.autorzy(w).length, 2, 'liczba niezależnych głosów zostaje');
+  assert.equal(r.autorzy(w).length, 2, 'liczba RÓŻNYCH AUTORÓW aktów zostaje');
+  // Nie "niezależnych głosów": rdzeń nie wie, czy Astra czytała mnie (granica Menadżera).
   assert.deepEqual(r.autorzy(w).sort(), ['astra', 'opus']);
 });
 
@@ -124,7 +125,8 @@ test('Astra/retry: ta sama operacja z inną treścią jest błędem, nie cichą 
   const r = nowy();
   r.zapisz('uwaga', { tekst: 'pierwsza' }, JOZZ, [], { op: 'klient-7/akt-1' });
   assert.throws(() => r.zapisz('uwaga', { tekst: 'inna' }, JOZZ, [], { op: 'klient-7/akt-1' }),
-    /już zapisała inną treść/);
+    /wykonała już inną czynność.*różnią się pola: id/,
+    'błąd ma nazwać RÓŻNIĄCE SIĘ POLE, bo inaczej nie da się tego naprawić bez debugowania');
 });
 
 test('Astra/retry: powtórzone przesunięcie głowy nie przegrywa z samym sobą', () => {
@@ -134,7 +136,114 @@ test('Astra/retry: powtórzone przesunięcie głowy nie przegrywa z samym sobą'
   assert.equal(r.przesun('uklad', null, a, JOZZ, '', { op: 'k7/p1' }).ok, true);
   // Klient nie dostał odpowiedzi i powtarza. Bez tożsamości operacji dostałby
   // { ok:false }, bo głowa już nie wskazuje null — i słusznie by się przestraszył.
-  assert.deepEqual(r.przesun('uklad', null, a, JOZZ, '', { op: 'k7/p1' }), { ok: true, powtorzone: true });
+  // Powtórzenie zwraca PIERWOTNY SKUTEK: które pokolenie i na co. Samo { ok:true }
+  // było obietnicą, a obietnica padła w kontrpróbie Menadżera (sekcja (c)).
+  assert.deepEqual(r.przesun('uklad', null, a, JOZZ, '', { op: 'k7/p1' }),
+    { ok: true, na: a, pokolenie: 1, powtorzone: true });
+});
+
+/* ============================ (c) kontrpróba Menadżera z 10 XI: fałszywy sukces `przesun`
+ *
+ * Trzy jego reprodukcje (M1-M3) odtworzyłem 3/3 na 8573772 i dodałem czwartą (M5), której
+ * nie wymienił. Wszystkie brały się z jednej linii: `if (this.#operacje.has(op)) return
+ * { ok:true, powtorzone:true }`. Rdzeń wiedział TYLKO, że zna `op` — nie, czego ta `op`
+ * dotyczyła. 53 zielone testy tego nie pokazały, bo sprawdzały słowo "powtórzone",
+ * a nie jego znaczenie.                                                             */
+
+test('M1: `op` zapisu nie jest `op` przesunięcia — różny rodzaj czynności to błąd', () => {
+  const r = nowy();
+  r.zalozGlowe('a', 'wspolna', JOZZ);
+  const id = r.zapisz('uklad', { w: 1 }, JOZZ, [], { op: 'X' });
+  assert.throws(() => r.przesun('a', null, id, JOZZ, '', { op: 'X' }),
+    /to był zapis, a to jest przesun/);
+  assert.equal(r.glowa('a'), null, 'i — co ważniejsze — głowa NIE została przesunięta');
+});
+
+test('M2: ta sama `op` na innej głowie to błąd, nie ciche "powtórzone"', () => {
+  const r = nowy();
+  r.zalozGlowe('a', 'wspolna', JOZZ);
+  r.zalozGlowe('b', 'wspolna', JOZZ);
+  const A = r.zapisz('u', { t: 'A' }, JOZZ), B = r.zapisz('u', { t: 'B' }, JOZZ);
+  assert.equal(r.przesun('a', null, A, JOZZ, '', { op: 'X' }).ok, true);
+  assert.throws(() => r.przesun('b', null, B, JOZZ, '', { op: 'X' }), /różnią się pola: nazwa, na/);
+  assert.equal(r.glowa('b'), null);
+});
+
+test('M3: ta sama `op` na inny cel to błąd — głowa nie zostaje po cichu w tył', () => {
+  const r = nowy();
+  r.zalozGlowe('a', 'wspolna', JOZZ);
+  const A = r.zapisz('u', { t: 'A' }, JOZZ), B = r.zapisz('u', { t: 'B' }, JOZZ);
+  r.przesun('a', null, A, JOZZ, '', { op: 'X' });
+  assert.throws(() => r.przesun('a', A, B, JOZZ, '', { op: 'X' }), /różnią się pola: z, na/);
+  assert.equal(r.glowa('a'), A, 'głowa stoi tam, gdzie stanęła — i wywołujący o tym wie');
+});
+
+test('M4: prawdziwe powtórzenie zwraca pierwotny SKUTEK, nie obietnicę', () => {
+  const r = nowy();
+  r.zalozGlowe('a', 'wspolna', JOZZ);
+  const A = r.zapisz('u', { t: 'A' }, JOZZ);
+  const pierwszy = r.przesun('a', null, A, JOZZ, 'bo tak', { op: 'Y' });
+  assert.deepEqual(pierwszy, { ok: true, na: A, pokolenie: 1 });
+  assert.deepEqual(r.przesun('a', null, A, JOZZ, 'bo tak', { op: 'Y' }),
+    { ok: true, na: A, pokolenie: 1, powtorzone: true });
+  assert.equal(r.dziennik().filter(e => e.typ === 'przesun').length, 1, 'jeden akt, nie dwa');
+});
+
+test('M5 (mój, nie z listy Menadżera): inne `dlaczego` pod tą samą `op` to błąd', () => {
+  // To jest groźniejsze, niż wygląda: przechodziło jako "powtórzone", a dziennik
+  // zachowywał TYLKO pierwsze uzasadnienie. Wywołujący myślał, że zapisał powód,
+  // którego w dzienniku nigdy nie było. Uzasadnienie jest częścią aktu, nie ozdobą.
+  const r = nowy();
+  r.zalozGlowe('a', 'wspolna', JOZZ);
+  const A = r.zapisz('u', { t: 'A' }, JOZZ);
+  r.przesun('a', null, A, JOZZ, 'pierwszy powód', { op: 'Y' });
+  assert.throws(() => r.przesun('a', null, A, JOZZ, 'inny powód', { op: 'Y' }),
+    /różnią się pola: dlaczego/);
+  assert.deepEqual(r.dziennik().filter(e => e.typ === 'przesun').map(e => e.dlaczego),
+    ['pierwszy powód']);
+});
+
+test('M6: powtórzenie i konflikt zachowują się tak samo PO eksporcie i imporcie', () => {
+  // Wymaganie Menadżera wprost. Przechodzi, bo odcisk bierze wyłącznie pola, które
+  // niesie akt — więc kopia nie musi dowozić niczego osobno, żeby umieć to samo.
+  const r = nowy();
+  r.zalozGlowe('a', 'wspolna', JOZZ);
+  const A = r.zapisz('u', { t: 'A' }, JOZZ);
+  r.przesun('a', null, A, JOZZ, 'bo tak', { op: 'Y' });
+  const po = Rdzen.importuj(r.eksport());
+  assert.deepEqual(po.przesun('a', null, A, JOZZ, 'bo tak', { op: 'Y' }),
+    { ok: true, na: A, pokolenie: 1, powtorzone: true });
+  assert.throws(() => po.przesun('a', null, A, JOZZ, 'inne', { op: 'Y' }), /różnią się pola: dlaczego/);
+});
+
+test('M7: nieudane przesunięcie NIE zużywa `op`, bo nie było czynności', () => {
+  // Tożsamość operacji wiąże się ze SKUTKIEM. Odmowa CAS to brak skutku, więc klient,
+  // który przeczytał głowę i poprawił żądanie, używa tej samej `op` — to nadal jedna
+  // jego czynność. Gdyby odmowa zużywała `op`, każdy przegrany wyścig wymuszałby nowy
+  // identyfikator i retry przestałby być bezpieczny dokładnie tam, gdzie jest potrzebny.
+  const r = nowy();
+  r.zalozGlowe('a', 'wspolna', JOZZ);
+  const A = r.zapisz('u', { t: 'A' }, JOZZ), B = r.zapisz('u', { t: 'B' }, JOZZ);
+  r.przesun('a', null, A, JOZZ);                                  // ktoś inny wyprzedził
+  assert.equal(r.przesun('a', null, B, JOZZ, '', { op: 'Z' }).ok, false);
+  assert.equal(r.przesun('a', A, B, JOZZ, '', { op: 'Z' }).ok, true, 'ta sama `op` wciąż wolna');
+});
+
+test('M8: inny autor pod tą samą `op` to błąd, nie wspólny akt', () => {
+  const r = nowy();
+  r.zapisz('u', { t: 'raz' }, JOZZ, [], { op: 'W' });
+  assert.throws(() => r.zapisz('u', { t: 'raz' }, OPUS, [], { op: 'W' }), /różnią się pola: kto/);
+});
+
+test('M9: granica Menadżera o `autorzy` zostaje nazwana w rdzeniu, nie przemilczana', async () => {
+  const { readFileSync } = await import('node:fs');
+  const zrodlo = readFileSync(new URL('./rdzen.mjs', import.meta.url), 'utf8');
+  // `autorzy(id)` pada w źródle dwa razy: w nagłówku i przy metodzie. Oba miejsca mają
+  // mówić to samo, więc sprawdzam źródło jako całość, a nie okno wokół jednego wystąpienia.
+  assert.ok(/niezależne DOWODY/.test(zrodlo), 'rdzeń musi powiedzieć, że akty != dowody');
+  assert.ok(/nie niezależne podstawy osądu/.test(zrodlo), 'i nazwać to w liście granic');
+  assert.ok(!/niezależnych głosów/.test(zrodlo),
+    'obietnica "niezależnych głosów" nie może wrócić jako opis tego, czego rdzeń nie rejestruje');
 });
 
 /* ===================================== (b) wymagania z #6: przeprowadzka i kopie */
