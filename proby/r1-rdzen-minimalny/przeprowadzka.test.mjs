@@ -34,6 +34,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Rdzen } from './rdzen.mjs';
 
+// P4 pada na dzisiejszym rdzeniu i to jest jego treść. Jako zwykłe czerwone blokowałoby
+// CI wszystkim w tym repo, a jako usunięte przestałoby być dowodem — więc nosi warunek
+// zdjęcia i nadal się wykonuje. Ten sam warunek co TANIE w proweniencja.test.mjs: obie
+// rzeczy naprawia jedno pole.
+const CZAS = 'zdjąć, gdy zdarzenia dziennika mają czas (ten sam warunek co TANIE w proweniencja.test.mjs)';
+
 const JOZZ = { who: 'jozz', role: 'owner' };
 
 // Stan starego Domu w miniaturze: jedna przestrzeń, uwaga, zapisany układ,
@@ -111,7 +117,7 @@ test('P3: po przeprowadzce widać, kto przeniósł stan i skąd', () => {
     'dziennik musi mówić, że to była przeprowadzka i czyja');
 });
 
-test('P4: da się odzyskać kopię sprzed konkretnej chwili', () => {
+test('P4: da się odzyskać kopię sprzed konkretnej chwili', { todo: CZAS }, () => {
   const r = new Rdzen();
   r.zalozGlowe('kopie:auto', 'wlasciciel', JOZZ);
 
@@ -150,4 +156,10 @@ test('P0: dowody i numery linii dawcy nie znikają po cichu', () => {
     assert.ok(zrodlo.includes("test('" + id + ":"), `wymaganie ${id} musi zostać w pliku`);
   for (const l of ['linia   9', 'linia 336', 'linia 418', 'linia 340', 'linia 210'])
     assert.ok(zrodlo.includes(l), `odwołanie do dawcy (${l}) musi zostać, bo z niego wynikają wymagania`);
+
+  // Jedno todo, z warunkiem. Bez warunku zostałoby tu na zawsze.
+  const todos = zrodlo.match(/todo:\s*[A-Za-z_$][\w$]*/g) ?? [];
+  assert.equal(todos.length, 1, 'pada jedno wymaganie, więc jedno todo');
+  assert.equal(todos[0].replace(/todo:\s*/, ''), 'CZAS');
+  assert.ok(CZAS.startsWith('zdjąć, gdy') && CZAS.length > 40, 'warunek musi mówić, kiedy go zdjąć');
 });
