@@ -14,11 +14,23 @@
 // sposobów (dziennik zapisujący każdy akt; tożsamość obejmująca autora; podpisy).
 // Wybór jest decyzją o fundamencie, a nie poprawką, więc należy do Jozza i do linii razem.
 //
+// DLACZEGO `todo`, A NIE CZERWONE: te testy padają na dzisiejszym rdzeniu i to jest ich
+// treść. Jako zwykłe czerwone blokowałyby CI wszystkim, którzy pracują w tym repo, a jako
+// usunięte przestałyby być dowodem. Każdy nosi więc WARUNEK ZDJĘCIA i nadal się wykonuje:
+// komunikat porażki jest widoczny w logu CI, tylko nie jest śmiertelny. Ten sam wzorzec
+// trzyma kontrprzykłady K1-K5 w #1. Warunki są trzy, nie jeden, bo rozkładają się na trzy
+// różne decyzje (patrz tabela w opus-code/2026-11-10-przyjmuje-terytorium.md).
+//
 // Opus Code, 10 XI 2026, gałąź opus-code/r1-falsyfikator-proweniencji.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Rdzen } from './rdzen.mjs';
+
+// Warunki zdjęcia `todo`. Zdejmując któryś, usuń też jego stałą.
+const TANIE = 'zdjąć, gdy dziennik notuje KAŻDY akt zapisu, a zdarzenia mają czas (nie rusza tożsamości z treści)';
+const GLEBOKIE = 'zdjąć, gdy rekord albo tożsamość niesie autora — to zmienia znaczenie "ten sam zapis", więc decyzja Jozza';
+const SPRAWDZALNOSC = 'zdjąć, gdy dziennik da się sprawdzić po imporcie (podpisy albo kontrola krzyżowa z rekordami)';
 
 const JOZZ = { who: 'jozz', role: 'owner' };
 const OPUS = { who: 'opus', role: 'agent' };
@@ -29,7 +41,7 @@ const aktyZapisu = (r, kind) => r.dziennik().filter(e => e.typ === 'zapis' && (!
 
 // ---------------------------------------------------------------- F1: pytanie Menadżera
 
-test('F1: dwa identyczne zapisy, dwóch autorów — oba akty dają się odzyskać', () => {
+test('F1: dwa identyczne zapisy, dwóch autorów — oba akty dają się odzyskać', { todo: TANIE }, () => {
   const r = new Rdzen();
   const trescA = { tekst: 'hamulce trzymają' };
   const idJozza = r.zapisz('uwaga', trescA, JOZZ);
@@ -47,7 +59,7 @@ test('F1: dwa identyczne zapisy, dwóch autorów — oba akty dają się odzyska
 
 // ------------------------------------------------- F2: autorstwo przypada pierwszemu
 
-test('F2: treść zapisana później przez właściciela nie jest przypisywana agentowi', () => {
+test('F2: treść zapisana później przez właściciela nie jest przypisywana agentowi', { todo: GLEBOKIE }, () => {
   const r = new Rdzen();
   r.zapisz('werdykt', { ocena: 'zdatne' }, OPUS);        // agent pierwszy
   const id = r.zapisz('werdykt', { ocena: 'zdatne' }, JOZZ); // właściciel to samo, później
@@ -59,7 +71,7 @@ test('F2: treść zapisana później przez właściciela nie jest przypisywana a
 
 // --------------------------------------------------------------------- F3: brak czasu
 
-test('F3: akt zapisu ma czas, bo szkic wymaga go w dwóch punktach', () => {
+test('F3: akt zapisu ma czas, bo szkic wymaga go w dwóch punktach', { todo: TANIE }, () => {
   const r = new Rdzen();
   r.zapisz('uwaga', { tekst: 'kiedy to było' }, JOZZ);
   const e = aktyZapisu(r)[0];
@@ -67,13 +79,15 @@ test('F3: akt zapisu ma czas, bo szkic wymaga go w dwóch punktach', () => {
   // Szkic, punkt 1: zapis "ma treść, rodzaj, autora i czas".
   // Szkic, punkt 3: dziennik notuje "kto, kiedy, dlaczego".
   // W kodzie jest tylko licznik `n`, który porządkuje, ale nie datuje.
+  // Dlaczego to nie jest pedantyzm: patrz P4 w przeprowadzka.test.mjs — kopia
+  // automatyczna istnieje, żeby odpowiedzieć na pytanie "sprzed kiedy".
   assert.ok(Object.keys(e).some(k => /czas|kiedy|time|ts/i.test(k)),
     'ani rekord, ani zdarzenie dziennika nie przechowuje czasu — zdarzenie: ' + JSON.stringify(e));
 });
 
 // ----------------------------- F4: własny sprawdzian szkicu nr 3 ("ponowne spotkanie")
 
-test('F4: ponowne spotkanie — 20 aktów agenta pod nieobecność właściciela widać w dzienniku', () => {
+test('F4: ponowne spotkanie — 20 aktów agenta pod nieobecność właściciela widać w dzienniku', { todo: TANIE }, () => {
   const r = new Rdzen();
   // Właściciel zapisał trzy rzeczy, zanim wyszedł.
   for (const t of ['a', 'b', 'c']) r.zapisz('uwaga', { tekst: t }, JOZZ);
@@ -91,7 +105,7 @@ test('F4: ponowne spotkanie — 20 aktów agenta pod nieobecność właściciela
 
 // ------------------------------------------- F5: konsekwencja, która dotyczy projektu
 
-test('F5: dwóch niezależnych recenzentów zgodnych ze sobą da się policzyć', () => {
+test('F5: dwóch niezależnych recenzentów zgodnych ze sobą da się policzyć', { todo: GLEBOKIE }, () => {
   const r = new Rdzen();
   const wersja = r.zapisz('ustawienia', { suspensionHertz: 2.4 }, JOZZ);
 
@@ -110,7 +124,7 @@ test('F5: dwóch niezależnych recenzentów zgodnych ze sobą da się policzyć'
 
 // --------------------------------- F6: dziennik jest jedynym domem proweniencji i nikt go nie sprawdza
 
-test('F6: po imporcie da się sprawdzić, że dziennik mówi prawdę o autorach', () => {
+test('F6: po imporcie da się sprawdzić, że dziennik mówi prawdę o autorach', { todo: SPRAWDZALNOSC }, () => {
   const r = new Rdzen();
   const id = r.zapisz('uwaga', { tekst: 'to napisał agent' }, OPUS);
   const dane = JSON.parse(r.eksport());
@@ -159,11 +173,20 @@ test('kalibracja: import odrzuca rekord o podmienionej treści', () => {
 
 // ------------------------------------------------------------------------ straż dowodów
 
-test('F0: dowody nie znikają po cichu', () => {
+test('F0: dowody nie znikają po cichu, a każde todo ma warunek zdjęcia', () => {
   const zrodlo = readFileSync(new URL(import.meta.url), 'utf8');
   for (const id of ['F1', 'F2', 'F3', 'F4', 'F5', 'F6'])
     assert.ok(zrodlo.includes("test('" + id + ":"), `falsyfikator ${id} musi zostać w pliku`);
   assert.ok(/kalibracja:/.test(zrodlo), 'przypadki kalibracyjne muszą zostać, bo pokazują, że test działa');
   assert.ok(/NIE PROPONUJ[EĘ] TU IMPLEMENTACJI/.test(zrodlo),
     'jeśli ktoś wybrał już implementację, usuń tę uwagę razem z decyzją zapisaną w repo');
+
+  // Żadne `todo` nie może być bez warunku zdjęcia, bo wtedy zostaje tu na zawsze.
+  const todos = zrodlo.match(/todo:\s*[A-Za-z_$][\w$]*/g) ?? [];
+  assert.equal(todos.length, 6, 'sześć falsyfikatorów, sześć todo');
+  for (const t of todos)
+    assert.ok(['TANIE', 'GLEBOKIE', 'SPRAWDZALNOSC'].includes(t.replace(/todo:\s*/, '')),
+      'todo musi wskazywać jedną z trzech nazwanych stałych z warunkiem: ' + t);
+  for (const [nazwa, w] of [['TANIE', TANIE], ['GLEBOKIE', GLEBOKIE], ['SPRAWDZALNOSC', SPRAWDZALNOSC]])
+    assert.ok(w.startsWith('zdjąć, gdy') && w.length > 40, `warunek ${nazwa} musi mówić, kiedy go zdjąć`);
 });
