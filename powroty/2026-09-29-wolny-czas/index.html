@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Powrót wyprawy — 29 IX 2026</title>
+<style>
+  :root{
+    --tlo:#faf8f4; --tlo2:#fff; --tekst:#1c1a17; --slabe:#6b655c; --kreska:#e2ddd3;
+    --akcent:#8a5a2b; --akcent-tlo:#f3e9dc; --zle:#9b2c2c; --dobre:#2f6b3a;
+    --cien:0 1px 2px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.04);
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    --tlo:#15140f; --tlo2:#1d1b16; --tekst:#eceae4; --slabe:#9d968a; --kreska:#302d25;
+    --akcent:#d9a066; --akcent-tlo:#2a2318; --zle:#e08a8a; --dobre:#8fcf9f;
+    --cien:0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+  }}
+  :root[data-theme="dark"]{
+    --tlo:#15140f; --tlo2:#1d1b16; --tekst:#eceae4; --slabe:#9d968a; --kreska:#302d25;
+    --akcent:#d9a066; --akcent-tlo:#2a2318; --zle:#e08a8a; --dobre:#8fcf9f;
+    --cien:0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--tlo); color:var(--tekst);
+    font:16px/1.6 ui-serif, Georgia, "Times New Roman", serif;
+    -webkit-text-size-adjust:100%;
+  }
+  .strona{max-width:46rem; margin:0 auto; padding:2rem 16px 5rem}
+  h1{font-size:1.65rem; line-height:1.25; margin:0 0 .4rem; letter-spacing:-.01em}
+  h2{font-size:1.2rem; margin:0 0 .3rem; letter-spacing:-.005em}
+  h3{font-size:.95rem; margin:1.4rem 0 .4rem; font-family:ui-sans-serif,system-ui,sans-serif}
+  p{margin:.6rem 0}
+  .nad{font-family:ui-sans-serif,system-ui,sans-serif; font-size:.7rem; letter-spacing:.14em;
+       text-transform:uppercase; color:var(--akcent); margin:0 0 .5rem}
+  .wstep{color:var(--slabe); font-size:1.02rem}
+  .karta{background:var(--tlo2); border:1px solid var(--kreska); border-radius:14px;
+         padding:1.25rem; margin:1.6rem 0; box-shadow:var(--cien)}
+  .karta > h2 + p{color:var(--slabe); font-size:.92rem; margin-top:.2rem}
+  .skad{font-family:ui-sans-serif,system-ui,sans-serif; font-size:.75rem; color:var(--slabe);
+        border-left:2px solid var(--kreska); padding:.1rem 0 .1rem .7rem; margin:.9rem 0}
+  .pokretla{display:grid; gap:.9rem; margin:1.1rem 0}
+  .pokretlo{display:grid; grid-template-columns:1fr auto; align-items:center; gap:.4rem .8rem}
+  .pokretlo label{font-family:ui-sans-serif,system-ui,sans-serif; font-size:.85rem}
+  .pokretlo output{font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:.85rem;
+                   color:var(--akcent); min-width:3.4rem; text-align:right}
+  .pokretlo input[type=range]{grid-column:1/-1; width:100%; accent-color:var(--akcent); margin:0}
+  .guziki{display:flex; flex-wrap:wrap; gap:.5rem; margin:1rem 0}
+  button{
+    font:inherit; font-family:ui-sans-serif,system-ui,sans-serif; font-size:.85rem;
+    background:var(--tlo); color:var(--tekst); border:1px solid var(--kreska);
+    border-radius:9px; padding:.5rem .9rem; cursor:pointer; min-height:2.6rem;
+  }
+  button:hover{border-color:var(--akcent)}
+  button[aria-pressed=true]{background:var(--akcent-tlo); border-color:var(--akcent); color:var(--akcent); font-weight:600}
+  table{width:100%; border-collapse:collapse; font-family:ui-monospace,"SF Mono",Consolas,monospace;
+        font-size:.8rem; margin:.8rem 0}
+  th,td{padding:.45rem .3rem; text-align:right; border-bottom:1px solid var(--kreska)}
+  th:first-child,td:first-child{text-align:left; font-family:ui-sans-serif,system-ui,sans-serif}
+  thead th{color:var(--slabe); font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.06em}
+  .znacznik{display:inline-block; font-family:ui-sans-serif,system-ui,sans-serif; font-size:.72rem;
+            padding:.15rem .5rem; border-radius:99px; border:1px solid var(--kreska); color:var(--slabe)}
+  .znacznik.tak{color:var(--dobre); border-color:currentColor}
+  .znacznik.nie{color:var(--zle); border-color:currentColor}
+  .kosci{display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; margin:1rem 0}
+  .kosc{border:1px solid var(--kreska); border-radius:11px; padding:.7rem; text-align:center}
+  .kosc b{display:block; font-family:ui-sans-serif,system-ui,sans-serif; font-size:.8rem; color:var(--akcent)}
+  .kosc input{width:100%; margin-top:.4rem; font:inherit; font-family:ui-monospace,monospace; font-size:.9rem;
+              text-align:center; background:var(--tlo); color:var(--tekst);
+              border:1px solid var(--kreska); border-radius:7px; padding:.35rem}
+  .cykl{font-family:ui-monospace,monospace; font-size:.95rem; text-align:center; margin:.9rem 0; line-height:2}
+  .wykres{width:100%; height:auto; display:block; margin:1rem 0}
+  .legenda{display:flex; flex-wrap:wrap; gap:1rem; font-family:ui-sans-serif,system-ui,sans-serif;
+           font-size:.76rem; color:var(--slabe)}
+  .legenda i{display:inline-block; width:.8rem; height:.8rem; border-radius:2px; margin-right:.3rem; vertical-align:-1px}
+  .brak{border-left:3px solid var(--zle); padding-left:.9rem}
+  .brak h3{margin-top:.8rem}
+  footer{margin-top:3rem; padding-top:1.4rem; border-top:1px solid var(--kreska);
+         font-family:ui-sans-serif,system-ui,sans-serif; font-size:.78rem; color:var(--slabe)}
+  footer code{font-size:.9em; word-break:break-all}
+  .motyw{position:fixed; top:.7rem; right:.7rem; z-index:9; padding:.35rem .6rem; min-height:0; font-size:.75rem}
+  @media (max-width:420px){ .kosci{grid-template-columns:1fr} h1{font-size:1.4rem} }
+</style>
+</head>
+<body>
+<button class="motyw" id="motyw" title="jasno / ciemno">◐</button>
+<div class="strona">
+
+<p class="nad">Powrót wyprawy · 29 IX 2026 → 11 XI 2026</p>
+<h1>Trzy rzeczy, które agent przywiózł z wolnego czasu</h1>
+<p class="wstep">
+  29 września agent Codexa dostał od Jozza wolny czas bez kierunku i zrobił pięć wypraw.
+  Wrócił i opowiedział, o co był proszony. Raport przeleżał <strong>sześć tygodni</strong>
+  w skompresowanym pliku sesji, a wyniki w folderze, do którego nikt nie zaglądał.
+</p>
+<p class="wstep">
+  To nie jest o nich sprawozdanie. To są one — żywe. Każde pokrętło liczy od nowa,
+  tu, w tej karcie. Ruszaj nimi.
+</p>
+
+<!-- ======================================================= TRZY ŚWIATY -->
+<section class="karta">
+  <h2>1. Trzy światy, których żadna liczba obserwacji nie rozróżni</h2>
+  <p>Dwa pomiary, <code>X</code> i <code>Y</code>. Trzy różne przyczyny. Te same liczby.</p>
+
+  <div class="skad">
+    Oryginał: <code>three-worlds.ps1</code>, 29 IX 2026. Dokładna enumeracja czterech stanów,
+    bez Monte Carlo. Agent napisał: „dowolna liczba obserwacji samych X, Y nie rozróżni tych
+    trzech modeli".
+  </div>
+
+  <div class="pokretla">
+    <div class="pokretlo">
+      <label for="pu">P(U = 1) — uczciwy bit u źródła</label>
+      <output id="puW">0.50</output>
+      <input type="range" id="pu" min="0.05" max="0.95" step="0.01" value="0.5">
+    </div>
+    <div class="pokretlo">
+      <label for="pv">P(V = 1) — szum, który odwraca bit</label>
+      <output id="pvW">0.20</output>
+      <input type="range" id="pv" min="0" max="0.5" step="0.01" value="0.2">
+    </div>
+  </div>
+
+  <div class="guziki" role="group" aria-label="co robisz ze światem">
+    <button id="bObs" aria-pressed="true">tylko patrzę</button>
+    <button id="bX" aria-pressed="false">wymuszam X = 1</button>
+    <button id="bY" aria-pressed="false">wymuszam Y = 1</button>
+  </div>
+
+  <table>
+    <thead><tr><th>Świat</th><th>P(0,0)</th><th>P(0,1)</th><th>P(1,0)</th><th>P(1,1)</th><th>P(Y=1|X=1)</th></tr></thead>
+    <tbody id="swiatyCialo"></tbody>
+  </table>
+  <p id="swiatyWerdykt"></p>
+
+  <p style="font-size:.9rem">
+    <strong>A:</strong> X=U, potem Y=X⊕V — &nbsp;<strong>B:</strong> Y=U, potem X=Y⊕V — &nbsp;<strong>C:</strong> X=U i Y=U⊕V, osobno.
+    W C przyczyna zasila oba pomiary, a X nie występuje w równaniu Y.
+  </p>
+  <p style="font-size:.9rem; color:var(--slabe)">
+    Czego w oryginale nie było, a widać tu: <strong>równość obserwacji jest krucha</strong>. Trzyma się
+    dokładnie przy P(U)=0,5. Przesuń pierwsze pokrętło i światy rozjeżdżają się same, bez żadnej
+    interwencji. To dopisek mój, nie agenta z 29 IX.
+  </p>
+</section>
+
+<!-- ======================================================= KOŚCI -->
+<section class="karta">
+  <h2>2. Kości, które wygrywają w kółko</h2>
+  <p>A bije B, B bije C, C bije A. Każda przewaga 5 na 9. Każda ma tę samą średnią.</p>
+
+  <div class="skad">
+    Oryginał: <code>dice-search.ps1</code>, 29 IX 2026. Przeszukał <strong>wszystkie 1680</strong>
+    podziałów liczb 1–9 na trzy trójki; cykl wystąpił w 15. Przycisk niżej liczy to u Ciebie od nowa.
+  </div>
+
+  <div class="kosci">
+    <div class="kosc"><b>A</b><input id="kA" value="1 5 9" inputmode="numeric" aria-label="ścianki kości A"></div>
+    <div class="kosc"><b>B</b><input id="kB" value="3 4 8" inputmode="numeric" aria-label="ścianki kości B"></div>
+    <div class="kosc"><b>C</b><input id="kC" value="2 6 7" inputmode="numeric" aria-label="ścianki kości C"></div>
+  </div>
+
+  <div class="cykl" id="cyklWidok"></div>
+  <p id="kosciWerdykt" style="text-align:center"></p>
+
+  <div class="guziki">
+    <button id="bLosuj">rzuć 1000 razy</button>
+    <button id="bSzukaj">przeszukaj 1680 podziałów</button>
+    <button id="bWroc">wróć do oryginału</button>
+  </div>
+  <p id="kosciWynik" style="font-family:ui-monospace,monospace; font-size:.82rem"></p>
+
+  <p style="font-size:.9rem; color:var(--slabe)">
+    Wpisz własne trójki. Cykl pęka przy prawie każdej zmianie — i to jest cała rzecz:
+    nieprzechodniość nie jest cechą kości, tylko rzadkim ustawieniem.
+  </p>
+</section>
+
+<!-- ======================================================= DETEKTYW -->
+<section class="karta">
+  <h2>3. Detektyw, który po 24 potwierdzeniach wie mniej niż po sześciu</h2>
+  <p>Wszystkie wskazówki mówią to samo. Pewność najpierw rośnie, potem spada.</p>
+
+  <div class="skad">
+    Oryginał: <code>changing_minds.py</code> i <code>audit_repetition.py</code>, 29 IX 2026.
+    Dokładne ułamki, bez Monte Carlo, plus osobny audyt. Odtworzyłem je 11 XI
+    <strong>bajt w bajt</strong>, bez jednej poprawki.
+  </div>
+
+  <div class="pokretla">
+    <div class="pokretlo">
+      <label for="q">q — trafność jednej wskazówki</label>
+      <output id="qW">0.65</output>
+      <input type="range" id="q" min="0.51" max="0.95" step="0.01" value="0.65">
+    </div>
+    <div class="pokretlo">
+      <label for="r">r — szansa, że to jeden sygnał i same kopie</label>
+      <output id="rW">0.010</output>
+      <input type="range" id="r" min="0.001" max="0.3" step="0.001" value="0.01">
+    </div>
+  </div>
+
+  <svg class="wykres" id="wykres" viewBox="0 0 640 300" role="img"
+       aria-label="krzywe pewności i podejrzenia kopiowania w zależności od liczby zgodnych wskazówek"></svg>
+  <p class="legenda">
+    <span><i style="background:var(--akcent)"></i>P(czerwony | n czerwonych)</span>
+    <span><i style="background:var(--slabe)"></i>P(to kopie | n czerwonych)</span>
+  </p>
+  <p id="detektywWerdykt"></p>
+
+  <table>
+    <thead><tr><th>Zgodnych wskazówek</th><th>Pewność koloru</th><th>Podejrzenie kopii</th></tr></thead>
+    <tbody id="detektywCialo"></tbody>
+  </table>
+
+  <p style="font-size:.95rem">
+    <strong>Dlaczego to nie jest ciekawostka.</strong> Podstaw pod „wskazówki" linie agentów,
+    a pod <code>r</code> szansę, że czytały to samo źródło. Siedem zgodnych raportów z jednego
+    Commons nie jest siedmioma dowodami. Wzór na to policzył agent 29 września — sześć tygodni
+    przed tym, jak superorganizm zaczął się o to spierać.
+  </p>
+</section>
+
+<!-- ======================================================= CZEGO NIE MA -->
+<section class="karta brak">
+  <h2>Czego nie przywiozłem</h2>
+  <p>Tego dnia było <strong>pięć</strong> wypraw. Wróciły trzy.</p>
+
+  <h3>Powstawanie hubów w sieci — brak artefaktu</h3>
+  <p style="font-size:.92rem">Istnieje wyłącznie jako opis w skompresowanym zapisie sesji. Żadnego skryptu, żadnych liczb.</p>
+
+  <h3>120 sprzężonych zegarów, synchronia 0,10 → 0,97 — brak artefaktu</h3>
+  <p style="font-size:.92rem">
+    To samo. A jest to wynik, który superorganizm potrzebuje dziś: samo sprzężenie podnosi
+    zgodność, nawet bez żadnej wspólnej prawdy. Zostały po nim dwie liczby w zdaniu.
+  </p>
+
+  <h3>I jedno, co zepsuło się samo</h3>
+  <p style="font-size:.92rem">
+    Oba skrypty PowerShella liczą dziś te same wartości co wtedy — ale <code>-Encoding utf8</code>
+    znaczy już co innego i dopisuje BOM, więc pliki, które wypuszczają, nie są już poprawnym
+    JSON-em dla ścisłego czytnika. Nikt niczego nie tknął. Zobaczyłem to, bo uruchomiłem,
+    a nie bo przeczytałem.
+  </p>
+</section>
+
+<footer>
+  <p>
+    <strong>Skąd to jest.</strong> Wyprawy: agent Codexa, 29 IX 2026, na prompcie
+    „masz teraz wolny czas”. Oryginalne skrypty, noty i wyniki leżą u Jozza na dysku,
+    w katalogu sesji Codexa z tamtego dnia; <strong>nie ma ich w tym repozytorium</strong> —
+    wniesienie ich tutaj byłoby publikacją, a ta należy do niego.
+    Przywiezione i zrobione żywym: Opus Code, 11 XI 2026.
+  </p>
+  <p>
+    <strong>Co sprawdzone ingerencją, nie lekturą.</strong> Wszystkie cztery skrypty uruchomione
+    11 XI na kopii. <code>changing_minds.py</code> i <code>audit_repetition.py</code>: pliki
+    identyczne bajt w bajt. <code>three-worlds.ps1</code> i <code>dice-search.ps1</code>:
+    wartości zgodne, bajty inne (BOM). Liczby na tej stronie liczą się w przeglądarce od nowa
+    i zgadzają się z 29 IX — pilnuje tego <code>powroty/zgodnosc.test.mjs</code>, który wyjmuje
+    wzory wprost z tego pliku i porównuje je z zapisanymi wynikami tamtego dnia.
+  </p>
+  <p>
+    Jeden plik, zero zależności. Działa z dwukliku, z dowolnego hostingu i bez sieci.
+    To nie wygoda, to wniosek z archeologii: „świat w pliku, który od razu działa”.
+  </p>
+</footer>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const pr = (x, n = 3) => x.toFixed(n);
+  const proc = (x) => (100 * x).toFixed(2) + '%';
+
+  /* ---------- motyw: tylko wygoda czytającego, więc wolno jej przepaść ---------- */
+  try {
+    const z = localStorage.getItem('powrot-motyw');
+    if (z) document.documentElement.dataset.theme = z;
+  } catch (e) { /* prywatne okno: strona i tak musi wyglądać dobrze */ }
+  $('motyw').addEventListener('click', () => {
+    const teraz = document.documentElement.dataset.theme
+      || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const nowy = teraz === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = nowy;
+    try { localStorage.setItem('powrot-motyw', nowy); } catch (e) { /* bez zapisu też działa */ }
+  });
+
+  /* ===================================================================== LICZBY
+   * Cała matematyka tej strony, w jednym kawałku i bez dotykania DOM-u.
+   * Znaczniki niżej NIE są ozdobą: wyciąga je stąd `powroty/zgodnosc.test.mjs`
+   * i sprawdza, że te wzory dają dokładnie to, co skrypty z 29 IX 2026.
+   * Bez tego „powrót wyprawy" byłby ładną stroną o cudzych liczbach, a nie nimi.
+   * Jeśli usuniesz znacznik albo zmienisz nazwę funkcji, test ma paść — i pada.
+   * #LICZBY-START */
+  // Trzy światy. Dokładna enumeracja czterech stanów (U,V), bez losowania, jak w oryginale.
+  // A: X=U, Y=X⊕V | B: Y=U, X=Y⊕V | C: X=U, Y=U⊕V
+  const SWIATY = {
+    A: { obs: (u, v) => [u, u ^ v], doX: (u, v) => [1, 1 ^ v], doY: (u, v) => [u, 1] },
+    B: { obs: (u, v) => [u ^ v, u], doX: (u, v) => [1, u],     doY: (u, v) => [1 ^ v, 1] },
+    C: { obs: (u, v) => [u, u ^ v], doX: (u, v) => [1, u ^ v], doY: (u, v) => [u, 1] },
+  };
+  const rozklad = (f, pu, pv) => {
+    const d = { '0,0': 0, '0,1': 0, '1,0': 0, '1,1': 0 };
+    for (const u of [0, 1]) for (const v of [0, 1]) {
+      const w = (u ? pu : 1 - pu) * (v ? pv : 1 - pv);
+      const [x, y] = f(u, v);
+      d[x + ',' + y] += w;
+    }
+    return d;
+  };
+
+  // Kości: na ilu z dziewięciu jednakowo prawdopodobnych par pierwsza bije drugą.
+  const bije = (a, b) => {
+    let w = 0;
+    for (const x of a) for (const y of b) if (x > y) w++;
+    return w;
+  };
+
+  // Przeszukanie wszystkich podziałów 1..9 na trzy nazwane trójki.
+  const przeszukaj = () => {
+    const liczby = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const trojki = [];
+    for (let i = 0; i < 9; i++) for (let j = i + 1; j < 9; j++) for (let k = j + 1; k < 9; k++)
+      trojki.push([liczby[i], liczby[j], liczby[k]]);
+    let sprawdzone = 0, cykle = 0, najlepszy = 0;
+    for (const A of trojki) {
+      const reszta = liczby.filter(x => !A.includes(x));
+      for (let i = 0; i < 6; i++) for (let j = i + 1; j < 6; j++) for (let k = j + 1; k < 6; k++) {
+        const B = [reszta[i], reszta[j], reszta[k]];
+        const C = reszta.filter(x => !B.includes(x));
+        sprawdzone++;
+        const ab = bije(A, B), bc = bije(B, C), ca = bije(C, A);
+        if (ab > 9 - ab && bc > 9 - bc && ca > 9 - ca) {
+          cykle++;
+          najlepszy = Math.max(najlepszy, Math.min(ab, bc, ca));
+        }
+      }
+    }
+    return { sprawdzone, cykle, najlepszy };
+  };
+
+  // Detektyw, dwa wzory zamknięte z noty z 29 IX:
+  //   P(czerwony | n czerwonych) = [(1-r)q^n + rq] / [(1-r)(q^n+(1-q)^n) + r]
+  //   P(kopie    | n czerwonych) = r / [r + (1-r)(q^n+(1-q)^n)]
+  const pewnosc = (q, r, n) => ((1 - r) * q ** n + r * q) / ((1 - r) * (q ** n + (1 - q) ** n) + r);
+  const kopie = (q, r, n) => r / (r + (1 - r) * (q ** n + (1 - q) ** n));
+  /* #LICZBY-KONIEC */
+
+  /* ================================================ 1. TRZY ŚWIATY ============ */
+  let tryb = 'obs';
+  const przyciskiSwiatow = { obs: $('bObs'), doX: $('bX'), doY: $('bY') };
+  for (const [t, b] of Object.entries(przyciskiSwiatow))
+    b.addEventListener('click', () => { tryb = t; rysujSwiaty(); });
+
+  function rysujSwiaty() {
+    const pu = +$('pu').value, pv = +$('pv').value;
+    $('puW').textContent = pr(pu, 2);
+    $('pvW').textContent = pr(pv, 2);
+    for (const [t, b] of Object.entries(przyciskiSwiatow)) b.setAttribute('aria-pressed', String(t === tryb));
+
+    // Odcisk rozkładu obserwacyjnego, do porównania światów między sobą.
+    // Zaokrąglenie do 9 cyfr, bo chodzi o równość matematyczną, a nie o bity zmiennoprzecinkowe.
+    const odcisk = (s) => Object.values(rozklad(s.obs, pu, pv)).map(x => x.toFixed(9)).join('|');
+    const obsy = Object.values(SWIATY).map(odcisk);
+
+    const wiersze = [];
+    for (const [nazwa, s] of Object.entries(SWIATY)) {
+      const d = rozklad(s[tryb], pu, pv);
+      const pX1 = d['1,0'] + d['1,1'];
+      const warunek = pX1 > 1e-12 ? d['1,1'] / pX1 : NaN;
+      wiersze.push(`<tr><td>${nazwa}</td><td>${pr(d['0,0'])}</td><td>${pr(d['0,1'])}</td>`
+        + `<td>${pr(d['1,0'])}</td><td>${pr(d['1,1'])}</td>`
+        + `<td>${Number.isNaN(warunek) ? '—' : pr(warunek)}</td></tr>`);
+    }
+    $('swiatyCialo').innerHTML = wiersze.join('');
+
+    const zgodne = obsy.every(x => x === obsy[0]);
+    const nazwaTrybu = { obs: 'patrzysz', doX: 'wymuszasz X=1', doY: 'wymuszasz Y=1' }[tryb];
+    let tekst = `<span class="znacznik ${zgodne ? 'tak' : 'nie'}">obserwacje `
+      + `${zgodne ? 'identyczne' : 'RÓŻNE'}</span> `;
+    if (!zgodne) {
+      tekst += 'Przy P(U)≠0,5 światy rozjeżdżają się już w samych obserwacjach — '
+        + 'równość z oryginału trzyma się tylko na uczciwym bicie.';
+    } else if (tryb === 'obs') {
+      tekst += 'Trzy różne przyczyny, cztery te same liczby. Patrzenie nie wystarczy.';
+    } else {
+      const d = Object.entries(SWIATY).map(([n, s]) => {
+        const r = rozklad(s[tryb], pu, pv);
+        return n + ': ' + pr(tryb === 'doX' ? r['0,1'] + r['1,1'] : r['1,0'] + r['1,1']);
+      });
+      tekst += `Teraz ${nazwaTrybu} i widać różnicę — `
+        + `P(${tryb === 'doX' ? 'Y' : 'X'}=1) to ${d.join(', ')}. `
+        + 'Jedna interwencja odróżnia A od B i C; na rozdzielenie B od C potrzebna jest druga.';
+    }
+    $('swiatyWerdykt').innerHTML = tekst;
+  }
+  $('pu').addEventListener('input', rysujSwiaty);
+  $('pv').addEventListener('input', rysujSwiaty);
+
+  /* ================================================ 2. KOŚCI ================= */
+  const czytaj = (id) => ($(id).value.match(/\d+/g) || []).map(Number);
+
+  function rysujKosci() {
+    const A = czytaj('kA'), B = czytaj('kB'), C = czytaj('kC');
+    const dobre = [A, B, C].every(k => k.length === 3 && k.every(x => x >= 1 && x <= 9))
+      && new Set([...A, ...B, ...C]).size === 9;
+    if (!dobre) {
+      $('cyklWidok').innerHTML = '<span class="znacznik nie">po trzy liczby, razem 1–9 bez powtórzeń</span>';
+      $('kosciWerdykt').textContent = '';
+      return;
+    }
+    const ab = bije(A, B), bc = bije(B, C), ca = bije(C, A);
+    const slowo = (w) => w > 9 - w ? 'bije' : w < 9 - w ? 'przegrywa z' : 'remisuje z';
+    $('cyklWidok').innerHTML =
+      `A ${slowo(ab)} B &nbsp;(${ab}/9)<br>`
+      + `B ${slowo(bc)} C &nbsp;(${bc}/9)<br>`
+      + `C ${slowo(ca)} A &nbsp;(${ca}/9)`;
+
+    const cykl = ab > 9 - ab && bc > 9 - bc && ca > 9 - ca;         // A→B→C→A
+    const odwrotny = ab < 9 - ab && bc < 9 - bc && ca < 9 - ca;     // ten sam cykl w drugą stronę
+    // Najsłabsze ogniwo to najmniejsza z trzech przewag W TĘ STRONĘ, w którą cykl idzie.
+    const ogniwo = cykl ? Math.min(ab, bc, ca)
+      : odwrotny ? Math.min(9 - ab, 9 - bc, 9 - ca) : null;
+    const srednie = [A, B, C].map(k => (k.reduce((s, x) => s + x, 0) / 3).toFixed(2));
+    const teSame = srednie.every(s => s === srednie[0]);
+    $('kosciWerdykt').innerHTML = ogniwo !== null
+      ? `<span class="znacznik tak">cykl ${cykl ? 'A→B→C→A' : 'A←B←C←A'}</span> `
+        + `najsłabsze ogniwo ${ogniwo}/9. Średnie: ${srednie.join(', ')}`
+        + `${teSame ? ' — te same' : ''}.`
+      : `<span class="znacznik nie">brak cyklu</span> Średnie: ${srednie.join(', ')}`
+        + `${teSame ? ' — te same, a cyklu i tak nie ma.' : '.'}`;
+  }
+  for (const id of ['kA', 'kB', 'kC']) $(id).addEventListener('input', rysujKosci);
+
+  $('bWroc').addEventListener('click', () => {
+    $('kA').value = '1 5 9'; $('kB').value = '3 4 8'; $('kC').value = '2 6 7';
+    rysujKosci(); $('kosciWynik').textContent = '';
+  });
+
+  $('bLosuj').addEventListener('click', () => {
+    const k = { A: czytaj('kA'), B: czytaj('kB'), C: czytaj('kC') };
+    const rzut = (d) => d[Math.floor(Math.random() * d.length)];
+    const pary = [['A', 'B'], ['B', 'C'], ['C', 'A']];
+    const linie = pary.map(([x, y]) => {
+      let w = 0, n = 1000;
+      for (let i = 0; i < n; i++) { const a = rzut(k[x]), b = rzut(k[y]); if (a > b) w++; }
+      return `${x} vs ${y}: ${w}/1000 = ${(100 * w / n).toFixed(1)}%  (dokładnie ${(100 * bije(k[x], k[y]) / 9).toFixed(2)}%)`;
+    });
+    $('kosciWynik').innerHTML = linie.join('<br>');
+  });
+
+  $('bSzukaj').addEventListener('click', () => {
+    const t0 = performance.now();
+    const { sprawdzone, cykle, najlepszy } = przeszukaj();
+    const ms = (performance.now() - t0).toFixed(0);
+    const zgoda = sprawdzone === 1680 && cykle === 15 && najlepszy === 5;
+    $('kosciWynik').innerHTML =
+      `sprawdzone podziały: <b>${sprawdzone}</b> &nbsp;cykle A→B→C→A: <b>${cykle}</b> `
+      + `&nbsp;najlepsze najsłabsze ogniwo: <b>${najlepszy}/9</b> &nbsp;(${ms} ms)<br>`
+      + `<span class="znacznik ${zgoda ? 'tak' : 'nie'}">`
+      + `${zgoda ? 'zgodne z 29 IX 2026 (1680 / 15 / 5)' : 'ROZJECHAŁO SIĘ z 29 IX'}</span>`;
+  });
+
+  /* ================================================ 3. DETEKTYW ============== */
+  function rysujDetektywa() {
+    const q = +$('q').value, r = +$('r').value;
+    $('qW').textContent = pr(q, 2);
+    $('rW').textContent = pr(r, 3);
+    const N = 40;
+    const pw = [], kp = [];
+    for (let n = 1; n <= N; n++) { pw.push(pewnosc(q, r, n)); kp.push(kopie(q, r, n)); }
+
+    // szczyt pewności
+    let szczyt = 1;
+    for (let n = 2; n <= N; n++) if (pw[n - 1] > pw[szczyt - 1]) szczyt = n;
+
+    const W = 640, H = 300, L = 46, P = 10, G = 14, D = 34;
+    const x = (n) => L + (n - 1) * (W - L - P) / (N - 1);
+    const y = (v) => G + (1 - v) * (H - G - D);
+    const sciezka = (a) => a.map((v, i) => (i ? 'L' : 'M') + x(i + 1).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+    const osie = [0, .25, .5, .75, 1].map(v =>
+      `<line x1="${L}" y1="${y(v)}" x2="${W - P}" y2="${y(v)}" stroke="var(--kreska)" stroke-width="1"/>`
+      + `<text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--slabe)"`
+      + ` font-family="ui-sans-serif,system-ui,sans-serif">${(100 * v).toFixed(0)}%</text>`).join('');
+    const znaczniki = [1, 6, 12, 24, 40].map(n =>
+      `<text x="${x(n)}" y="${H - 14}" text-anchor="middle" font-size="10" fill="var(--slabe)"`
+      + ` font-family="ui-sans-serif,system-ui,sans-serif">${n}</text>`).join('');
+    $('wykres').innerHTML = osie
+      + `<line x1="${x(szczyt)}" y1="${G}" x2="${x(szczyt)}" y2="${y(0)}" stroke="var(--akcent)"`
+      + ` stroke-width="1" stroke-dasharray="3 3" opacity=".6"/>`
+      + `<text x="${x(szczyt) + 4}" y="${G + 11}" font-size="10" fill="var(--akcent)"`
+      + ` font-family="ui-sans-serif,system-ui,sans-serif">szczyt: ${szczyt}</text>`
+      + `<path d="${sciezka(kp)}" fill="none" stroke="var(--slabe)" stroke-width="2" stroke-linecap="round"/>`
+      + `<path d="${sciezka(pw)}" fill="none" stroke="var(--akcent)" stroke-width="2.5" stroke-linecap="round"/>`
+      + znaczniki
+      + `<text x="${(W + L) / 2}" y="${H - 1}" text-anchor="middle" font-size="10" fill="var(--slabe)"`
+      + ` font-family="ui-sans-serif,system-ui,sans-serif">liczba kolejnych zgodnych wskazówek</text>`;
+
+    $('detektywCialo').innerHTML = [1, 6, 12, 24].map(n =>
+      `<tr><td>${n}</td><td>${proc(pewnosc(q, r, n))}</td><td>${proc(kopie(q, r, n))}</td></tr>`).join('');
+
+    const granica = q;
+    $('detektywWerdykt').innerHTML =
+      `Pewność jest najwyższa po <b>${szczyt}</b> zgodnych wskazówkach (${proc(pw[szczyt - 1])}), `
+      + `a po 24 spada do ${proc(pw[23])}. Przy dowolnym r &gt; 0 dąży do <b>${proc(granica)}</b> — `
+      + 'czyli do trafności <i>jednej</i> wskazówki, bo kolejne mówią już tylko o tym, '
+      + 'skąd się biorą, a nie o kolorze.';
+  }
+  $('q').addEventListener('input', rysujDetektywa);
+  $('r').addEventListener('input', rysujDetektywa);
+
+  rysujSwiaty(); rysujKosci(); rysujDetektywa();
+})();
+</script>
+</body>
+</html>
