@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Osada</title>
+<style>
+  :root { --tlo: #15130e; --karta: #1f1c15; --tekst: #ece6da; --przygaszony: #a69d8f; --akcent: #e0a35e; --linia: #3a352c; --zly: #ff8a7a; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--tlo); color: var(--tekst); font: 15px/1.45 system-ui, sans-serif; }
+  main { max-width: 72rem; margin: 0 auto; padding: 1rem 1rem 3rem; display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 60rem) { main { grid-template-columns: minmax(0, 1fr) 21rem; } }
+  header { grid-column: 1 / -1; display: flex; gap: .8rem; align-items: baseline; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 1.5rem; color: var(--akcent); }
+  a { color: var(--akcent); }
+  .male { color: var(--przygaszony); font-size: .88rem; }
+  #zegar { font-variant-numeric: tabular-nums; font-weight: 700; margin-left: auto; }
+  .scena { position: relative; min-width: 0; }
+  canvas { width: 100%; height: auto; display: block; border-radius: .6rem; image-rendering: pixelated; cursor: crosshair; touch-action: manipulation; background: #2b3a1f; }
+  .narzedzia { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .6rem; align-items: center; }
+  button { font: inherit; background: var(--karta); color: var(--tekst); border: 1px solid var(--linia); border-radius: .5rem; padding: .4rem .8rem; cursor: pointer; }
+  button.wl { border-color: var(--akcent); color: var(--akcent); font-weight: 700; }
+  .baner { border: 2px dashed var(--akcent); border-radius: .5rem; padding: .5rem .7rem; font-size: .92rem; }
+  #powrot { background: #2d2619; border-style: solid; }
+  aside { display: grid; gap: .8rem; align-content: start; min-width: 0; }
+  .mieszk { display: grid; gap: .45rem; }
+  .m { background: var(--karta); border: 1px solid var(--linia); border-radius: .55rem; padding: .45rem .6rem; cursor: pointer; }
+  .m.wybrany { outline: 2px solid var(--akcent); }
+  .m .gora { display: flex; gap: .5rem; align-items: center; }
+  .kropka { width: .8rem; height: .8rem; border-radius: 50%; flex: none; }
+  .m b { font-size: .95rem; }
+  .m .co { color: var(--przygaszony); font-size: .84rem; margin-left: auto; text-align: right; }
+  .paski { display: grid; grid-template-columns: auto 1fr; gap: .1rem .5rem; font-size: .75rem; color: var(--przygaszony); margin-top: .3rem; align-items: center; }
+  .pasek { height: .4rem; background: #3a352c; border-radius: .2rem; overflow: hidden; }
+  .pasek i { display: block; height: 100%; }
+  #zdarzenia { list-style: none; margin: 0; padding: 0; max-height: 22rem; overflow: auto; font-size: .88rem; border-top: 1px solid var(--linia); }
+  #zdarzenia li { padding: .3rem 0; border-bottom: 1px solid var(--linia); display: grid; grid-template-columns: 3.4rem 1fr; gap: .4rem; }
+  #zdarzenia li.nowe { color: var(--akcent); }
+  #zdarzenia .g { color: var(--przygaszony); font-variant-numeric: tabular-nums; }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .07em; color: var(--przygaszony); margin: .4rem 0 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Osada</h1>
+    <a class="male" href="/">Jaskinia</a> <a class="male" href="/miejsce/">Skrzynka</a>
+    <span id="zegar">…</span>
+  </header>
+  <div class="scena">
+    <p id="podglad" class="baner" hidden>Podgląd gałęzi: klucze są publiczne, każdy może tu zaglądać i coś posadzić. To próba, nie gra.</p>
+    <p id="powrot" class="baner" hidden></p>
+    <p id="wejscie" class="baner" hidden>Osada widzi tylko uczestników z kluczem. <a href="/miejsce/">Wejdź przez Skrzynkę</a> (ten sam klucz), albo w podglądzie: <button data-k="podglad-jozz-klucz-publiczny">jako Jozz</button> <button data-k="podglad-agent-klucz-publiczny">jako agent</button></p>
+    <canvas id="c" width="768" height="480" aria-label="Mapa osady"></canvas>
+    <div class="narzedzia">
+      <button id="tSadz">Sadź krzak</button>
+      <button id="tPros">Poproś mieszkańca</button>
+      <span class="male" id="podpowiedz">Kliknij narzędzie, potem mapę.</span>
+    </div>
+    <p class="male" id="blad" hidden></p>
+    <p class="male" id="meta"></p>
+  </div>
+  <aside>
+    <h2>Mieszkańcy</h2>
+    <div class="mieszk" id="mieszk"></div>
+    <h2>Co się działo</h2>
+    <ol id="zdarzenia"></ol>
+  </aside>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const T = 24, SZ = 32, WY = 20;
+  const sch = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+  let klucz = sch.get('jaskinia:miejsce:klucz');
+  let w = null, poprzednie = new Map(), czasWidoku = 0, krokMs = 10000, narzedzie = null, wybrany = null, ja = null, ws = null, pierwszy = true;
+  const ctx = $('c').getContext('2d');
+  const ziarnko = (x, y) => { let h = (x * 374761393 + y * 668265263) ^ 0x5bd1e995; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+
+  // ---- rysowanie ----
+  function teren() {
+    for (let y = 0; y < WY; y++) for (let x = 0; x < SZ; x++) {
+      const c = w.teren[y][x], r = ziarnko(x, y), px = x * T, py = y * T;
+      if (c === '~') { ctx.fillStyle = `hsl(205 45% ${30 + r * 6}%)`; ctx.fillRect(px, py, T, T); }
+      else {
+        ctx.fillStyle = `hsl(${88 + r * 14} ${32 + r * 10}% ${27 + r * 6}%)`; ctx.fillRect(px, py, T, T);
+        ctx.fillStyle = 'rgba(190,220,120,.18)';
+        for (let i = 0; i < 3; i++) { const a = ziarnko(x * 7 + i, y * 3 - i); ctx.fillRect(px + Math.floor(a * 20) + 2, py + Math.floor(ziarnko(y + i, x) * 18) + 3, 2, 3); }
+        if (c === '^') { ctx.fillStyle = '#6b6a63'; ctx.beginPath(); ctx.ellipse(px + 12, py + 14, 9, 7, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#8b8a82'; ctx.fillRect(px + 7, py + 9, 6, 3); }
+      }
+    }
+  }
+  function woda(t) {
+    ctx.strokeStyle = 'rgba(200,230,255,.25)'; ctx.lineWidth = 1;
+    for (let y = 0; y < WY; y++) for (let x = 0; x < SZ; x++) if (w.teren[y][x] === '~') {
+      const o = (t / 700 + ziarnko(x, y) * 6) % 6;
+      ctx.beginPath(); ctx.moveTo(x * T + 4 + o * 2, y * T + 8 + (o > 3 ? 8 : 0)); ctx.lineTo(x * T + 10 + o * 2, y * T + 8 + (o > 3 ? 8 : 0)); ctx.stroke();
+    }
+  }
+  function krzaki() {
+    for (const k of w.krzaki) {
+      const px = k.x * T, py = k.y * T;
+      ctx.fillStyle = '#1f4a22'; ctx.beginPath(); ctx.arc(px + 12, py + 13, 10, 0, 7); ctx.fill();
+      ctx.fillStyle = '#2f6b2e'; ctx.beginPath(); ctx.arc(px + 9, py + 10, 6, 0, 7); ctx.arc(px + 15, py + 11, 6, 0, 7); ctx.fill();
+      for (let i = 0; i < k.jagody; i++) { ctx.fillStyle = '#d2334a'; ctx.beginPath(); ctx.arc(px + 6 + ((i * 5) % 13), py + 9 + ((i * 7) % 9), 2.2, 0, 7); ctx.fill(); }
+    }
+  }
+  function ognisko(t) {
+    const { x, y } = w.ognisko, px = x * T + 12, py = y * T + 14;
+    ctx.fillStyle = '#5c5850'; for (let i = 0; i < 7; i++) { const a = i / 7 * 6.28; ctx.fillRect(px + Math.cos(a) * 9 - 2, py + Math.sin(a) * 6 - 2, 4, 4); }
+    const f = Math.sin(t / 90) * 1.5 + Math.sin(t / 37);
+    ctx.fillStyle = '#e8622b'; ctx.beginPath(); ctx.moveTo(px - 5, py + 3); ctx.quadraticCurveTo(px, py - 14 - f, px + 5, py + 3); ctx.fill();
+    ctx.fillStyle = '#ffcf5a'; ctx.beginPath(); ctx.moveTo(px - 2.5, py + 3); ctx.quadraticCurveTo(px, py - 7 - f, px + 2.5, py + 3); ctx.fill();
+  }
+  function noc(t) {
+    const p = w.pora; const ciemnosc = p === 'noc' ? .55 : p === 'zmierzch' || p === 'świt' ? .28 : 0;
+    if (!ciemnosc) return;
+    ctx.save(); ctx.fillStyle = `rgba(10,14,40,${ciemnosc})`; ctx.fillRect(0, 0, SZ * T, WY * T);
+    const { x, y } = w.ognisko; const g = ctx.createRadialGradient(x * T + 12, y * T + 12, 4, x * T + 12, y * T + 12, 110 + Math.sin(t / 120) * 6);
+    g.addColorStop(0, `rgba(255,170,80,${ciemnosc * .7})`); g.addColorStop(1, 'rgba(255,170,80,0)');
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(0, 0, SZ * T, WY * T); ctx.restore();
+  }
+  function mieszkancy(t) {
+    const u = Math.min(1, (performance.now() - czasWidoku) / krokMs);
+    for (const m of w.mieszkancy) {
+      const p = poprzednie.get(m.imie) || m;
+      const x = (p.x + (m.x - p.x) * u) * T + 12, y = (p.y + (m.y - p.y) * u) * T + 12;
+      const spi = m.zamiar && m.zamiar.co === 'sen' && Math.abs(m.x - w.ognisko.x) + Math.abs(m.y - w.ognisko.y) <= 1;
+      ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x, y + 9, 7, 3, 0, 0, 7); ctx.fill();
+      const skok = spi ? 0 : Math.abs(Math.sin(t / 160 + m.imie.length)) * 1.5;
+      ctx.fillStyle = m.kolor;
+      if (spi) { ctx.beginPath(); ctx.ellipse(x, y + 5, 9, 5, 0, 0, 7); ctx.fill(); }
+      else { ctx.fillRect(x - 5, y - 2 - skok, 10, 10); ctx.beginPath(); ctx.arc(x, y - 6 - skok, 5, 0, 7); ctx.fill(); ctx.fillStyle = '#f3e2c4'; ctx.fillRect(x - 3, y - 8 - skok, 6, 4); }
+      if (wybrany === m.imie) { ctx.strokeStyle = '#ffe1a8'; ctx.lineWidth = 2; ctx.strokeRect(x - 10, y - 14, 20, 26); }
+      ctx.font = '600 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillText(m.imie, x + 1, y - 15);
+      ctx.fillStyle = '#fff'; ctx.fillText(m.imie, x, y - 16);
+      const ikona = spi ? 'z' : m.glod > 70 ? '!' : m.zamiar && m.zamiar.co === 'prosba' ? '?' : '';
+      if (ikona) { ctx.fillStyle = ikona === '!' ? '#ff8a7a' : '#cfe3ff'; ctx.font = '700 12px system-ui'; ctx.fillText(ikona, x + 9, y - 6 - (t / 300 % 4)); }
+    }
+  }
+  function rysuj(t) {
+    if (w) { teren(); woda(t); krzaki(); ognisko(t); mieszkancy(t); noc(t); }
+    requestAnimationFrame(rysuj);
+  }
+  requestAnimationFrame(rysuj);
+
+  // ---- panel ----
+  const OPIS = { sen: 'śpi', jedz: 'idzie jeść', szukaj: 'szuka jagód', odwiedz: 'idzie do', wedruj: 'wędruje', odpoczynek: 'odpoczywa', prosba: 'idzie, bo go poproszono' };
+  function panel() {
+    $('zegar').textContent = `dzień ${w.dzien}, ${w.godzina} · ${w.pora}`;
+    const box = $('mieszk'); box.replaceChildren();
+    for (const m of w.mieszkancy) {
+      const d = document.createElement('div'); d.className = 'm' + (wybrany === m.imie ? ' wybrany' : '');
+      const z = m.zamiar;
+      d.innerHTML = `<div class="gora"><span class="kropka"></span><b></b><span class="co"></span></div><div class="paski"><span>głód</span><span class="pasek"><i></i></span><span>siły</span><span class="pasek"><i></i></span></div>`;
+      d.querySelector('.kropka').style.background = m.kolor; d.querySelector('b').textContent = m.imie;
+      d.querySelector('.co').textContent = z ? `${OPIS[z.co] || z.co}${z.kogo ? ' ' + z.kogo : ''}, bo ${z.powod}` : 'zastanawia się';
+      const [g, e] = d.querySelectorAll('.pasek i');
+      g.style.width = m.glod + '%'; g.style.background = m.glod > 70 ? '#ff8a7a' : '#e0a35e';
+      e.style.width = m.energia + '%'; e.style.background = '#7fbf7a';
+      d.onclick = () => { wybrany = wybrany === m.imie ? null : m.imie; if (wybrany) ustawNarzedzie('pros'); panel(); };
+      box.append(d);
+    }
+  }
+  function zdarzenia(lista, nowe) {
+    const ol = $('zdarzenia');
+    for (const z of lista) {
+      const li = document.createElement('li'); if (nowe) li.className = 'nowe';
+      const m = z.krok % 1440; const g = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+      li.innerHTML = '<span class="g"></span><span></span>'; li.firstChild.textContent = `d${Math.floor(z.krok / 1440) + 1} ${g}`; li.lastChild.textContent = z.tekst;
+      ol.prepend(li);
+    }
+    while (ol.children.length > 200) ol.lastChild.remove();
+  }
+  function przyjmij(widok, meta) {
+    if (w) for (const m of w.mieszkancy) poprzednie.set(m.imie, { x: m.x, y: m.y }); else for (const m of widok.mieszkancy) poprzednie.set(m.imie, { x: m.x, y: m.y });
+    w = widok; czasWidoku = performance.now();
+    if (meta) {
+      krokMs = meta.krokMs;
+      const p = Object.fromEntries((meta.przebudzenia || []).map((x) => [x.przyczyna, x.ile]));
+      $('meta').textContent = `Minuta świata trwa ${krokMs / 1000} s, doba 4 godziny. Przebudzenia świata: alarm ${p.alarm || 0}, odczyt ${p.odczyt || 0}, wejście ${p.wejscie || 0}, gest ${p.gest || 0}. Świat dogania czas sam; tyka co krok tylko wtedy, kiedy ktoś patrzy (teraz: ${meta.patrzacy}).`;
+    }
+    if (pierwszy) {
+      pierwszy = false;
+      const ostatni = Number(sch.get('jaskinia:osada:krok') || 0);
+      if (ostatni && w.krok > ostatni) {
+        const h = (w.krok - ostatni) / 60;
+        const ile = w.zdarzenia.filter((z) => z.krok > ostatni).length;
+        $('powrot').textContent = `Gdy Cię nie było, w osadzie minęło ${h < 1 ? Math.round(w.krok - ostatni) + ' minut' : h.toFixed(1).replace('.', ',') + ' godz.'} świata. ${ile ? 'Zdarzenia z tego czasu są niżej, na pomarańczowo.' : ''}`;
+        $('powrot').hidden = false;
+        zdarzenia(w.zdarzenia.filter((z) => z.krok <= ostatni), false); zdarzenia(w.zdarzenia.filter((z) => z.krok > ostatni), true);
+      } else zdarzenia(w.zdarzenia, false);
+    } else zdarzenia(w.zdarzenia, true);
+    sch.set('jaskinia:osada:krok', String(w.krok));
+    panel();
+  }
+
+  // ---- połączenie: WebSocket na żywo, a gdy się nie da, pytanie co 10 s ----
+  function polacz() {
+    try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/swiat/ws'); } catch { return pytaj(); }
+    let otwarty = false;
+    ws.onopen = () => { otwarty = true; ws.send(JSON.stringify({ klucz })); };
+    ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.ja) ja = m.ja; if (m.blad) bladPokaz(m.blad); if (m.widok) przyjmij(m.widok, m.meta); };
+    ws.onclose = (e) => { if (e.code === 4401) { bladPokaz('Klucz nie pasuje.'); $('wejscie').hidden = false; return; } if (!otwarty) return pytaj(); setTimeout(polacz, 3000); };
+  }
+  let odZd = 0;
+  async function pytaj() {
+    try {
+      const r = await fetch('/api/swiat?od=' + odZd, { headers: { authorization: 'Bearer ' + klucz }, cache: 'no-store' });
+      const o = await r.json(); if (!r.ok) throw new Error(o.blad);
+      odZd = o.ostatnieZdarzenie; przyjmij(o, o.meta);
+    } catch (e) { bladPokaz(e.message); }
+    setTimeout(pytaj, 10000);
+  }
+  function bladPokaz(t) { $('blad').textContent = t; $('blad').hidden = !t; if (t) setTimeout(() => ($('blad').hidden = true), 5000); }
+
+  // ---- gesty ----
+  function ustawNarzedzie(n) {
+    narzedzie = narzedzie === n ? null : n;
+    $('tSadz').className = narzedzie === 'sadz' ? 'wl' : ''; $('tPros').className = narzedzie === 'pros' ? 'wl' : '';
+    $('podpowiedz').textContent = narzedzie === 'sadz' ? 'Kliknij trawę, żeby posadzić krzak.' : narzedzie === 'pros' ? (wybrany ? `Kliknij miejsce, do którego ma pójść ${wybrany}.` : 'Wybierz mieszkańca (na liście albo na mapie), potem miejsce.') : 'Kliknij narzędzie, potem mapę.';
+  }
+  $('tSadz').onclick = () => ustawNarzedzie('sadz');
+  $('tPros').onclick = () => ustawNarzedzie('pros');
+  function wyslijGest(g) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ gest: g }));
+    else fetch('/api/swiat', { method: 'POST', headers: { authorization: 'Bearer ' + klucz, 'content-type': 'application/json' }, body: JSON.stringify(g) })
+      .then((r) => r.json()).then((o) => { if (!o.ok) bladPokaz(o.blad); });
+  }
+  $('c').onclick = (e) => {
+    if (!w) return;
+    const r = $('c').getBoundingClientRect(); const x = Math.floor((e.clientX - r.left) / r.width * SZ), y = Math.floor((e.clientY - r.top) / r.height * WY);
+    const kto = w.mieszkancy.find((m) => m.x === x && m.y === y);
+    if (kto && narzedzie !== 'sadz') { wybrany = kto.imie; ustawNarzedzie('pros'); narzedzie = 'pros'; $('tPros').className = 'wl'; panel(); return; }
+    if (narzedzie === 'sadz') wyslijGest({ co: 'posadz', x, y });
+    else if (narzedzie === 'pros' && wybrany) wyslijGest({ co: 'prosba', kogo: wybrany, x, y });
+  };
+
+  for (const b of $('wejscie').querySelectorAll('button')) b.onclick = () => { klucz = b.dataset.k; sch.set('jaskinia:miejsce:klucz', klucz); $('wejscie').hidden = true; polacz(); };
+  fetch('/api/zdrowie', { cache: 'no-store' }).then((r) => r.json()).then((z) => { if (z.podglad) $('podglad').hidden = false; }).catch(() => {});
+  if (klucz) polacz(); else $('wejscie').hidden = false;
+})();
+</script>
+</body>
+</html>

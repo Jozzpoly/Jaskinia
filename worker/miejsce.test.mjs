@@ -4,15 +4,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { sqlZNode } from './sql-node.mjs';
 import { Rdzen, LIMIT_TRESCI, skrot } from './miejsce.mjs';
 import { ktoTo } from './klucze.mjs';
 import { Miejsce } from './miejsce-do.mjs';
 import worker from './index.mjs';
 
-// ctx.storage.sql z Durable Object: exec(zapytanie, ...parametry) -> kursor z toArray()
-export function sqlZNode(db = new DatabaseSync(':memory:')) {
-  return { exec: (q, ...p) => { const rows = p.length || /^\s*(SELECT|INSERT|UPDATE|DELETE)/i.test(q) ? db.prepare(q).all(...p) : (db.exec(q), []); return { toArray: () => rows }; } };
-}
 let zegar = Date.parse('2026-11-11T00:00:00Z');
 const nowy = (db) => new Rdzen(sqlZNode(db), { teraz: () => (zegar += 1000) });
 let n = 0;

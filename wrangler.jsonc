@@ -10,8 +10,9 @@
   },
   "observability": { "enabled": true },
   // Miejsce: shared state on the server side, one SQLite Durable Object (11 Nov 2026, status: proba, TYMCZASOWE.md).
-  "durable_objects": { "bindings": [{ "name": "MIEJSCE", "class_name": "Miejsce" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Miejsce"] }],
+  // Osada: a small world that lives on the server side (11 Nov 2026, status: proba).
+  "durable_objects": { "bindings": [{ "name": "MIEJSCE", "class_name": "Miejsce" }, { "name": "SWIAT", "class_name": "Swiat" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Miejsce"] }, { "tag": "v2", "new_sqlite_classes": ["Swiat"] }],
   // Production has no KLUCZE here: the owner sets them as a secret, and until then Miejsce stays closed.
   // Worker Previews (Wrangler 4.135+): every branch gets its own Preview, and Cloudflare gives each Preview its own
   // Durable Object namespace and storage, so a Preview never touches production state.
@@ -19,7 +20,7 @@
   // Miejsce, so nothing private goes there. They let agents test the whole path without asking the owner.
   // podglad-jozz-klucz-publiczny (owner role), podglad-agent-klucz-publiczny (agent role).
   "previews": {
-    "durable_objects": { "bindings": [{ "name": "MIEJSCE", "class_name": "Miejsce" }] },
+    "durable_objects": { "bindings": [{ "name": "MIEJSCE", "class_name": "Miejsce" }, { "name": "SWIAT", "class_name": "Swiat" }] },
     "vars": {
       "PODGLAD": "tak",
       "KLUCZE": "{\"jozz\":\"89db28af24d86977c0b4065bf86cd23f4bb7b92b34ea02323685f8733b45e832\",\"agent-probny\":\"9fcce90d0a08b9b9583f760801ce1a54a452a7cef2e5710234343a1b24ced630\"}"
