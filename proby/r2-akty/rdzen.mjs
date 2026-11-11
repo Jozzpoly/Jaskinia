@@ -74,7 +74,8 @@ const zamroz = o => {
 // Odcisk bierze DOKŁADNIE te pola, które niesie akt w dzienniku, i ani jednego więcej.
 // To nie oszczędność, to warunek sprawdzalności: odcisk, którego nie da się odtworzyć
 // z dziennika po imporcie, byłby mechanizmem bez możliwości kontroli — czyli dokładnie
-// tym, czego ten projekt uczy się nie ufać (tools/zyje.mjs). Dlatego POZA odciskiem,
+// tym, czego ten projekt uczy się nie ufać (sprawdzian życia mechanizmów, PR #9).
+// Dlatego POZA odciskiem,
 // świadomie, zostają dwie rzeczy:
 //   - `kto.role` — akt zapisuje `who`, nie rolę. Patrz granica o prawach wyżej.
 //   - zażądane `opcje.pokolenie` — to WARUNEK WSTĘPNY, nie część czynności. Zamiast
