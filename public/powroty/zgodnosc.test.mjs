@@ -151,6 +151,26 @@ test('detektyw: zwrot istnieje i jest w szóstym kroku, a granicą jest trafnoś
     + 'cały spadek bierze się z dopuszczenia, że źródło może być jedno');
 });
 
+test('powrót jest osiągalny przez Dom, a nie tylko z dysku', async () => {
+  // Reguła z README brzmi: „wyprawa wróciła, kiedy Jozz może ją otworzyć i ruszyć".
+  // Złamałem ją własną ręką: pierwsza wersja tego powrotu leżała w `powroty/` w korzeniu
+  // repo, a `wrangler.jsonc` podaje pliki WYŁĄCZNIE z `public/`. Plik działał z dwukliku
+  // i nie istniał pod adresem podglądu — 404, sprawdzone zapytaniem, nie domysłem.
+  // Powrót, do którego trzeba mieć dysk, nie jest powrotem; jest kopią zapasową.
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const sciezka = fileURLToPath(STRONA).replace(/\\/g, '/');
+  assert.match(sciezka, /\/public\/powroty\//,
+    'powrót musi leżeć pod katalogiem, który Worker naprawdę podaje');
+
+  // I sprawdź to u źródła, a nie z pamięci: katalog bierze się z wrangler.jsonc.
+  const wrangler = readFileSync(new URL('../../wrangler.jsonc', import.meta.url), 'utf8');
+  const podawany = wrangler.match(/"directory"\s*:\s*"\.?\/?([^"]+)"/);
+  assert.ok(podawany, 'nie wiadomo, co Worker podaje — wrangler.jsonc nie ma katalogu zasobów');
+  assert.ok(sciezka.includes('/' + podawany[1].replace(/^\.\//, '') + '/'),
+    `Worker podaje "${podawany[1]}", a powrót leży poza tym katalogiem`);
+});
+
 test('strona nie udaje, że przywiozła wszystko', () => {
   // Pięć wypraw, trzy artefakty. Milczenie o dwóch brakujących byłoby tym samym rodzajem
   // fałszu co zielony test na martwym mechanizmie.

@@ -22,6 +22,14 @@ bez sieci, bez zależności. Na telefonie też. Tak wracały najlepsze rzeczy w 
 projektów (PRZESMYK, Tibia w jednym pliku, pliki `.cmd` do dwukliku) i tak wraca
 [`2026-09-29-wolny-czas/`](2026-09-29-wolny-czas/index.html).
 
+**I musi być pod adresem, nie tylko na dysku.** Pierwsza wersja tego katalogu leżała
+w korzeniu repo, a `wrangler.jsonc` podaje pliki wyłącznie z `public/`. Plik otwierał się
+z dwukliku i **zwracał 404 pod adresem podglądu** — sprawdziłem zapytaniem, nie domysłem.
+Złamałem własną regułę jednym katalogiem: powrót, do którego trzeba mieć dysk, nie jest
+powrotem, tylko kopią zapasową. Dlatego powroty mieszkają tu, obok `public/miejsce/`
+i `public/osada/`, i pilnuje tego osobny test — czyta katalog wprost z `wrangler.jsonc`,
+więc gdy Dom zmieni adres, test to zauważy, a nie ja po fakcie.
+
 Nie wystarczy, że rzecz się otwiera. Ma dać się **ruszyć**: pokrętła, które liczą od nowa,
 a nie obrazek z wynikiem. Pętla `zbuduj → uruchom → poczuj → popraw` jest tym, czego Jozz
 szuka we wszystkich swoich projektach; powrót, którego nie da się dotknąć, wypada z niej
