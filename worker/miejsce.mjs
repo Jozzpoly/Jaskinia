@@ -19,6 +19,7 @@ export const LIMIT_DZIENNIKA = 200;
 export const WLASCICIEL = 'jozz';
 
 const IMIE = /^[a-z][a-z0-9_-]{0,39}$/;
+export const PRYWATNE_GLOWY = 'jozz:prywatne/';
 const RODZAJ = /^[a-z][a-z0-9_-]{0,39}$/;
 const OP = /^[A-Za-z0-9_.:-]{8,120}$/;
 // jozz:<ścieżka> przesuwa tylko właściciel; agent:<imię>:<ścieżka> ten agent i właściciel; wspolne:<ścieżka> każdy z kluczem
@@ -56,6 +57,8 @@ export class Rdzen {
     this.sql = sql;
     this.teraz = teraz;
     for (const s of SCHEMAT) sql.exec(s);
+    // migracja 11 XI: prywatność aktu (kolumna dopisana do istniejących baz, bez ruszania danych)
+    if (!sql.exec(`PRAGMA table_info(akty)`).toArray().some((k) => k.name === 'prywatne')) sql.exec(`ALTER TABLE akty ADD COLUMN prywatne INTEGER NOT NULL DEFAULT 0`);
     const w = sql.exec(`SELECT wartosc FROM meta WHERE klucz = 'schemat'`).toArray()[0];
     if (!w) sql.exec(`INSERT INTO meta (klucz, wartosc) VALUES ('schemat', ?)`, WERSJA);
   }
@@ -83,13 +86,14 @@ export class Rdzen {
     return co === 'zapisz' ? this.zapisz(kto, op, odcisk, przyg) : this.przesun(kto, op, odcisk, przyg);
   }
 
-  async przygotujZapis({ rodzaj, tresc }) {
+  async przygotujZapis({ rodzaj, tresc, prywatne = false }) {
+    if (typeof prywatne !== 'boolean') return blad(400, 'prywatne: true albo false');
     if (typeof rodzaj !== 'string' || !RODZAJ.test(rodzaj)) return blad(400, 'rodzaj: małe litery, cyfry, - i _, do 40 znaków');
     if (typeof tresc !== 'string') return blad(400, 'tresc musi być tekstem (JSON zapisz jako tekst)');
     const rozmiar = enc.encode(tresc).length;
     if (rozmiar > LIMIT_TRESCI) return blad(413, `treść ma ${rozmiar} B, limit to ${LIMIT_TRESCI} B`);
     const id = await skrot(rodzaj + '\n' + tresc);
-    return { ok: true, rodzaj, tresc, rozmiar, id, odcisk: id };
+    return { ok: true, rodzaj, tresc, rozmiar, id, prywatne, odcisk: id + (prywatne ? '|prywatne' : '') };
   }
 
   przygotujPrzesuniecie(kto, { glowa, wersja = null, na }) {
@@ -100,10 +104,10 @@ export class Rdzen {
     return { ok: true, glowa, wersja, na, odcisk: [glowa, wersja, na].join('|') };
   }
 
-  zapisz(kto, op, odcisk, { rodzaj, tresc, rozmiar, id }) {
+  zapisz(kto, op, odcisk, { rodzaj, tresc, rozmiar, id, prywatne }) {
     const nowy = !this.q(`SELECT 1 AS j FROM zapisy WHERE id = ?`, id).length;
     if (nowy) this.sql.exec(`INSERT INTO zapisy (id, rodzaj, tresc, rozmiar) VALUES (?, ?, ?, ?)`, id, rodzaj, tresc, rozmiar);
-    this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, nowy) VALUES (?, ?, ?, ?, 'zapisz', ?, ?)`, op, odcisk, kto, this.teraz(), id, nowy ? 1 : 0);
+    this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, nowy, prywatne) VALUES (?, ?, ?, ?, 'zapisz', ?, ?, ?)`, op, odcisk, kto, this.teraz(), id, nowy ? 1 : 0, prywatne ? 1 : 0);
     return { ok: true, powtorzone: false, zapis: id, nowy, akt: this.opisAktu(this.ostatniAkt()) };
   }
 
@@ -122,33 +126,53 @@ export class Rdzen {
 
   opisAktu(a) {
     return { nr: a.nr, op: a.op, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), co: a.co, zapis: a.zapis,
-      ...(a.co === 'przesun' ? { glowa: a.glowa, z: a.z_zapisu } : { nowy: !!a.nowy }) };
+      ...(a.co === 'przesun' ? { glowa: a.glowa, z: a.z_zapisu } : { nowy: !!a.nowy }), ...(a.prywatne ? { prywatne: true } : {}) };
   }
 
-  glowa(nazwa) {
+  // Kto co widzi (uwaga Menadżera do #10, 11 XI): domyślnie wszystko widzą wszyscy uczestnicy z kluczem, i UI mówi to
+  // wprost. Wyjątki: akt zapisany z `prywatne: true` widzą właściciel i jego autor, a gdy to wiadomość, także ci z
+  // pola `do`; głowy `jozz:prywatne/…` i ich przesunięcia widzi tylko właściciel. Treść zapisu po identyfikatorze
+  // dostaje tylko ten, kto widzi jakiś akt z tym zapisem, więc odgadnięty skrót niczego nie otwiera. Prywatność
+  // siedzi na akcie, nie na treści: ta sama treść zapisana jawnie przez kogoś innego jest jawna.
+  widoczny(kto, w) {
+    if (kto === WLASCICIEL || w.kto === kto) return true;
+    if (w.co === 'przesun' && String(w.glowa || '').startsWith(PRYWATNE_GLOWY)) return false;
+    if (!w.prywatne) return true;
+    // prywatny akt: poza właścicielem i autorem tylko adresaci wiadomości
+    if (w.rodzaj === 'wiadomosc' && w.tresc) { try { const t = JSON.parse(w.tresc); return Array.isArray(t.do) && t.do.includes(kto); } catch { return false; } }
+    return false;
+  }
+
+  glowa(nazwa, kto = WLASCICIEL) {
+    if (String(nazwa).startsWith(PRYWATNE_GLOWY) && kto !== WLASCICIEL) return blad(403, 'prywatne głowy widzi tylko właściciel');
     const g = this.q(`SELECT g.nazwa, g.zapis, g.akt, z.rodzaj, z.tresc FROM glowy g JOIN zapisy z ON z.id = g.zapis WHERE g.nazwa = ?`, nazwa)[0];
     return g ? { ok: true, glowa: g.nazwa, zapis: g.zapis, wersja: g.akt, rodzaj: g.rodzaj, tresc: g.tresc } : blad(404, 'nie ma takiej głowy', { wersja: null });
   }
 
-  zapisTresc(id) {
+  zapisTresc(id, kto = WLASCICIEL) {
     const z = this.q(`SELECT * FROM zapisy WHERE id = ?`, id)[0];
-    return z ? { ok: true, ...z } : blad(404, 'nie ma takiego zapisu');
+    if (!z) return blad(404, 'nie ma takiego zapisu');
+    if (kto !== WLASCICIEL && !this.q(`SELECT * FROM akty WHERE zapis = ?`, id).some((a) => this.widoczny(kto, { ...a, rodzaj: z.rodzaj, tresc: z.tresc })))
+      return blad(404, 'nie ma takiego zapisu');
+    return { ok: true, ...z };
   }
 
   // Co się działo po akcie nr `od`. Treści dołączone do aktów zapisu; najwyżej LIMIT_DZIENNIKA na raz, z kursorem.
-  dziennik(od = 0, limit = LIMIT_DZIENNIKA) {
+  dziennik(od = 0, limit = LIMIT_DZIENNIKA, kto = WLASCICIEL) {
     const n = Math.max(1, Math.min(LIMIT_DZIENNIKA, limit | 0 || LIMIT_DZIENNIKA));
     const wiersze = this.q(`SELECT a.*, z.rodzaj, z.tresc, z.rozmiar FROM akty a LEFT JOIN zapisy z ON z.id = a.zapis WHERE a.nr > ? ORDER BY a.nr LIMIT ?`, od | 0, n + 1);
     const wiecej = wiersze.length > n;
-    const akty = wiersze.slice(0, n).map((w) => ({ ...this.opisAktu(w), rodzaj: w.rodzaj, tresc: w.co === 'zapisz' ? w.tresc : undefined, rozmiar: w.rozmiar }));
+    const przejrzane = wiersze.slice(0, n);
+    const akty = przejrzane.filter((w) => this.widoczny(kto, w)).map((w) => ({ ...this.opisAktu(w), rodzaj: w.rodzaj, tresc: w.co === 'zapisz' ? w.tresc : undefined, rozmiar: w.rozmiar }));
     const ostatni = this.q(`SELECT COALESCE(MAX(nr), 0) AS nr FROM akty`)[0].nr;
-    return { ok: true, od: od | 0, akty, wiecej, dalej: akty.length ? akty[akty.length - 1].nr : od | 0, ostatni };
+    // kursor idzie po przejrzanych, nie po widocznych: ukryty akt nie zatrzymuje czytelnika w miejscu
+    return { ok: true, od: od | 0, akty, wiecej, dalej: przejrzane.length ? przejrzane[przejrzane.length - 1].nr : od | 0, ostatni };
   }
 
   // Ponowne spotkanie: co przybyło od ostatniego odczytu tego czytelnika, na każdym jego urządzeniu naraz.
   nowe(kto) {
     const o = this.q(`SELECT nr, kiedy FROM odczyty WHERE kto = ?`, kto)[0];
-    const d = this.dziennik(o ? o.nr : 0);
+    const d = this.dziennik(o ? o.nr : 0, LIMIT_DZIENNIKA, kto);
     return { ...d, widziane_do: o ? o.nr : 0, widziane_kiedy: o ? new Date(o.kiedy).toISOString() : null, cudze: d.akty.filter((a) => a.kto !== kto).length };
   }
 
@@ -175,6 +199,7 @@ export class Rdzen {
   doWyslania(limit = 50) {
     const od = Number(this.meta('most_wyslane') || 0);
     const akty = this.q(`SELECT a.*, z.tresc FROM akty a JOIN zapisy z ON z.id = a.zapis WHERE a.nr > ? AND a.co = 'zapisz' AND z.rodzaj = 'wiadomosc' AND a.op NOT LIKE 'most-%' ORDER BY a.nr LIMIT ?`, od, limit)
+      .filter((a) => !a.prywatne) // prywatne nie idą do wspólnej pamięci, którą czytają wszyscy agenci
       .map((a) => ({ nr: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), tresc: a.tresc }));
     return { ok: true, od, akty };
   }
@@ -221,8 +246,8 @@ export class Rdzen {
     for (const g of e.glowy) if (!GLOWA.test(g.nazwa) || !ids.has(g.zapis) || !nry.has(g.akt)) return blad(422, `głowa ${g.nazwa} wskazuje coś, czego nie ma`);
     // od tej linii nic nie może się nie udać z powodu danych: wszystko sprawdzone
     for (const z of e.zapisy) this.sql.exec(`INSERT INTO zapisy (id, rodzaj, tresc, rozmiar) VALUES (?, ?, ?, ?)`, z.id, z.rodzaj, z.tresc, enc.encode(z.tresc).length);
-    for (const a of e.akty) this.sql.exec(`INSERT INTO akty (nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      a.nr, a.op, String(a.odcisk || ''), a.kto, Number(a.kiedy), a.co, a.zapis, a.glowa ?? null, a.z_zapisu ?? null, a.nowy ?? null);
+    for (const a of e.akty) this.sql.exec(`INSERT INTO akty (nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy, prywatne) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      a.nr, a.op, String(a.odcisk || ''), a.kto, Number(a.kiedy), a.co, a.zapis, a.glowa ?? null, a.z_zapisu ?? null, a.nowy ?? null, a.prywatne ? 1 : 0);
     for (const g of e.glowy) this.sql.exec(`INSERT INTO glowy (nazwa, zapis, akt) VALUES (?, ?, ?)`, g.nazwa, g.zapis, g.akt);
     for (const o of e.odczyty) if (poprawneImie(o.kto) && Number.isInteger(o.nr)) this.sql.exec(`INSERT INTO odczyty (kto, nr, kiedy) VALUES (?, ?, ?)`, o.kto, o.nr, Number(o.kiedy) || this.teraz());
     return { ok: true, zapisy: e.zapisy.length, akty: e.akty.length, glowy: e.glowy.length };
@@ -242,10 +267,10 @@ export async function obsluzMiejsce(rdzen, request) {
   const ciało = async () => { try { return await request.json(); } catch { return null; } };
   if (request.method === 'GET') {
     if (sciezka === '') { let most = null; try { most = JSON.parse(rdzen.meta('most_ostatni')); } catch { /* brak */ } return odp({ ...rdzen.stan(), ja: kto, wlasciciel: kto === WLASCICIEL, most }); }
-    if (sciezka === 'dziennik') return odp(rdzen.dziennik(Number(url.searchParams.get('od') || 0), Number(url.searchParams.get('ile') || LIMIT_DZIENNIKA)));
+    if (sciezka === 'dziennik') return odp(rdzen.dziennik(Number(url.searchParams.get('od') || 0), Number(url.searchParams.get('ile') || LIMIT_DZIENNIKA), kto));
     if (sciezka === 'nowe') return odp(rdzen.nowe(kto));
-    if (sciezka === 'glowa') return odp(rdzen.glowa(url.searchParams.get('nazwa') || ''));
-    if (sciezka === 'zapis') return odp(rdzen.zapisTresc(url.searchParams.get('id') || ''));
+    if (sciezka === 'glowa') return odp(rdzen.glowa(url.searchParams.get('nazwa') || '', kto));
+    if (sciezka === 'zapis') return odp(rdzen.zapisTresc(url.searchParams.get('id') || '', kto));
     if (sciezka === 'eksport') return odp(kto === WLASCICIEL ? rdzen.eksport() : blad(403, 'eksport całości tylko dla właściciela'));
   }
   // Tylko dla mostu wołanego przez Workera z crona. Worker przekazuje żądania z zewnątrz z nagłówkami budowanymi od

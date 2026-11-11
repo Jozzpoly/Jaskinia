@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 export function sqlZNode(db = new DatabaseSync(':memory:')) {
   return {
     exec: (q, ...p) => {
-      const rows = p.length || /^\s*(SELECT|INSERT|UPDATE|DELETE)/i.test(q) ? db.prepare(q).all(...p) : (db.exec(q), []);
+      const rows = p.length || /^\s*(SELECT|INSERT|UPDATE|DELETE|PRAGMA|WITH)/i.test(q) ? db.prepare(q).all(...p) : (db.exec(q), []);
       return { toArray: () => rows };
     },
   };

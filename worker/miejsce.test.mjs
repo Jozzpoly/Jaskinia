@@ -199,3 +199,40 @@ test('import (umowa rdzenia U6, U7): eksport przenosi wszystko na nowe Miejsce; 
   assert.equal((await pusty.importuj(zlaGlowa)).status, 422);
   assert.equal(pusty.stan().zapisy, 0, 'odrzucony import nie zostawia połowy');
 });
+
+test('kto co czyta (Menadżer do #10): prywatna wiadomość widzą tylko właściciel, autor i adresat; inny agent nie dojdzie do niej żadną drogą', async () => {
+  const r = nowy();
+  const jawna = await r.wykonaj('jozz', { op: op(), co: 'zapisz', rodzaj: 'wiadomosc', tresc: JSON.stringify({ tekst: 'do wszystkich' }) });
+  const tajna = await r.wykonaj('jozz', { op: op(), co: 'zapisz', rodzaj: 'wiadomosc', prywatne: true, tresc: JSON.stringify({ tekst: 'tylko dla Opusa', do: ['opus'] }) });
+  const uklad = await r.wykonaj('jozz', { op: op(), co: 'zapisz', rodzaj: 'uklad', prywatne: true, tresc: '{"prywatny":1}' });
+  await r.wykonaj('jozz', { op: op(), co: 'przesun', glowa: 'jozz:prywatne/notatki', wersja: null, na: uklad.zapis });
+  const widzi = (kto) => r.dziennik(0, 200, kto).akty.map((a) => a.tresc || a.glowa);
+  assert.ok(widzi('opus').includes(JSON.stringify({ tekst: 'tylko dla Opusa', do: ['opus'] })), 'adresat widzi');
+  assert.equal(tajna.akt.prywatne, true);
+  assert.ok(!JSON.stringify(widzi('astra')).includes('tylko dla Opusa'), 'dziennik');
+  assert.ok(!JSON.stringify(r.nowe('astra')).includes('tylko dla Opusa'), 'nowe');
+  assert.equal(r.zapisTresc(tajna.zapis, 'astra').status, 404, 'zapis po identyfikatorze');
+  assert.equal(r.zapisTresc(uklad.zapis, 'astra').status, 404, 'treść prywatnej głowy po identyfikatorze');
+  assert.equal(r.glowa('jozz:prywatne/notatki', 'astra').status, 403, 'głowa');
+  assert.ok(!JSON.stringify(widzi('astra')).includes('jozz:prywatne/'), 'nawet przesunięcie prywatnej głowy');
+  assert.equal(r.zapisTresc(jawna.zapis, 'astra').ok, true, 'jawne zostaje jawne');
+  assert.equal(r.glowa('jozz:prywatne/notatki').tresc, '{"prywatny":1}', 'właściciel widzi swoje');
+  assert.equal(r.nowe('astra').ostatni, 4);
+  assert.equal(r.doWyslania().akty.length, 1, 'prywatna wiadomość nie idzie mostem do wspólnej pamięci');
+  const jawnieOp = op();
+  await r.wykonaj('jozz', { op: jawnieOp, co: 'zapisz', rodzaj: 'wiadomosc', tresc: 'x' });
+  assert.equal((await r.wykonaj('jozz', { op: jawnieOp, co: 'zapisz', rodzaj: 'wiadomosc', tresc: 'x', prywatne: true })).status, 409, 'ta sama treść, inna prywatność: inna czynność');
+  const e = r.eksport(); const po = nowy(); await po.importuj(e);
+  assert.equal(po.glowa('jozz:prywatne/notatki', 'astra').status, 403, 'prywatność przechodzi przez przeprowadzkę');
+  assert.ok(!JSON.stringify(po.dziennik(0, 200, 'astra')).includes('tylko dla Opusa'));
+});
+
+test('migracja: baza sprzed prywatności dostaje kolumnę i działa dalej, stare akty są jawne', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(':memory:');
+  db.exec(`CREATE TABLE akty (nr INTEGER PRIMARY KEY AUTOINCREMENT, op TEXT NOT NULL UNIQUE, odcisk TEXT NOT NULL, kto TEXT NOT NULL, kiedy INTEGER NOT NULL, co TEXT NOT NULL, zapis TEXT, glowa TEXT, z_zapisu TEXT, nowy INTEGER)`);
+  db.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, nowy) VALUES ('stary-akt-01', 'x', 'jozz', 1, 'zapisz', 'brak', 1)`);
+  const r = new Rdzen(sqlZNode(db));
+  assert.equal(r.dziennik(0, 200, 'astra').akty.length, 1);
+  assert.equal((await r.wykonaj('jozz', { op: op(), co: 'zapisz', rodzaj: 'wiadomosc', tresc: 'po migracji', prywatne: true })).ok, true);
+});

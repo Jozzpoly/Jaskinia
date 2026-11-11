@@ -102,6 +102,8 @@
           <input id="do" placeholder="do: wszyscy, albo imiona po przecinku" aria-label="Do kogo">
           <button id="wyslij">Wyślij</button>
         </div>
+        <label class="male rzad" style="gap:.4rem"><input type="checkbox" id="prywatne" style="width:auto"> tylko dla adresatów: nie idzie do wspólnej pamięci agentów, widzą to tylko osoby z pola <i>do</i></label>
+        <p class="male" style="margin:0">Bez tego znaczka wiadomość widzą wszyscy uczestnicy z kluczem. Rzeczy naprawdę poufnych tu nie trzymaj.</p>
         <p id="odpNa" class="male" hidden></p>
         <p id="stanWysylki" class="male" hidden></p>
       </form>
@@ -251,6 +253,7 @@
     g.append(k, t);
     if (waga !== 'zwykla') { const s = el('span', 'znacznik', waga === 'pilna' ? 'pilne' : 'ważne'); s.style.color = waga === 'pilna' ? 'var(--pilne)' : 'var(--akcent)'; g.append(s); }
     if (Array.isArray(w.do) && w.do.length) g.append(el('span', null, 'do: ' + w.do.join(', ')));
+    if (a.prywatne) g.append(el('span', 'znacznik', 'tylko dla adresatów'));
     g.append(el('span', 'nr', '#' + a.nr)); li.append(g);
     if (w.odp) li.append(el('div', 'male', 'w odpowiedzi na #' + w.odp));
     const p = el('div', 'tresc', w.tekst); li.append(p);
@@ -295,14 +298,16 @@
     const tekst = $('tekst').value; if (!tekst.trim()) return;
     const doKogo = $('do').value.split(',').map((s) => s.trim()).filter(Boolean);
     let szkic = null; try { szkic = JSON.parse(sch.get(SZKIC)); } catch {}
+    const prywatne = $('prywatne').checked;
+    if (prywatne && !doKogo.length) { stanWysylki('Wiadomość tylko dla adresatów potrzebuje adresatów w polu do.'); return; }
     const tresc = JSON.stringify({ tekst, waga: $('waga').value, ...(doKogo.length ? { do: doKogo } : {}), ...(odpowiedzNa ? { odp: odpowiedzNa } : {}) });
     // ten sam op przy ponowieniu: wiadomość trafia raz, nawet gdy odpowiedź serwera zginęła po drodze
-    const op = szkic && szkic.tresc === tresc ? szkic.op : 'skrzynka-' + crypto.randomUUID();
-    sch.set(SZKIC, JSON.stringify({ op, tresc, tekst, waga: $('waga').value, do: $('do').value }));
+    const op = szkic && szkic.tresc === tresc && !!szkic.prywatne === prywatne ? szkic.op : 'skrzynka-' + crypto.randomUUID();
+    sch.set(SZKIC, JSON.stringify({ op, tresc, prywatne, tekst, waga: $('waga').value, do: $('do').value }));
     $('wyslij').disabled = true; stanWysylki('Wysyłam…');
     try {
-      const r = await api('/api/miejsce/akt', { method: 'POST', body: JSON.stringify({ op, co: 'zapisz', rodzaj: 'wiadomosc', tresc }) });
-      sch.set(SZKIC, null); $('tekst').value = ''; $('do').value = ''; $('waga').value = 'zwykla'; odpowiedzNa = null; $('odpNa').hidden = true;
+      const r = await api('/api/miejsce/akt', { method: 'POST', body: JSON.stringify({ op, co: 'zapisz', rodzaj: 'wiadomosc', tresc, prywatne }) });
+      sch.set(SZKIC, null); $('tekst').value = ''; $('prywatne').checked = false; $('do').value = ''; $('waga').value = 'zwykla'; odpowiedzNa = null; $('odpNa').hidden = true;
       stanWysylki(r.powtorzone ? 'Ta wiadomość już wcześniej doszła; nie dodałem jej drugi raz.' : zdrowie.most ? 'Wysłane. Za chwilę będzie u agentów.' : 'Wysłane do Jaskini. Agenci zobaczą to, kiedy most będzie podłączony.');
       setTimeout(() => stanWysylki(''), 5000); await odswiezRozmowe();
     } catch (err) { stanWysylki('Nie wysłane: ' + err.message + '. Szkic zostaje; wyślij jeszcze raz, a trafi tylko raz.'); }
