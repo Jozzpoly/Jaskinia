@@ -176,3 +176,26 @@ test('przez Workera: nagłówek x-kto od klienta nie podszyje się pod Jozza; ek
   const tekst = JSON.stringify(e) + JSON.stringify(nowe);
   assert.ok(!tekst.includes(KLUCZ_JOZZA) && !tekst.includes(KLUCZ_AGENTA), 'klucz nie wraca w żadnej odpowiedzi');
 });
+
+test('import (umowa rdzenia U6, U7): eksport przenosi wszystko na nowe Miejsce; podmieniona treść, niespójna głowa i niepuste Miejsce są odrzucone', async () => {
+  const r = nowy();
+  const a = await r.wykonaj('jozz', { op: op(), co: 'zapisz', rodzaj: 'uklad', tresc: '{"okna":3}' });
+  await r.wykonaj('jozz', { op: op(), co: 'przesun', glowa: 'jozz:uklad', wersja: null, na: a.zapis });
+  await r.wykonaj('opus', { op: op(), co: 'zapisz', rodzaj: 'wiadomosc', tresc: '{"tekst":"zażółć"}' });
+  r.widzialem('jozz', 2);
+  const e = r.eksport();
+  const nowe = nowy();
+  const w = await nowe.importuj(e);
+  assert.deepEqual([w.ok, w.zapisy, w.akty, w.glowy], [true, 2, 3, 1]);
+  assert.equal(nowe.glowa('jozz:uklad').tresc, '{"okna":3}');
+  assert.equal(nowe.nowe('jozz').akty.length, 1, 'miejsce w dzienniku czytelnika też przeszło');
+  const dalej = await nowe.wykonaj('jozz', { op: op(), co: 'przesun', glowa: 'jozz:uklad', wersja: nowe.glowa('jozz:uklad').wersja, na: a.zapis });
+  assert.equal(dalej.ok, true, 'po imporcie głowa przesuwa się dalej z tą samą wersją');
+  assert.equal((await nowe.importuj(e)).status, 409, 'drugi import do niepustego: odmowa, bez łączenia historii');
+  const podmieniony = JSON.parse(JSON.stringify(e)); podmieniony.zapisy[0].tresc = '{"okna":99}';
+  assert.equal((await nowy().importuj(podmieniony)).status, 422);
+  const zlaGlowa = JSON.parse(JSON.stringify(e)); zlaGlowa.glowy[0].zapis = 'f'.repeat(64);
+  const pusty = nowy();
+  assert.equal((await pusty.importuj(zlaGlowa)).status, 422);
+  assert.equal(pusty.stan().zapisy, 0, 'odrzucony import nie zostawia połowy');
+});

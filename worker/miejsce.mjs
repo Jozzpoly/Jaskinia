@@ -195,6 +195,38 @@ export class Rdzen {
       zapisy: this.q(`SELECT * FROM zapisy ORDER BY id`), akty: this.q(`SELECT * FROM akty ORDER BY nr`),
       glowy: this.q(`SELECT * FROM glowy ORDER BY nazwa`), odczyty: this.q(`SELECT * FROM odczyty ORDER BY kto`) };
   }
+
+  // Import całości z eksportu: przeprowadzka na inny adres, odtworzenie z kopii na dysku, praca bez nas.
+  // Tylko do pustego Miejsca (bez łączenia dwóch historii po cichu). Wszystko sprawdzone przed pierwszym zapisem:
+  // każda treść musi dać swój identyfikator (podmieniona nie wejdzie), głowy i akty wskazują istniejące zapisy.
+  // Uwaga na zasięg: to łapie niespójną podmianę, a nie dowodzi pochodzenia (Astra, obs. 2; umowa rdzenia, U7).
+  async importuj(e) {
+    if (!e || e.format !== 'jaskinia-miejsce') return blad(400, 'to nie jest eksport Miejsca (format jaskinia-miejsce)');
+    if (e.wersja !== WERSJA) return blad(400, `eksport w wersji ${e.wersja}, a to Miejsce zna ${WERSJA}; potrzebna migracja`);
+    for (const t of ['zapisy', 'akty', 'glowy', 'odczyty']) if (!Array.isArray(e[t])) return blad(400, `brak listy ${t}`);
+    const s = this.stan();
+    if (s.zapisy || s.akty || s.glowy) return blad(409, 'import tylko do pustego Miejsca; to ma już historię, której nie łączę po cichu');
+    const ids = new Set();
+    for (const z of e.zapisy) {
+      if (typeof z.rodzaj !== 'string' || typeof z.tresc !== 'string') return blad(400, 'zapis bez rodzaju albo treści');
+      if ((await skrot(z.rodzaj + '\n' + z.tresc)) !== z.id) return blad(422, `treść zapisu ${String(z.id).slice(0, 12)} nie zgadza się z jego identyfikatorem`);
+      ids.add(z.id);
+    }
+    const nry = new Set(), opy = new Set();
+    for (const a of e.akty) {
+      if (!Number.isInteger(a.nr) || nry.has(a.nr) || typeof a.op !== 'string' || opy.has(a.op) || !poprawneImie(a.kto) || !['zapisz', 'przesun'].includes(a.co) || !ids.has(a.zapis))
+        return blad(422, `akt ${a.nr} jest niespójny (numer, op, wykonawca, czynność albo zapis)`);
+      nry.add(a.nr); opy.add(a.op);
+    }
+    for (const g of e.glowy) if (!GLOWA.test(g.nazwa) || !ids.has(g.zapis) || !nry.has(g.akt)) return blad(422, `głowa ${g.nazwa} wskazuje coś, czego nie ma`);
+    // od tej linii nic nie może się nie udać z powodu danych: wszystko sprawdzone
+    for (const z of e.zapisy) this.sql.exec(`INSERT INTO zapisy (id, rodzaj, tresc, rozmiar) VALUES (?, ?, ?, ?)`, z.id, z.rodzaj, z.tresc, enc.encode(z.tresc).length);
+    for (const a of e.akty) this.sql.exec(`INSERT INTO akty (nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      a.nr, a.op, String(a.odcisk || ''), a.kto, Number(a.kiedy), a.co, a.zapis, a.glowa ?? null, a.z_zapisu ?? null, a.nowy ?? null);
+    for (const g of e.glowy) this.sql.exec(`INSERT INTO glowy (nazwa, zapis, akt) VALUES (?, ?, ?)`, g.nazwa, g.zapis, g.akt);
+    for (const o of e.odczyty) if (poprawneImie(o.kto) && Number.isInteger(o.nr)) this.sql.exec(`INSERT INTO odczyty (kto, nr, kiedy) VALUES (?, ?, ?)`, o.kto, o.nr, Number(o.kiedy) || this.teraz());
+    return { ok: true, zapisy: e.zapisy.length, akty: e.akty.length, glowy: e.glowy.length };
+  }
 }
 
 // HTTP wewnątrz Miejsca. Worker sprawdził klucz i podaje wykonawcę w nagłówku x-kto; z zewnątrz do Durable Object
@@ -229,6 +261,7 @@ export async function obsluzMiejsce(rdzen, request) {
   if (request.method === 'POST') {
     if (sciezka === 'akt') return odp(await rdzen.wykonaj(kto, await ciało()));
     if (sciezka === 'widzialem') { const c = await ciało(); return odp(rdzen.widzialem(kto, c && c.nr)); }
+    if (sciezka === 'import') return odp(kto === WLASCICIEL ? await rdzen.importuj(await ciało()) : blad(403, 'import całości tylko dla właściciela'));
   }
   return odp(blad(404, 'nie ma takiej ścieżki w Miejscu'));
 }

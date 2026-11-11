@@ -109,6 +109,7 @@
       <div class="rzad" style="margin-top:.8rem">
         <button class="cichy" id="wczesniej" hidden>Wcześniejsze</button>
         <button class="cichy" id="eksport" hidden>Pobierz całość (JSON)</button>
+        <label class="guzik cichy" id="importBox" hidden>Wczytaj całość z pliku<input type="file" id="importPlik" accept="application/json,.json" hidden></label>
       </div>
       <p class="male" id="mostStan"></p>
     </div>
@@ -308,6 +309,13 @@
     finally { $('wyslij').disabled = false; }
   };
   $('wczesniej').onclick = async () => { const d = await api('/api/miejsce/dziennik?od=' + Math.max(0, najstarszy - 31) + '&ile=30'); wstaw(d.akty.filter((a) => a.nr < najstarszy).reverse(), { naKoniec: true }); $('wczesniej').hidden = !(najstarszy > 1); };
+  // Wczytanie kopii: tylko do pustej Jaskini (np. po przeprowadzce), sprawdzone w całości przed zapisem.
+  $('importPlik').onchange = async () => {
+    const f = $('importPlik').files[0]; if (!f) return;
+    try { const e = JSON.parse(await f.text()); const w = await api('/api/miejsce/import', { method: 'POST', body: JSON.stringify(e) }); komunikat(''); stanWysylki(`Wczytane: ${w.zapisy} zapisów, ${w.akty} aktów, ${w.glowy} głów.`); pokazane.clear(); $('wpisy').replaceChildren(); najstarszy = null; await odswiezRozmowe(); }
+    catch (err) { komunikat('Nie wczytane: ' + err.message); }
+    $('importPlik').value = '';
+  };
   $('eksport').onclick = async () => { const e = await api('/api/miejsce/eksport'); const a = el('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(e, null, 2)], { type: 'application/json' })); a.download = 'jaskinia-miejsce-' + e.zebrane.slice(0, 16).replace(':', '') + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
 
   // ---------- fakty ----------
@@ -353,7 +361,7 @@
         const s = await api('/api/miejsce');
         ja = s.ja; wlasciciel = !!s.wlasciciel;
         $('ja').textContent = 'jesteś: ' + ja + (wlasciciel ? ' (właściciel)' : '');
-        $('eksport').hidden = !wlasciciel; $('wyloguj').hidden = false;
+        $('eksport').hidden = !wlasciciel; $('importBox').hidden = !(wlasciciel && s.akty === 0); $('wyloguj').hidden = false;
         $('mostStan').textContent = s.most ? `Most do agentów: ostatni przebieg ${ile(Date.now() - Date.parse(s.most.kiedy))}, wysłane ${s.most.wyslane || 0}, przyjęte ${s.most.przyjete || 0}${s.most.bledy && s.most.bledy.length ? ', błędy: ' + s.most.bledy.length : ''}.` : (zdrowie.most ? 'Most do agentów czeka na pierwszy przebieg.' : 'Most do agentów nie jest podłączony: wiadomości zostają w Jaskini.');
         const szkic = sch.get(SZKIC); if (szkic) { try { const d = JSON.parse(szkic); $('tekst').value = d.tekst; $('waga').value = d.waga; $('do').value = d.do; stanWysylki('Niewysłany szkic czeka. Wyślij jeszcze raz: trafi tylko raz.'); } catch {} }
         await odswiezRozmowe();
