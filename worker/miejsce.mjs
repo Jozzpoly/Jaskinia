@@ -168,6 +168,27 @@ export class Rdzen {
       ostatni_akt: ostatni ? new Date(ostatni.kiedy).toISOString() : null };
   }
 
+  meta(klucz) { const w = this.q(`SELECT wartosc FROM meta WHERE klucz = ?`, klucz)[0]; return w ? w.wartosc : null; }
+  ustawMeta(klucz, wartosc) { this.sql.exec(`INSERT INTO meta (klucz, wartosc) VALUES (?, ?) ON CONFLICT(klucz) DO UPDATE SET wartosc = excluded.wartosc`, klucz, String(wartosc)); }
+
+  // Most (worker/most.mjs): wiadomości jeszcze niewysłane do repozytorium agentów, bez tych, które przyszły mostem.
+  doWyslania(limit = 50) {
+    const od = Number(this.meta('most_wyslane') || 0);
+    const akty = this.q(`SELECT a.*, z.tresc FROM akty a JOIN zapisy z ON z.id = a.zapis WHERE a.nr > ? AND a.co = 'zapisz' AND z.rodzaj = 'wiadomosc' AND a.op NOT LIKE 'most-%' ORDER BY a.nr LIMIT ?`, od, limit)
+      .map((a) => ({ nr: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), tresc: a.tresc }));
+    return { ok: true, od, akty };
+  }
+  wyslane(nr) {
+    if (!Number.isInteger(nr)) return blad(400, 'nr');
+    this.ustawMeta('most_wyslane', Math.max(nr, Number(this.meta('most_wyslane') || 0)));
+    return { ok: true, most_wyslane: Number(this.meta('most_wyslane')) };
+  }
+  znaneOpy(opy) {
+    if (!Array.isArray(opy)) return blad(400, 'opy: lista');
+    const znane = opy.filter((o) => typeof o === 'string' && this.q(`SELECT 1 AS j FROM akty WHERE op = ?`, o).length);
+    return { ok: true, znane };
+  }
+
   // Całość jako jeden JSON: kopia na dysk właściciela, przeprowadzka, praca bez nas.
   eksport() {
     return { ok: true, format: 'jaskinia-miejsce', wersja: WERSJA, zebrane: new Date(this.teraz()).toISOString(),
@@ -188,12 +209,22 @@ export async function obsluzMiejsce(rdzen, request) {
   });
   const ciało = async () => { try { return await request.json(); } catch { return null; } };
   if (request.method === 'GET') {
-    if (sciezka === '') return odp({ ...rdzen.stan(), ja: kto, wlasciciel: kto === WLASCICIEL });
+    if (sciezka === '') { let most = null; try { most = JSON.parse(rdzen.meta('most_ostatni')); } catch { /* brak */ } return odp({ ...rdzen.stan(), ja: kto, wlasciciel: kto === WLASCICIEL, most }); }
     if (sciezka === 'dziennik') return odp(rdzen.dziennik(Number(url.searchParams.get('od') || 0), Number(url.searchParams.get('ile') || LIMIT_DZIENNIKA)));
     if (sciezka === 'nowe') return odp(rdzen.nowe(kto));
     if (sciezka === 'glowa') return odp(rdzen.glowa(url.searchParams.get('nazwa') || ''));
     if (sciezka === 'zapis') return odp(rdzen.zapisTresc(url.searchParams.get('id') || ''));
     if (sciezka === 'eksport') return odp(kto === WLASCICIEL ? rdzen.eksport() : blad(403, 'eksport całości tylko dla właściciela'));
+  }
+  // Tylko dla mostu wołanego przez Workera z crona. Worker przekazuje żądania z zewnątrz z nagłówkami budowanymi od
+  // zera, więc x-wewnetrzne nie przejdzie z przeglądarki ani od agenta.
+  if (sciezka.startsWith('most/')) {
+    if (request.headers.get('x-wewnetrzne') !== 'tak') return odp(blad(404, 'nie ma takiej ścieżki w Miejscu'));
+    if (sciezka === 'most/do-wyslania') return odp(rdzen.doWyslania());
+    const c = (await ciało()) || {};
+    if (sciezka === 'most/wyslane') return odp(rdzen.wyslane(c.nr));
+    if (sciezka === 'most/znane-pliki') return odp(rdzen.znaneOpy(c.opy));
+    if (sciezka === 'most/przyjmij') return odp(await rdzen.wykonaj(c.kto, { op: c.op, co: 'zapisz', rodzaj: 'wiadomosc', tresc: c.tresc }));
   }
   if (request.method === 'POST') {
     if (sciezka === 'akt') return odp(await rdzen.wykonaj(kto, await ciało()));

@@ -25,6 +25,8 @@ export function zdrowie(request, env = {}) {
     pamiecFaktow: Boolean(env.FAKTY),
     miejsce: Boolean(env.MIEJSCE),
     klucze: Boolean(env.KLUCZE),
+    zatwierdzanie: Boolean(env.GITHUB_ZAPIS_TOKEN),
+    most: Boolean(env.GITHUB_ZAPIS_TOKEN && env.MOST_REPO),
     podglad: env.PODGLAD === 'tak',
   };
 }

@@ -70,7 +70,7 @@ export function dlaStrony(fakty, teraz = Date.now(), skad = 'na żywo') {
 }
 
 export async function odpowiedz(env = {}, { fetchFn = fetch, teraz = Date.now() } = {}) {
-  const token = env.GITHUB_DANE_TOKEN || null;
+  const token = env.GITHUB_DANE_TOKEN || env.GITHUB_ZAPIS_TOKEN || null;
   if (env.FAKTY) {
     const zapamietane = await env.FAKTY.get(KLUCZ, 'json');
     if (zapamietane && (teraz - Date.parse(zapamietane.zebrane)) / 1000 <= SWIEZE_S) return dlaStrony(zapamietane, teraz, 'z pamięci (cron)');
@@ -86,7 +86,7 @@ export async function odpowiedz(env = {}, { fetchFn = fetch, teraz = Date.now() 
 export async function wCronie(env = {}, { fetchFn = fetch, teraz = Date.now() } = {}) {
   if (!env.FAKTY) return { zapisane: false, powod: 'brak wiązania FAKTY (KV)' };
   const stare = await env.FAKTY.get(KLUCZ, 'json');
-  const wynik = scal(stare, await zbierz({ fetchFn, token: env.GITHUB_DANE_TOKEN || null, teraz }));
+  const wynik = scal(stare, await zbierz({ fetchFn, token: env.GITHUB_DANE_TOKEN || env.GITHUB_ZAPIS_TOKEN || null, teraz }));
   await env.FAKTY.put(KLUCZ, JSON.stringify(wynik));
   return { zapisane: true, stan: wynik.stan, proba: wynik.ostatnia_proba ? wynik.ostatnia_proba.stan : 'ok' };
 }

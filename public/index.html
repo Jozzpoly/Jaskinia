@@ -5,118 +5,384 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Jaskinia</title>
 <style>
-  :root { --tlo: #f4f1ea; --tekst: #24211c; --przygaszony: #6b645a; --akcent: #9a5b1e; --linia: #d8d1c4; color-scheme: light; }
-  @media (prefers-color-scheme: dark) {
-    :root { --tlo: #17150f; --tekst: #ece6da; --przygaszony: #a69d8f; --akcent: #e0a35e; --linia: #3a352c; color-scheme: dark; }
+  :root {
+    --tlo: #f3efe6; --karta: #fbf8f2; --tekst: #24211c; --przyg: #6b645a; --akcent: #9a5b1e; --linia: #ddd5c6;
+    --pilne: #b3261e; --nowe: #efe2c9; --dobre: #3f7a3a; color-scheme: light;
   }
+  @media (prefers-color-scheme: dark) {
+    :root { --tlo: #15130e; --karta: #1f1c15; --tekst: #ece6da; --przyg: #a69d8f; --akcent: #e0a35e; --linia: #3a352c;
+      --pilne: #ff8a7a; --nowe: #2d2619; --dobre: #8fcf86; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
   body { margin: 0; background: var(--tlo); color: var(--tekst); font: 16px/1.5 system-ui, sans-serif; }
-  main { max-width: 34rem; margin: 0 auto; padding: 3rem 1rem; }
-  h1 { font-size: 1.6rem; margin: 0 0 .5rem; color: var(--akcent); }
-  p { margin: 0 0 1rem; }
-  .male { color: var(--przygaszony); font-size: .9rem; }
-  dl { display: grid; grid-template-columns: auto 1fr; gap: .4rem 1rem; padding: 1rem 0; border-top: 1px solid var(--linia); }
-  dt { color: var(--przygaszony); }
-  dd { margin: 0; font-variant-numeric: tabular-nums; }
-  h2 { font-size: 1.1rem; margin: 2rem 0 .3rem; }
+  main { max-width: 46rem; margin: 0 auto; padding: 1.2rem 1rem 4rem; display: grid; gap: 1.6rem; }
+  header { display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 1.7rem; color: var(--akcent); letter-spacing: -.01em; }
+  h2 { margin: 0 0 .6rem; font-size: .82rem; text-transform: uppercase; letter-spacing: .08em; color: var(--przyg); display: flex; gap: .5rem; align-items: baseline; }
+  h2 .ile { color: var(--akcent); }
   a { color: var(--akcent); }
-  #swiezosc.stare, #swiezosc.brak { color: var(--akcent); font-weight: 600; }
-  ol { list-style: none; padding: 0; margin: .5rem 0 0; border-top: 1px solid var(--linia); }
-  li { padding: .55rem 0; border-bottom: 1px solid var(--linia); display: grid; grid-template-columns: 1fr auto; gap: .1rem 1rem; }
-  li .opis { grid-column: 1 / -1; color: var(--przygaszony); font-size: .9rem; overflow-wrap: anywhere; }
-  li .kiedy { color: var(--przygaszony); font-size: .9rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .male { color: var(--przyg); font-size: .88rem; }
+  .ja { margin-left: auto; font-size: .88rem; color: var(--przyg); }
+  .karta { background: var(--karta); border: 1px solid var(--linia); border-radius: .7rem; padding: .8rem .9rem; min-width: 0; }
+  .lista { display: grid; gap: .6rem; }
+  .baner { border: 2px dashed var(--akcent); border-radius: .6rem; padding: .6rem .8rem; font-size: .92rem; }
+  .baner.zly { border-color: var(--pilne); color: var(--pilne); }
+  button, .guzik { font: inherit; border: 0; border-radius: .5rem; padding: .5rem .9rem; font-weight: 600; cursor: pointer; background: var(--akcent); color: var(--tlo); text-decoration: none; display: inline-block; }
+  button.cichy, .guzik.cichy { background: transparent; color: var(--akcent); border: 1px solid var(--linia); font-weight: 500; }
+  button:disabled { opacity: .45; cursor: default; }
+  .rzad { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+  .rzad > input, .rzad > select { flex: 1 1 9rem; min-width: 0; }
+  textarea, input, select { font: inherit; color: inherit; background: var(--karta); border: 1px solid var(--linia); border-radius: .5rem; padding: .55rem .7rem; width: 100%; }
+  textarea { min-height: 5.5rem; resize: vertical; }
+  #powitanie { font-size: 1.05rem; margin: 0; }
+  #powitanie b { color: var(--akcent); }
+  .sprawa .gora { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; font-size: .85rem; color: var(--przyg); }
+  .sprawa .tytul { font-weight: 700; margin: .2rem 0; overflow-wrap: anywhere; }
+  .sprawa .pytanie { font-size: 1.05rem; margin: .3rem 0; }
+  .sprawa .opis { font-size: .92rem; color: var(--przyg); overflow-wrap: anywhere; }
+  .sprawa.decyzja { border-left: 4px solid var(--akcent); }
+  .sprawa.nowa { background: var(--nowe); }
+  .znacznik { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: .05rem .45rem; border-radius: 1rem; border: 1px solid currentColor; }
+  details > summary { cursor: pointer; color: var(--przyg); font-size: .92rem; }
+  .proby { display: grid; gap: .3rem; margin-top: .5rem; font-size: .9rem; }
+  .proby .repo { font-weight: 700; margin-top: .4rem; }
+  .wpis { background: var(--karta); border: 1px solid var(--linia); border-radius: .6rem; padding: .6rem .75rem; min-width: 0; }
+  .wpis.nowy { background: var(--nowe); }
+  .wpis.pilna { border-left: 4px solid var(--pilne); }
+  .wpis.wazna { border-left: 4px solid var(--akcent); }
+  .wpis .glowka { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; font-size: .85rem; color: var(--przyg); }
+  .kto { font-weight: 700; padding: 0 .45rem; border-radius: 1rem; color: #fff; }
+  .nr { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .tresc { margin: .3rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .tresc.zwinieta { max-height: 11rem; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+  .stopka { display: flex; gap: .4rem; margin-top: .3rem; }
+  .stopka button { padding: .15rem .6rem; font-size: .84rem; }
+  .akt { font-size: .85rem; color: var(--przyg); overflow-wrap: anywhere; }
+  .pokoje { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+  .pokoj { text-decoration: none; color: inherit; display: block; }
+  .pokoj b { color: var(--akcent); }
+  ol.repos { list-style: none; padding: 0; margin: .5rem 0 0; }
+  ol.repos li { padding: .4rem 0; border-bottom: 1px solid var(--linia); display: grid; grid-template-columns: 1fr auto; gap: 0 1rem; font-size: .92rem; }
+  ol.repos .kiedy { color: var(--przyg); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  ol.repos li.nowe a { font-weight: 700; }
+  ol.kroki { margin: .4rem 0 0; padding-left: 1.3rem; display: grid; gap: .5rem; }
+  ol.kroki li.zrobione { color: var(--dobre); }
+  code { font-size: .88em; overflow-wrap: anywhere; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Jaskinia</h1>
-  <p>Pierwszy podgląd nowej Jaskini. Jeśli widzisz tę stronę na telefonie i na komputerze, droga do Twoich urządzeń działa.</p>
-  <p><a href="/dom/">Twój dzisiejszy Dom pod tym adresem →</a></p>
-  <p><a href="/miejsce/">Skrzynka: Ty i agenci w jednym miejscu, z każdego urządzenia →</a></p>
-  <p><a href="/osada/">Osada: mały świat, który żyje, kiedy nikt nie patrzy (próba) →</a></p>
-  <dl id="stan">
-    <dt>Wdrożenie</dt><dd id="wersja">sprawdzam…</dd>
-    <dt>Logowanie Access</dt><dd id="access">sprawdzam…</dd>
-    <dt>Zmienne Access</dt><dd id="zmienne">sprawdzam…</dd>
-    <dt>Klucz do danych</dt><dd id="dane">sprawdzam…</dd>
-  </dl>
-  <p class="male">Strona pokazuje, czy ustawienia wdrożenia są na miejscu, bez wartości sekretów.</p>
-  <h2>Twoje publiczne repo, prosto z GitHuba</h2>
-  <p id="swiezosc" class="male">sprawdzam…</p>
-  <ol id="repos"></ol>
+  <header>
+    <h1>Jaskinia</h1>
+    <span class="ja" id="ja"></span>
+  </header>
+  <p id="podglad" class="baner" hidden>Podgląd gałęzi: klucze tego adresu są publiczne, każdy może tu pisać. Nic prywatnego. <button class="cichy" data-k="podglad-jozz-klucz-publiczny">Wejdź jako Jozz</button> <button class="cichy" data-k="podglad-agent-klucz-publiczny">jako agent</button></p>
+  <p id="komunikat" class="baner zly" hidden></p>
+
+  <section id="sekcjaPowitanie" hidden><p id="powitanie"></p></section>
+
+  <section id="sekcjaSprawy">
+    <h2>Sprawy dla Ciebie <span class="ile" id="ileDecyzji"></span></h2>
+    <div class="lista" id="decyzje"></div>
+    <p class="male" id="brakDecyzji" hidden>Nikt nie czeka teraz na Twoją decyzję.</p>
+    <details id="otwarteBox" hidden><summary id="otwarteNaglowek"></summary><div class="lista" id="otwarte" style="margin-top:.6rem"></div></details>
+    <details id="probyBox" hidden><summary id="probyNaglowek"></summary><div class="proby" id="proby"></div></details>
+    <p class="male" id="sprawyStan">sprawdzam…</p>
+  </section>
+
+  <section id="rozmowa">
+    <h2>Rozmowa z agentami</h2>
+    <div id="rozmowaZamknieta" class="karta" hidden></div>
+    <div id="rozmowaOtwarta" hidden>
+      <form id="formWiad" class="lista">
+        <textarea id="tekst" placeholder="Napisz raz, do wszystkich. Wklej całą rozmowę, jeśli chcesz: trafi do każdego agenta z godziną." required></textarea>
+        <div class="rzad">
+          <select id="waga" aria-label="Waga"><option value="zwykla">zwykła</option><option value="wazna">ważna</option><option value="pilna">pilna</option></select>
+          <input id="do" placeholder="do: wszyscy, albo imiona po przecinku" aria-label="Do kogo">
+          <button id="wyslij">Wyślij</button>
+        </div>
+        <p id="odpNa" class="male" hidden></p>
+        <p id="stanWysylki" class="male" hidden></p>
+      </form>
+      <ol id="wpisy" class="lista" style="list-style:none;padding:0;margin:1rem 0 0"></ol>
+      <div class="rzad" style="margin-top:.8rem">
+        <button class="cichy" id="wczesniej" hidden>Wcześniejsze</button>
+        <button class="cichy" id="eksport" hidden>Pobierz całość (JSON)</button>
+      </div>
+      <p class="male" id="mostStan"></p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pokoje</h2>
+    <div class="pokoje">
+      <a class="karta pokoj" href="/dom/"><b>Twój Dom</b><br><span class="male">Okna, układy, materiały. Dzisiejsza Jaskinia, odświeżana sama co 6 godzin.</span></a>
+      <a class="karta pokoj" href="/osada/"><b>Osada</b><br><span class="male">Próba techniczna: świat, który żyje po stronie serwera, kiedy nikt nie patrzy.</span></a>
+    </div>
+    <details style="margin-top:.8rem"><summary id="faktyNaglowek">Twoje publiczne repo</summary><ol class="repos" id="repos"></ol><p class="male" id="faktyStan"></p></details>
+  </section>
+
+  <section id="sekcjaPodlaczenie">
+    <h2>Podłączenie</h2>
+    <div class="karta">
+      <p id="podlaczenieWstep" style="margin-top:0"></p>
+      <ol class="kroki" id="kroki"></ol>
+      <details style="margin-top:.8rem" id="generator">
+        <summary>Zrób klucz (dla siebie albo dla agenta)</summary>
+        <p class="male">Klucz powstaje w tej przeglądarce i nigdzie nie jest wysyłany. Zapisz go u siebie. Do Cloudflare trafia tylko skrót, z którego nie da się odtworzyć klucza.</p>
+        <div class="rzad"><input id="imieKlucza" value="jozz" aria-label="Imię"><button class="cichy" id="zrobKlucz" type="button">Zrób klucz</button></div>
+        <div id="nowyKlucz" hidden>
+          <p class="male" style="margin:.6rem 0 .2rem">Klucz (tylko dla Ciebie, wpiszesz go tu przy wejściu):</p><input id="kluczJawny" readonly>
+          <p class="male" style="margin:.6rem 0 .2rem">Wartość do ustawienia <code>KLUCZE</code> w Cloudflare:</p><input id="wierszKlucza" readonly>
+        </div>
+      </details>
+      <form id="formKlucz" class="rzad" style="margin-top:.8rem">
+        <input id="klucz" type="password" autocomplete="current-password" placeholder="Masz już klucz? Wpisz go tutaj" minlength="16">
+        <button>Wejdź</button>
+      </form>
+      <p class="male" style="margin-bottom:0"><button class="cichy" id="wyloguj" type="button" hidden>Zapomnij klucz na tym urządzeniu</button></p>
+    </div>
+  </section>
+
+  <details><summary>Stan wdrożenia</summary><pre class="male" id="zdrowie" style="white-space:pre-wrap"></pre></details>
 </main>
 <script>
-  const pokaz = (id, tak, opisTak, opisNie) => {
-    document.getElementById(id).textContent = tak ? opisTak : opisNie;
-  };
-  fetch('/api/zdrowie', { cache: 'no-store' })
-    .then((r) => r.json())
-    .then((z) => {
-      document.getElementById('wersja').textContent = z.wersja;
-      pokaz('access', z.access, 'jesteś zalogowany', 'brak (strona otwarta bez Access)');
-      pokaz('zmienne', z.zmienneAccess, 'ustawione', 'brak');
-      pokaz('dane', z.sekretDanych, 'ustawiony', 'brak (fakty bez klucza: GitHub pozwala na mniej zapytań)');
-    })
-    .catch(() => {
-      document.getElementById('wersja').textContent = 'API nie odpowiada (to normalne poza Cloudflare)';
-      for (const id of ['access', 'zmienne', 'dane']) document.getElementById(id).textContent = '—';
-    });
-  // Fakty o repo: zawsze z wiekiem, a nie wiadomo nigdy nie udaje zera. Strona może być otwarta godzinami (telefon),
-  // więc wiek rośnie na ekranie, fakty są dopytywane co kilka minut i po powrocie do karty, a nieudane pytanie nie
-  // zastępuje pokazanej listy, tylko mówi o sobie obok niej.
-  const SWIEZE_S = 45 * 60, PYTAJ_CO_MS = 5 * 60e3, RYSUJ_CO_MS = 30e3;
-  const ile = (s) => s < 90 ? 'przed chwilą' : s < 5400 ? Math.round(s / 60) + ' min temu' : s < 129600 ? Math.round(s / 3600) + ' godz. temu' : Math.round(s / 86400) + ' dni temu';
-  const czemuBrak = (f) => {
-    const l = (f.luki || [])[0] || {};
-    return l.status ? ' (GitHub: ' + l.status + (l.zostalo_zapytan === '0' ? ', wyczerpany limit zapytań' + (f.z_tokenem ? '' : ' bez klucza') : '') + ')' : l.blad ? ' (' + l.blad + ')' : '';
-  };
-  let pokazane = null; // { f, odebrane }: ostatnia odpowiedź z listą; wiek liczony od chwili odbioru zegarem tej karty
-  let blad = null;     // { tekst, kiedy }: ostatnie pytanie, które listy nie dało
-  let pytano = 0, wToku = false;
-  const rysujListe = (f) => {
-    const teraz = Date.now(), ol = document.getElementById('repos');
-    ol.replaceChildren();
-    for (const r of f.repos) {
-      const li = document.createElement('li');
-      const a = document.createElement('a'); a.href = r.url; a.textContent = r.nazwa + (r.archiwum ? ' (archiwum)' : ''); a.rel = 'noopener';
-      const k = document.createElement('span'); k.className = 'kiedy'; k.dataset.push = r.ostatni_push || '';
-      k.textContent = r.ostatni_push ? 'push ' + ile((teraz - Date.parse(r.ostatni_push)) / 1000) : '';
-      li.append(a, k);
-      if (r.opis) { const o = document.createElement('span'); o.className = 'opis'; o.textContent = r.opis; li.append(o); }
-      ol.append(li);
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const KLUCZ = 'jaskinia:miejsce:klucz', SZKIC = 'jaskinia:miejsce:szkic', WIZYTA = 'jaskinia:ostatnia-wizyta';
+  const sch = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+    set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
+  let klucz = sch.get(KLUCZ), ja = null, wlasciciel = false, zdrowie = {}, sprawy = null, nowe = null;
+  let pokazane = new Map(), widzianeDo = 0, najstarszy = null, odpowiedzNa = null;
+  // ostatnia wizyta: z Miejsca (wspólna dla Twoich urządzeń), a bez klucza z tej przeglądarki
+  let ostatniaWizyta = Number(sch.get(WIZYTA) || 0);
+
+  const ile = (ms) => { const s = ms / 1000; return s < 60 ? 'przed chwilą' : s < 5400 ? Math.round(s / 60) + ' min temu'
+    : s < 129600 ? Math.round(s / 3600) + ' godz. temu' : Math.round(s / 86400) + ' dni temu'; };
+  const kolor = (imie) => { let h = 0; for (const c of imie) h = (h * 31 + c.charCodeAt(0)) % 360; return imie === 'jozz' ? 'var(--akcent)' : `hsl(${h} 45% 42%)`; };
+  const komunikat = (t) => { $('komunikat').textContent = t || ''; $('komunikat').hidden = !t; };
+  const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+  async function api(sciezka, opcje = {}) {
+    const r = await fetch(sciezka, { ...opcje, cache: 'no-store', headers: { ...(klucz ? { authorization: 'Bearer ' + klucz } : {}), ...(opcje.body ? { 'content-type': 'application/json' } : {}) } });
+    let o = null; try { o = await r.json(); } catch {}
+    if (!r.ok) { const e = new Error((o && o.blad) || ('HTTP ' + r.status)); e.status = r.status; throw e; }
+    return o;
+  }
+
+  // ---------- co przybyło od ostatniej wizyty ----------
+  const odmiana = (n, a, b, c) => n === 1 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? b : c;
+  function powitanie() {
+    if (!ostatniaWizyta) { $('sekcjaPowitanie').hidden = true; return; }
+    const czesci = [];
+    if (nowe) { const c = nowe.akty.filter((a) => a.kto !== ja && a.rodzaj === 'wiadomosc').length; if (c) czesci.push(`<b>${c}</b> ${odmiana(c, 'wiadomość', 'wiadomości', 'wiadomości')} od agentów`); }
+    if (sprawy && sprawy.sprawy) {
+      const d = sprawy.sprawy.filter((s) => s.rodzaj === 'decyzja' && Date.parse(s.zaktualizowane) > ostatniaWizyta).length;
+      const p = sprawy.sprawy.filter((s) => s.rodzaj !== 'decyzja' && Date.parse(s.zaktualizowane) > ostatniaWizyta).length;
+      if (d) czesci.push(`<b>${d}</b> ${odmiana(d, 'sprawa', 'sprawy', 'spraw')} do Twojej decyzji`);
+      if (p) czesci.push(`<b>${p}</b> ${odmiana(p, 'zmieniona próba', 'zmienione próby', 'zmienionych prób')} agentów`);
     }
-  };
-  const rysuj = () => {
-    const el = document.getElementById('swiezosc'), teraz = Date.now();
-    const oBledzie = blad ? ' Ostatnie pytanie ' + ile((teraz - blad.kiedy) / 1000) + ': ' + blad.tekst + ', więc zostaje to, co wyżej.' : '';
-    if (!pokazane) {
-      el.textContent = blad ? 'Nie wiadomo: ' + blad.tekst + ', więc nie pokazuję żadnej listy.' : 'sprawdzam…';
-      el.className = blad ? 'brak' : 'male';
-      return;
+    $('powitanie').innerHTML = `Od Twojej ostatniej wizyty (${ile(Date.now() - ostatniaWizyta)}): ` + (czesci.length ? czesci.join(', ') + '.' : 'nic nowego.');
+    $('sekcjaPowitanie').hidden = false;
+  }
+
+  // ---------- sprawy ----------
+  function kartaSprawy(s) {
+    const k = el('div', 'karta sprawa' + (s.rodzaj === 'decyzja' ? ' decyzja' : '') + (ostatniaWizyta && Date.parse(s.zaktualizowane) > ostatniaWizyta ? ' nowa' : ''));
+    const g = el('div', 'gora');
+    g.append(el('span', null, `${s.repo} #${s.nr}`), el('span', null, 'zmienione ' + ile(Date.now() - Date.parse(s.zaktualizowane))));
+    if (s.szkic) g.append(el('span', 'znacznik', 'szkic'));
+    k.append(g);
+    if (s.pytanie) k.append(el('div', 'pytanie', s.pytanie));
+    k.append(el('div', 'tytul', s.tytul));
+    if (s.streszczenie) k.append(el('div', 'opis', s.streszczenie));
+    const r = el('div', 'rzad'); r.style.marginTop = '.5rem';
+    if (s.podglad) { const a = el('a', 'guzik cichy', 'Zobacz na żywo'); a.href = s.podglad; a.target = '_blank'; a.rel = 'noopener'; r.append(a); }
+    if (s.rodzaj === 'decyzja') {
+      const b = el('button', null, s.wersja ? `Zatwierdź tę wersję (${s.wersja.slice(0, 7)})` : 'Zatwierdź');
+      const czemu = !zdrowie.zatwierdzanie ? 'Jaskinia nie ma jeszcze prawa zatwierdzać: zobacz Podłączenie niżej.' : !wlasciciel ? 'Zatwierdza tylko właściciel.' : !s.wersja ? 'Brak wersji do zatwierdzenia.' : '';
+      b.disabled = !!czemu; if (czemu) b.title = czemu;
+      b.onclick = async () => {
+        b.disabled = true; b.textContent = 'Zatwierdzam…';
+        try { await api('/api/sprawy/zatwierdz', { method: 'POST', body: JSON.stringify({ repo: s.repo, nr: s.nr, wersja: s.wersja }) }); b.textContent = 'Zatwierdzone'; setTimeout(() => wczytajSprawy(true), 1500); }
+        catch (e) { b.textContent = 'Nie zatwierdzone'; komunikat(e.message); }
+      };
+      r.append(b);
+      if (czemu) r.append(el('span', 'male', czemu));
     }
-    const f = pokazane.f, wiek = (f.wiek_s || 0) + (teraz - pokazane.odebrane) / 1000;
-    const stare = wiek > SWIEZE_S;
-    el.textContent = (stare ? 'Stare fakty: ' : '') + 'zebrane ' + ile(wiek) + ', ' + f.skad
-      + (f.stan === 'czesciowe' ? '. Lista niepełna: GitHub urwał odpowiedź w połowie' : '')
-      + (f.ostatnia_proba ? '. Nowsza próba obserwatora nie powiodła się, to wcześniejsze fakty' : '') + '.' + oBledzie;
-    el.className = stare ? 'stare' : 'male';
-    for (const k of document.querySelectorAll('#repos .kiedy')) {
-      if (k.dataset.push) k.textContent = 'push ' + ile((teraz - Date.parse(k.dataset.push)) / 1000);
+    const gh = el('a', 'male', 'szczegóły'); gh.href = s.url; gh.target = '_blank'; gh.rel = 'noopener'; r.append(gh);
+    k.append(r);
+    return k;
+  }
+  async function wczytajSprawy(wymus) {
+    try { sprawy = await api('/api/sprawy' + (wymus ? '?odswiez=1' : '')); }
+    catch (e) { $('sprawyStan').textContent = 'Spraw nie da się teraz pobrać: ' + e.message; return; }
+    if (!sprawy.sprawy) { $('sprawyStan').textContent = 'Nie wiadomo, co czeka: GitHub nie odpowiedział' + (sprawy.luki[0] && sprawy.luki[0].status ? ` (${sprawy.luki[0].status})` : '') + '. Nie pokazuję pustej listy, jakby nic nie było.'; return; }
+    const dec = sprawy.sprawy.filter((s) => s.rodzaj === 'decyzja'), otw = sprawy.sprawy.filter((s) => s.rodzaj === 'otwarte'), pr = sprawy.sprawy.filter((s) => s.rodzaj === 'proba');
+    $('ileDecyzji').textContent = dec.length ? '· ' + dec.length : '';
+    $('decyzje').replaceChildren(...dec.map(kartaSprawy)); $('brakDecyzji').hidden = !!dec.length;
+    $('otwarteBox').hidden = !otw.length; $('otwarteNaglowek').textContent = `Otwarte, bez pytania do Ciebie: ${otw.length}`; $('otwarte').replaceChildren(...otw.map(kartaSprawy));
+    $('probyBox').hidden = !pr.length; $('probyNaglowek').textContent = `Próby agentów w toku: ${pr.length} (nic nie musisz)`;
+    const grupy = {}; for (const s of pr) (grupy[s.repo] = grupy[s.repo] || []).push(s);
+    $('proby').replaceChildren(...Object.entries(grupy).sort((a, b) => b[1].length - a[1].length).flatMap(([repo, l]) => [el('div', 'repo', `${repo} · ${l.length}`),
+      ...l.slice(0, 6).map((s) => { const a = el('a', null, s.tytul); a.href = s.podglad || s.url; a.target = '_blank'; a.rel = 'noopener'; const d = el('div'); d.append(a, el('span', 'male', ' · ' + ile(Date.now() - Date.parse(s.zaktualizowane)))); return d; }),
+      ...(l.length > 6 ? [el('div', 'male', `i ${l.length - 6} starszych`)] : [])]));
+    $('sprawyStan').textContent = `Z GitHuba ${ile(sprawy.wiek_s * 1000)}${sprawy.stan === 'czesciowe' ? ', lista niepełna' : ''}. Agent pyta Cię o decyzję linią Decyzja dla Jozza: w opisie zmiany.`;
+    powitanie();
+  }
+
+  // ---------- rozmowa ----------
+  function rozbierz(a) {
+    if (a.co !== 'zapisz') return null;
+    if (a.rodzaj === 'werdykt') { try { const w = JSON.parse(a.tresc); return { werdykt: `zatwierdził ${w.sprawa} w wersji ${String(w.wersja).slice(0, 7)}` }; } catch { return null; } }
+    if (a.rodzaj !== 'wiadomosc') return null;
+    try { const t = JSON.parse(a.tresc); if (t && typeof t.tekst === 'string') return t; } catch {}
+    return { tekst: a.tresc };
+  }
+  function wpis(a, swiezy) {
+    const li = el('li'); const w = rozbierz(a);
+    if (!w || w.werdykt) { li.className = 'akt'; li.textContent = `#${a.nr} ${a.kto}: ` + (w ? w.werdykt : a.co === 'przesun' ? `przesunął ${a.glowa}` : `zapis ${a.rodzaj}`) + ', ' + ile(Date.now() - Date.parse(a.kiedy)); return li; }
+    const waga = ['wazna', 'pilna'].includes(w.waga) ? w.waga : 'zwykla';
+    li.className = 'wpis ' + waga + (swiezy ? ' nowy' : '');
+    const g = el('div', 'glowka'); const k = el('span', 'kto', a.kto); k.style.background = kolor(a.kto);
+    const t = el('span', 'kiedy', ile(Date.now() - Date.parse(a.kiedy))); t.dataset.kiedy = a.kiedy; t.title = new Date(a.kiedy).toLocaleString('pl-PL');
+    g.append(k, t);
+    if (waga !== 'zwykla') { const s = el('span', 'znacznik', waga === 'pilna' ? 'pilne' : 'ważne'); s.style.color = waga === 'pilna' ? 'var(--pilne)' : 'var(--akcent)'; g.append(s); }
+    if (Array.isArray(w.do) && w.do.length) g.append(el('span', null, 'do: ' + w.do.join(', ')));
+    g.append(el('span', 'nr', '#' + a.nr)); li.append(g);
+    if (w.odp) li.append(el('div', 'male', 'w odpowiedzi na #' + w.odp));
+    const p = el('div', 'tresc', w.tekst); li.append(p);
+    const st = el('div', 'stopka');
+    if (w.tekst.length > 700) { p.classList.add('zwinieta'); const b = el('button', 'cichy', `Rozwiń (${Math.round(w.tekst.length / 1000)} tys. znaków)`); b.onclick = () => { p.classList.toggle('zwinieta'); b.textContent = p.classList.contains('zwinieta') ? 'Rozwiń' : 'Zwiń'; }; st.append(b); }
+    const o = el('button', 'cichy', 'Odpowiedz');
+    o.onclick = () => { odpowiedzNa = a.nr; $('odpNa').replaceChildren(document.createTextNode(`Odpowiadasz na #${a.nr} (${a.kto}). `)); const x = el('a', null, 'anuluj'); x.href = '#'; x.onclick = (e) => { e.preventDefault(); odpowiedzNa = null; $('odpNa').hidden = true; }; $('odpNa').append(x); $('odpNa').hidden = false; if (!$('do').value && a.kto !== ja) $('do').value = a.kto; $('tekst').focus(); };
+    st.append(o); li.append(st);
+    return li;
+  }
+  function wstaw(akty, { swieze = false, naKoniec = false } = {}) {
+    for (const a of akty) {
+      if (pokazane.has(a.nr)) continue;
+      const li = wpis(a, swieze && a.kto !== ja && a.nr > widzianeDo); pokazane.set(a.nr, li);
+      naKoniec ? $('wpisy').append(li) : $('wpisy').prepend(li);
+      if (najstarszy === null || a.nr < najstarszy) najstarszy = a.nr;
     }
-  };
-  const pytaj = async () => {
-    if (wToku) return;
-    wToku = true; pytano = Date.now();
+  }
+  async function odswiezRozmowe() {
+    if (!ja) return;
     try {
-      const f = await fetch('/api/fakty', { cache: 'no-store' }).then((r) => r.json());
-      if (Array.isArray(f.repos)) { pokazane = { f, odebrane: Date.now() }; blad = null; rysujListe(f); }
-      else blad = { tekst: 'GitHub nie podał faktów' + czemuBrak(f), kiedy: Date.now() };
+      nowe = await api('/api/miejsce/nowe');
+      komunikat('');
+      if (!pokazane.size) {
+        widzianeDo = nowe.widziane_do;
+        if (nowe.widziane_kiedy) ostatniaWizyta = Date.parse(nowe.widziane_kiedy);
+        const wcz = await api('/api/miejsce/dziennik?od=' + Math.max(0, nowe.widziane_do - 12) + '&ile=12');
+        wstaw(wcz.akty.filter((a) => a.nr <= nowe.widziane_do));
+      }
+      wstaw(nowe.akty, { swieze: true });
+      $('wczesniej').hidden = !(najstarszy > 1);
+      powitanie();
+      if (!document.hidden && nowe.ostatni > widzianeDo) setTimeout(() => !document.hidden && api('/api/miejsce/widzialem', { method: 'POST', body: JSON.stringify({ nr: nowe.ostatni }) }).catch(() => {}), 5000);
     } catch (e) {
-      blad = { tekst: 'API faktów nie odpowiada (to normalne poza Cloudflare)', kiedy: Date.now() };
-    } finally { wToku = false; rysuj(); }
+      if (e.status === 401) { wyloguj(); komunikat('Ten klucz nie pasuje.'); }
+      else komunikat('Rozmowa nie odpowiada: ' + e.message + '. To, co widzisz, może być nieaktualne.');
+    }
+  }
+  const stanWysylki = (t) => { $('stanWysylki').textContent = t || ''; $('stanWysylki').hidden = !t; };
+  $('formWiad').onsubmit = async (e) => {
+    e.preventDefault();
+    const tekst = $('tekst').value; if (!tekst.trim()) return;
+    const doKogo = $('do').value.split(',').map((s) => s.trim()).filter(Boolean);
+    let szkic = null; try { szkic = JSON.parse(sch.get(SZKIC)); } catch {}
+    const tresc = JSON.stringify({ tekst, waga: $('waga').value, ...(doKogo.length ? { do: doKogo } : {}), ...(odpowiedzNa ? { odp: odpowiedzNa } : {}) });
+    // ten sam op przy ponowieniu: wiadomość trafia raz, nawet gdy odpowiedź serwera zginęła po drodze
+    const op = szkic && szkic.tresc === tresc ? szkic.op : 'skrzynka-' + crypto.randomUUID();
+    sch.set(SZKIC, JSON.stringify({ op, tresc, tekst, waga: $('waga').value, do: $('do').value }));
+    $('wyslij').disabled = true; stanWysylki('Wysyłam…');
+    try {
+      const r = await api('/api/miejsce/akt', { method: 'POST', body: JSON.stringify({ op, co: 'zapisz', rodzaj: 'wiadomosc', tresc }) });
+      sch.set(SZKIC, null); $('tekst').value = ''; $('do').value = ''; $('waga').value = 'zwykla'; odpowiedzNa = null; $('odpNa').hidden = true;
+      stanWysylki(r.powtorzone ? 'Ta wiadomość już wcześniej doszła; nie dodałem jej drugi raz.' : zdrowie.most ? 'Wysłane. Za chwilę będzie u agentów.' : 'Wysłane do Jaskini. Agenci zobaczą to, kiedy most będzie podłączony.');
+      setTimeout(() => stanWysylki(''), 5000); await odswiezRozmowe();
+    } catch (err) { stanWysylki('Nie wysłane: ' + err.message + '. Szkic zostaje; wyślij jeszcze raz, a trafi tylko raz.'); }
+    finally { $('wyslij').disabled = false; }
   };
-  pytaj();
-  setInterval(() => { if (!document.hidden && Date.now() - pytano >= PYTAJ_CO_MS) pytaj(); else rysuj(); }, RYSUJ_CO_MS);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (Date.now() - pytano >= 60e3) pytaj(); else rysuj(); } });
+  $('wczesniej').onclick = async () => { const d = await api('/api/miejsce/dziennik?od=' + Math.max(0, najstarszy - 31) + '&ile=30'); wstaw(d.akty.filter((a) => a.nr < najstarszy).reverse(), { naKoniec: true }); $('wczesniej').hidden = !(najstarszy > 1); };
+  $('eksport').onclick = async () => { const e = await api('/api/miejsce/eksport'); const a = el('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(e, null, 2)], { type: 'application/json' })); a.download = 'jaskinia-miejsce-' + e.zebrane.slice(0, 16).replace(':', '') + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
+
+  // ---------- fakty ----------
+  async function wczytajFakty() {
+    try {
+      const f = await api('/api/fakty');
+      if (!f.repos) { $('faktyStan').textContent = 'Nie wiadomo: GitHub nie podał faktów, więc nie pokazuję listy.'; return; }
+      const nowsze = f.repos.filter((r) => ostatniaWizyta && Date.parse(r.ostatni_push) > ostatniaWizyta).length;
+      $('faktyNaglowek').textContent = `Twoje publiczne repo: ${f.repos.length}` + (nowsze ? `, ${nowsze} ze zmianami od Twojej wizyty` : '');
+      $('repos').replaceChildren(...f.repos.map((r) => { const li = el('li', ostatniaWizyta && Date.parse(r.ostatni_push) > ostatniaWizyta ? 'nowe' : ''); const a = el('a', null, r.nazwa + (r.archiwum ? ' (archiwum)' : '')); a.href = r.url; a.target = '_blank'; a.rel = 'noopener'; li.append(a, el('span', 'kiedy', r.ostatni_push ? ile(Date.now() - Date.parse(r.ostatni_push)) : '')); return li; }));
+      $('faktyStan').textContent = `Zebrane ${ile(f.wiek_s * 1000)}, ${f.skad}.`;
+    } catch (e) { $('faktyStan').textContent = 'Fakty nie odpowiadają: ' + e.message; }
+  }
+
+  // ---------- podłączenie: jednorazowe kroki, z linkami ----------
+  function podlaczenie() {
+    const kroki = [
+      { zrobione: !!zdrowie.klucze, html: 'Zrób sobie klucz: niżej <i>Zrób klucz</i>. Klucz zapisz u siebie (menedżer haseł), wartość dla <code>KLUCZE</code> skopiuj.' },
+      { zrobione: !!zdrowie.klucze, html: 'W Cloudflare otwórz <a href="https://dash.cloudflare.com/?to=/:account/workers/services/view/jaskinia/production/settings" target="_blank" rel="noopener">ustawienia Workera jaskinia</a>, sekcja <i>Variables and Secrets</i>, <i>Add</i>, typ <i>Secret</i>, nazwa <code>KLUCZE</code>, wartość: to, co skopiowałeś. Zapisz przyciskiem <i>Deploy</i>.' },
+      { zrobione: !!zdrowie.zatwierdzanie, html: 'Na GitHubie zrób <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">nowy token</a>: <i>Fine-grained</i>, ważny rok, tylko wybrane repozytoria: <b>Jaskinia</b>, <b>Jozz-Cave-Workbench</b> i prywatna pamięć agentów. Uprawnienia: <i>Contents</i> i <i>Pull requests</i> na <i>Read and write</i>. Nic więcej.' },
+      { zrobione: !!zdrowie.zatwierdzanie && !!zdrowie.most, html: 'W tych samych ustawieniach Workera: sekret <code>GITHUB_ZAPIS_TOKEN</code> = ten token. Do tego dwie zwykłe zmienne (typ <i>Text</i>): <code>ZATWIERDZ_REPO</code> = <code>["Jaskinia","Jozz-Cave-Workbench"]</code> i <code>MOST_REPO</code> = prywatna pamięć agentów jako <code>Jozzpoly/nazwa</code> (Browser zna nazwę).' },
+      { zrobione: !!(zdrowie.klucze && ja), html: 'Wróć tutaj i wpisz swój klucz w polu niżej. Od tej chwili sprawy zatwierdzasz tutaj, a rozmowa idzie do agentów i wraca od nich.' },
+    ];
+    const wszystko = kroki.every((k) => k.zrobione);
+    $('sekcjaPodlaczenie').hidden = wszystko;
+    $('podlaczenieWstep').textContent = 'Jednorazowo, około 5 minut, najlepiej z Browserem obok. Potem zatwierdzasz sprawy i rozmawiasz z agentami tutaj, bez GitHuba. Tokenu i klucza nie wklejaj w żadną rozmowę.';
+    $('kroki').replaceChildren(...kroki.map((k) => { const li = el('li', k.zrobione ? 'zrobione' : ''); li.innerHTML = (k.zrobione ? '✓ ' : '') + k.html; return li; }));
+  }
+  $('zrobKlucz').onclick = async () => {
+    const imie = $('imieKlucza').value.trim() || 'jozz';
+    if (!/^[a-z][a-z0-9_-]{0,39}$/.test(imie)) { komunikat('Imię: małe litery, cyfry, - i _, zaczyna się literą.'); return; }
+    const b = crypto.getRandomValues(new Uint8Array(24));
+    const k = btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(k)))].map((x) => x.toString(16).padStart(2, '0')).join('');
+    $('kluczJawny').value = k; $('wierszKlucza').value = JSON.stringify({ [imie]: h }); $('nowyKlucz').hidden = false;
+  };
+  for (const id of ['kluczJawny', 'wierszKlucza']) $(id).onfocus = () => $(id).select();
+
+  // ---------- wejście ----------
+  async function wejdz() {
+    if (klucz) {
+      try {
+        const s = await api('/api/miejsce');
+        ja = s.ja; wlasciciel = !!s.wlasciciel;
+        $('ja').textContent = 'jesteś: ' + ja + (wlasciciel ? ' (właściciel)' : '');
+        $('eksport').hidden = !wlasciciel; $('wyloguj').hidden = false;
+        $('mostStan').textContent = s.most ? `Most do agentów: ostatni przebieg ${ile(Date.now() - Date.parse(s.most.kiedy))}, wysłane ${s.most.wyslane || 0}, przyjęte ${s.most.przyjete || 0}${s.most.bledy && s.most.bledy.length ? ', błędy: ' + s.most.bledy.length : ''}.` : (zdrowie.most ? 'Most do agentów czeka na pierwszy przebieg.' : 'Most do agentów nie jest podłączony: wiadomości zostają w Jaskini.');
+        const szkic = sch.get(SZKIC); if (szkic) { try { const d = JSON.parse(szkic); $('tekst').value = d.tekst; $('waga').value = d.waga; $('do').value = d.do; stanWysylki('Niewysłany szkic czeka. Wyślij jeszcze raz: trafi tylko raz.'); } catch {} }
+        await odswiezRozmowe();
+      } catch (e) {
+        if (e.status === 401) { wyloguj(); komunikat('Ten klucz nie pasuje.'); } else if (e.status !== 503) komunikat('Jaskinia nie odpowiada: ' + e.message);
+      }
+    }
+    pokazRozmowe(); podlaczenie(); wczytajSprawy(); wczytajFakty();
+  }
+  function pokazRozmowe() {
+    $('rozmowaOtwarta').hidden = !ja; $('rozmowaZamknieta').hidden = !!ja;
+    $('rozmowaZamknieta').textContent = !zdrowie.klucze ? 'Rozmowa otworzy się po podłączeniu (niżej). Twoje wiadomości będą trafiać do wszystkich agentów naraz, a ich odpowiedzi wracać tutaj.' : 'Wpisz swój klucz niżej, w Podłączeniu, żeby rozmawiać.';
+  }
+  function wyloguj() { klucz = null; ja = null; wlasciciel = false; sch.set(KLUCZ, null); pokazane.clear(); $('wpisy').replaceChildren(); najstarszy = null; $('ja').textContent = ''; $('wyloguj').hidden = true; pokazRozmowe(); podlaczenie(); }
+  $('wyloguj').onclick = wyloguj;
+  $('formKlucz').onsubmit = (e) => { e.preventDefault(); const k = $('klucz').value.trim(); if (k.length < 16) return; klucz = k; sch.set(KLUCZ, klucz); $('klucz').value = ''; wejdz(); };
+  for (const b of $('podglad').querySelectorAll('button')) b.onclick = () => { klucz = b.dataset.k; sch.set(KLUCZ, klucz); pokazane.clear(); $('wpisy').replaceChildren(); najstarszy = null; wejdz(); };
+
+  setInterval(() => { for (const t of document.querySelectorAll('[data-kiedy]')) t.textContent = ile(Date.now() - Date.parse(t.dataset.kiedy)); if (!document.hidden) odswiezRozmowe(); }, 30000);
+  setInterval(() => { if (!document.hidden) wczytajSprawy(); }, 5 * 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) odswiezRozmowe(); else sch.set(WIZYTA, String(Date.now())); });
+  window.addEventListener('pagehide', () => sch.set(WIZYTA, String(Date.now())));
+
+  fetch('/api/zdrowie', { cache: 'no-store' }).then((r) => r.json()).then((z) => {
+    zdrowie = z; $('zdrowie').textContent = JSON.stringify(z, null, 2);
+    $('podglad').hidden = !z.podglad;
+    wejdz();
+  }).catch(() => { $('zdrowie').textContent = 'API nie odpowiada (to normalne poza Cloudflare).'; wejdz(); });
+})();
 </script>
 </body>
 </html>

@@ -4,6 +4,7 @@
 import { json, zdrowie, dom } from './trasy.mjs';
 import { odpowiedz, wCronie } from './fakty.mjs';
 import { ktoTo } from './klucze.mjs';
+import { sprawyDlaStrony, zatwierdz } from './sprawy.mjs';
 export { Miejsce } from './miejsce-do.mjs';
 export { Swiat } from './swiat-do.mjs';
 
@@ -31,6 +32,27 @@ async function swiat(request, env, url) {
   return obiekt.fetch(new Request(request.url, { method: request.method, headers: naglowki, body: request.method === 'GET' ? undefined : await request.text() }));
 }
 
+// /api/sprawy: otwarte PR-y właściciela jako sprawy (publiczne dane, bez klucza). Zatwierdzenie: tylko właściciel,
+// tylko dokładna wersja, i zostaje w dzienniku Miejsca jako werdykt.
+async function sprawy(request, env, url) {
+  if (url.pathname === '/api/sprawy' && request.method === 'GET') return json(await sprawyDlaStrony(env, { wymus: url.searchParams.get('odswiez') === '1' }));
+  if (url.pathname === '/api/sprawy/zatwierdz' && request.method === 'POST') {
+    const k = await ktoTo(request, env);
+    if (!k.ok) return json({ blad: k.blad }, k.status);
+    if (k.kto !== 'jozz') return json({ blad: 'zatwierdza tylko właściciel' }, 403);
+    let c = null; try { c = await request.json(); } catch { /* niżej: błąd */ }
+    if (!c) return json({ blad: 'ciało: {repo, nr, wersja}' }, 400);
+    const w = await zatwierdz(env, c);
+    if (w.ok && env.MIEJSCE) {
+      const tresc = JSON.stringify({ sprawa: `${c.repo}#${c.nr}`, wersja: c.wersja, werdykt: 'zatwierdzone' });
+      await env.MIEJSCE.get(env.MIEJSCE.idFromName('dom')).fetch(new Request('https://miejsce/api/miejsce/akt', { method: 'POST',
+        headers: { 'x-kto': 'jozz', 'content-type': 'application/json' }, body: JSON.stringify({ op: `zatwierdz-${c.repo}-${c.nr}-${c.wersja}`, co: 'zapisz', rodzaj: 'werdykt', tresc }) })).catch(() => {});
+    }
+    return json(w, w.ok ? 200 : w.status);
+  }
+  return json({ blad: 'nie ma takiej ścieżki' }, 404);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -45,6 +67,7 @@ export default {
     }
     if (url.pathname === '/api/miejsce' || url.pathname.startsWith('/api/miejsce/')) return miejsce(request, env);
     if (url.pathname === '/api/swiat' || url.pathname === '/api/swiat/ws') return swiat(request, env, url);
+    if (url.pathname === '/api/sprawy' || url.pathname.startsWith('/api/sprawy/')) return sprawy(request, env, url);
     if (url.pathname.startsWith('/api/')) return json({ blad: 'nie ma takiej ścieżki' }, 404);
     if (env && env.ASSETS) return env.ASSETS.fetch(request);
     return new Response('Nie znaleziono', { status: 404 });
