@@ -14,3 +14,7 @@ jobs:
           node-version: 22
       - run: node --test
       - run: node tools/straznik.mjs --tree HEAD
+      # Drogi: żaden dokument nie może leżeć bez ścieżki od drzwi, żaden odnośnik prowadzić donikąd.
+      # Druga linia pilnuje, żeby zapisany raport zgadzał się z tym, co naprawdę jest w repo.
+      - run: node tools/drogi.mjs --raport DROGI.md
+      - run: git diff --exit-code DROGI.md
