@@ -8,7 +8,8 @@
   },
   "scripts": {
     "test": "node --test",
-    "straznik": "node tools/straznik.mjs --tree HEAD"
+    "straznik": "node tools/straznik.mjs --tree HEAD",
+    "drogi": "node tools/drogi.mjs --raport DROGI.md"
   },
   "devDependencies": {
     "wrangler": "4.153.0"
