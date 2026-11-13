@@ -7914,7 +7914,7 @@ function renderFoot() {
     h('div', null, h('b', { text: 'Pokrycie i granice pomiaru' }), h('p', { style: { marginTop: '6px' }, text: `${C.collected}/${C.expected} repo w zrzucie z ${when(SNAP)}. ${C.method}` }), h('ul', null, C.limits.map(t => h('li', { text: t })))),
     h('div', null, h('b', { text: 'Prywatność' }), h('p', { style: { marginTop: '6px' }, text: 'Strona jest prywatna i zawiera nazwy prywatnych repo. Zanim ją komuś udostępnisz, pamiętaj, że zobaczy je każdy z linkiem.' }),
       h('p', { style: { marginTop: '10px' } }, 'Zbudował Claude 9 października 2026 na podstawie gita, API GitHuba i nocnej rozmowy z GPT. Wcześniejszy ',
-        h('a', { href: 'https://claude.ai/artifact/Bc26EDMWXzWRP8QM6GyAD8', target: '_blank', rel: 'noopener' }, h('em', { text: 'Kataster' })), ' zostaje jako wersja 0, czyli datowane miejsce.'))));
+        h('em', { text: 'Kataster' }), ' zostaje jako wersja 0, czyli datowane miejsce.'))));
 }
 
 /* ---------------- command palette ---------------- */
