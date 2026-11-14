@@ -69,9 +69,12 @@ export function sito(d) {
     if (k.podobne_w_prywatnych !== undefined && !Number.isInteger(k.podobne_w_prywatnych)) bledy.push(`${n}: podobne_w_prywatnych to tylko liczba`);
     try { if (!adresDozwolony(k.adres)) bledy.push(`${n}: adres poza Jaskinią, jej gałęziami i publicznymi repo Jozzpoly`); }
     catch { bledy.push(`${n}: adres nie jest poprawnym URL`); }
-    const tekst = JSON.stringify(k);
-    for (const r of SECRET_RULES) if (r.re.test(tekst)) bledy.push(`${n}: wygląda na sekret (${r.id})`);
-    if (SCIEZKI_LOKALNE.test(tekst)) bledy.push(`${n}: lokalna ścieżka albo localhost`);
+    // Każda wartość tekstowa osobno, nie JSON.stringify: w JSON-ie cudzysłów w `co` staje się \" i udawał
+    // ścieżkę z ukośnikiem (14 XI 14:51, druga linia nad 75231bf: „Jozz powiedział "tak"” dawało błąd).
+    const teksty = [];
+    (function zbierz(v) { if (typeof v === 'string') teksty.push(v); else if (v && typeof v === 'object') Object.values(v).forEach(zbierz); })(k);
+    for (const r of SECRET_RULES) if (teksty.some(t => r.re.test(t))) bledy.push(`${n}: wygląda na sekret (${r.id})`);
+    if (teksty.some(t => SCIEZKI_LOKALNE.test(t))) bledy.push(`${n}: lokalna ścieżka albo localhost`);
   }
   return bledy; // Komunikaty nie powtarzają dopasowanego tekstu — logi CI publicznego repo są publiczne.
 }
@@ -100,6 +103,9 @@ test('sito łapie to, po co jest (próby na kopiach w pamięci)', () => {
   assert.equal(sito(k({ co: 'zbudowane w D:/Program Files/x' })).length, 1);
   assert.equal(sito(k({ galaz: 'C:/Users/ktos/galaz' })).length, 1);
   assert.equal(sito(k({ co: 'zobacz /home/claude/x' })).length, 1);
+  assert.deepEqual(sito(k({ co: 'Jozz powiedział "tak", a "Zagraj" działa' })), [], 'zwykły cudzysłów to nie ścieżka');
+  assert.equal(sito(k({ co: 'udział \\\\serwer\\x' })).length, 1);
+  assert.equal(sito(k({ podobne: [{ data: '2026-10-01', repo: 'Jaskinia', plik: 'C:/Users/x/a.md' }] })).length, 1);
   assert.equal(sito(k({ notatka: 'cokolwiek' })).length, 1);
   assert.equal(sito(k({ podobne_w_prywatnych: 'nazwa' })).length, 1);
 });
