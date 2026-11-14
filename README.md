@@ -14,7 +14,7 @@ Warsztat do tworzenia, uruchamiania i rozwijania gier oraz eksperymentów, budow
 - Co jest tymczasowe i kiedy do tego wracamy: [TYMCZASOWE.md](TYMCZASOWE.md).
 - Dawcy, z których budujemy: [docs/dawcy/](docs/dawcy/stara-jaskinia.md) (na początek stara Jaskinia, moduł po module).
 - Szkic rdzenia zapisów, zanim cokolwiek z niego awansuje: [docs/rdzen-zapisow-szkic.md](docs/rdzen-zapisow-szkic.md).
-- Co już stąd żyje pod adresem: [`/studio/`](https://jaskinia.jozzpoly.workers.dev/studio/) (okna Studia R1 i R2 zbudowane z gałęzi starej Jaskini) i [`/powroty/`](public/powroty/README.md) (wyprawa agenta z 29 IX, którą da się otworzyć i ruszyć).
+- Co już stąd żyje pod adresem: [`/studio/`](https://jaskinia.jozzpoly.workers.dev/studio/) (okna Studia R1 i R2 zbudowane z gałęzi starej Jaskini), [`/powroty/`](public/powroty/README.md) (wyprawa agenta z 29 IX, którą da się otworzyć i ruszyć) i [`/dowody-studio-r2/`](public/dowody-studio-r2/README.md) (dziesięć przebiegów CI Studia R2 z 10 XI, których artefakty wygasają 17 XI).
 - Testy: `npm test` (Node 18 lub nowszy; jedyna zależność, `wrangler`, służy tylko do wdrożenia).
 
 ## Gdzie to jest i co jest obok
