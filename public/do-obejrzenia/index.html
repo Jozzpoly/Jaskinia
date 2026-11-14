@@ -28,10 +28,15 @@
   .podobne .uwaga { margin: .4rem 0 0; font-size: .95em; }
   .pusto { color: var(--przygaszony); }
   footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--linia); color: var(--przygaszony); font-size: .88rem; }
+ /* Linia o zegarze sprawdzajacym Dom pod adresem. Zielona ma byc cicha, czerwona ma byc widoczna
+    w obu motywach - dlatego oba kolory sa zdefiniowane osobno dla ciemnego, a nie brane z fallbacku. */
+ :root { --zegar-ok: #1a7f4b; --zegar-zle: #a3341f; }
+ @media (prefers-color-scheme: dark) { :root { --zegar-ok: #58c98d; --zegar-zle: #ff9b80; } }
  .zegar { margin:.2rem 0 1rem; font-size:.9rem; padding:.45rem .7rem; border-radius:.45rem;
-          border:1px solid var(--ramka); color:var(--sz); }
- .zegar.ok { border-color:color-mix(in srgb, var(--ok, #1a7f4b) 45%, transparent); }
- .zegar.zle { border-color:color-mix(in srgb, var(--zle, #a3341f) 60%, transparent); color:var(--zle, #a3341f); font-weight:600; }
+          border:1px solid var(--linia); color:var(--przygaszony); }
+ .zegar.ok { border-color:color-mix(in srgb, var(--zegar-ok) 45%, var(--linia)); }
+ .zegar.zle { border-color:var(--zegar-zle); color:var(--zegar-zle); font-weight:700;
+              background:color-mix(in srgb, var(--zegar-zle) 12%, transparent); }
 </style>
 </head>
 <body>
