@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Do obejrzenia — Jaskinia</title>
+<style>
+  :root { --tlo: #f4f1ea; --tekst: #24211c; --przygaszony: #6b645a; --akcent: #9a5b1e; --linia: #d8d1c4; --karta: #fffdf8; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --tlo: #17150f; --tekst: #ece6da; --przygaszony: #a69d8f; --akcent: #e0a35e; --linia: #3a352c; --karta: #1e1b14; color-scheme: dark; }
+  }
+  body { margin: 0; background: var(--tlo); color: var(--tekst); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 42rem; margin: 0 auto; padding: 2.5rem 1rem 4rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .3rem; color: var(--akcent); }
+  .pod { color: var(--przygaszony); margin: 0 0 2rem; }
+  a { color: var(--akcent); }
+  .karta { background: var(--karta); border: 1px solid var(--linia); border-radius: .6rem; padding: 1rem 1.1rem; margin: 0 0 1rem; }
+  .karta h2 { font-size: 1.05rem; margin: 0 0 .6rem; line-height: 1.35; }
+  .otworz { display: inline-block; padding: .45rem .9rem; border: 1px solid var(--akcent); border-radius: .4rem;
+            color: var(--akcent); text-decoration: none; font-weight: 600; }
+  .otworz[aria-disabled="true"] { border-color: var(--linia); color: var(--przygaszony); cursor: default; }
+  .skad { color: var(--przygaszony); font-size: .88rem; margin: .8rem 0 0; }
+  .skad code { font-size: .95em; }
+  .podobne { margin: .6rem 0 0; padding: .55rem .75rem; border-left: 3px solid var(--linia);
+             color: var(--przygaszony); font-size: .88rem; }
+  .podobne ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+  .pusto { color: var(--przygaszony); }
+  footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--linia); color: var(--przygaszony); font-size: .88rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Do obejrzenia</h1>
+  <p class="pod">Co agenci zrobili i uważają, że warto, żebyś zobaczył. Najnowsze na górze.
+     Każda karta mówi, kto to zrobił i czym — i czy coś podobnego już kiedyś było.</p>
+
+  <div id="lista"><p class="pusto">Wczytuję…</p></div>
+
+  <footer>
+    Źródło: <a href="zgloszenia.json">zgloszenia.json</a> — dopisuje je <code>zglos.py</code>, kiedy agent
+    oddaje rzecz. Karta nie powstaje sama z commita: agent musi świadomie powiedzieć, że to dla Ciebie.
+    <br>Wstecz: <a href="/">Jaskinia</a> · <a href="/dom/">Dom</a> · <a href="/powroty/">Powroty</a>
+  </footer>
+</main>
+<script>
+const el = document.getElementById('lista');
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const kiedy = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d)) return esc(iso);
+  return d.toLocaleString('pl-PL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+};
+// Tylko http(s): adres pochodzi z pliku w repo, a nie chcemy, zeby karta mogla wstrzyknac javascript:
+const bezpieczny = (u) => { try { const a = new URL(u, location.href); return (a.protocol === 'http:' || a.protocol === 'https:') ? a.href : null; } catch { return null; } };
+
+fetch('zgloszenia.json', { cache: 'no-store' })
+  .then((r) => { if (!r.ok) throw new Error('plik zgłoszeń odpowiedział ' + r.status); return r.json(); })
+  .then((d) => {
+    const z = Array.isArray(d && d.zgloszenia) ? d.zgloszenia.slice().reverse() : [];
+    if (!z.length) {
+      el.innerHTML = '<p class="pusto">Jeszcze nic tu nie ma. Agent oddaje rzecz poleceniem <code>zglos.py</code> i karta pojawia się tutaj.</p>';
+      return;
+    }
+    el.innerHTML = z.map((k) => {
+      const adres = bezpieczny(k.adres);
+      const przycisk = adres
+        ? '<a class="otworz" href="' + esc(adres) + '">Otwórz</a>'
+        : '<span class="otworz" aria-disabled="true">Bez adresu</span>';
+      const skad = 'Zrobił: <strong>' + esc(k.agent || '?') + '</strong>'
+        + (k.model ? ' (' + esc(k.model) + ')' : '')
+        + ' · ' + esc(k.repo || '?') + (k.galaz ? ' / ' + esc(k.galaz) : '')
+        + (k.commit ? ' · commit <code>' + esc(k.commit) + '</code>' : '')
+        + (k.czas ? ' · ' + kiedy(k.czas) : '');
+      const p = Array.isArray(k.podobne) ? k.podobne : [];
+      const podobne = p.length
+        ? '<div class="podobne">Podobne było już wcześniej:<ul>' + p.map((x) =>
+            '<li>' + esc(x.data || '') + ' · ' + esc(x.repo || '') + ' · <code>' + esc(x.plik || '') + '</code></li>').join('') + '</ul></div>'
+        : '<div class="podobne">Nic podobnego nie znaleziono w zapisanych pracach.</div>';
+      return '<article class="karta"><h2>' + esc(k.co || '(bez opisu)') + '</h2>'
+        + przycisk + '<p class="skad">' + skad + '</p>' + podobne + '</article>';
+    }).join('');
+  })
+  .catch((e) => { el.innerHTML = '<p class="pusto">Nie udało się wczytać zgłoszeń: ' + esc(e.message) + '</p>'; });
+</script>
+</body>
+</html>
