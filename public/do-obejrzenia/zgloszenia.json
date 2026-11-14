@@ -57,6 +57,34 @@
     }
    ],
    "nr": 2
+  },
+  {
+   "czas": "2026-11-14T05:01:36+00:00",
+   "repo": "Jozz-Cave-Workbench",
+   "galaz": "main",
+   "commit": "ea46c44",
+   "co": "Drzwi starej Jaskini mowia prawde: przycisk pomocy ma nazwe, Zagraj nie obiecuje okna grom z osobnej karty",
+   "adres": "https://jozzpoly.github.io/Jozz-Cave-Workbench/",
+   "agent": "Opus Code",
+   "model": "claude-opus-5",
+   "podobne": [
+    {
+     "data": "2026-10-03",
+     "repo": "Shared-Work-Medium-Lab",
+     "plik": "experiments/mp1a-browsergym-spike/p1.html"
+    },
+    {
+     "data": "2026-10-03",
+     "repo": "Shared-Work-Medium-Lab",
+     "plik": "experiments/semantic-medium-v0/cloudflare-observation-gateway/src/index.js"
+    },
+    {
+     "data": "2026-10-03",
+     "repo": "Shared-Work-Medium-Lab",
+     "plik": "experiments/semantic-medium-v0/index.html"
+    }
+   ],
+   "nr": 3
   }
  ]
 }
