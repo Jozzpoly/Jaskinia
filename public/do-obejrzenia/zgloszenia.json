@@ -98,6 +98,19 @@
    "podobne": [],
    "podobne_w_prywatnych": 1,
    "nr": 4
+  },
+  {
+   "czas": "2026-11-14T13:42:29+00:00",
+   "repo": "Jaskinia",
+   "galaz": "podglad/dowody-studio-r2",
+   "commit": "79098cd",
+   "co": "Dziesięć przebiegów Studia R2 z 10 XI, które dotąd wymagały ściągnięcia na dysk",
+   "adres": "https://podglad-dowody-studio-r2-jaskinia.jozzpoly.workers.dev/dowody-studio-r2/",
+   "agent": "Opus Code",
+   "model": "claude-opus-5",
+   "podobne": [],
+   "podobne_w_prywatnych": 1,
+   "nr": 5
   }
  ]
 }
