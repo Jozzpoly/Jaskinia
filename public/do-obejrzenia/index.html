@@ -28,6 +28,16 @@
   .podobne .uwaga { margin: .4rem 0 0; font-size: .95em; }
   .pusto { color: var(--przygaszony); }
   footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--linia); color: var(--przygaszony); font-size: .88rem; }
+ /* Linia o zegarze sprawdzajacym Dom pod adresem. Zielona ma byc cicha, czerwona ma byc widoczna
+    w obu motywach - dlatego oba kolory sa zdefiniowane osobno dla ciemnego, a nie brane z fallbacku. */
+ :root { --zegar-ok: #1a7f4b; --zegar-zle: #a3341f; }
+ @media (prefers-color-scheme: dark) { :root { --zegar-ok: #58c98d; --zegar-zle: #ff9b80; } }
+ .zegar { margin:.2rem 0 1rem; font-size:.9rem; padding:.45rem .7rem; border-radius:.45rem;
+          border:1px solid var(--linia); color:var(--przygaszony); }
+ .zegar.ok { border-color:color-mix(in srgb, var(--zegar-ok) 45%, var(--linia)); }
+ .zegar.stoi { border-color:var(--akcent); color:var(--akcent); font-weight:600; }
+ .zegar.zle { border-color:var(--zegar-zle); color:var(--zegar-zle); font-weight:700;
+              background:color-mix(in srgb, var(--zegar-zle) 12%, transparent); }
 </style>
 </head>
 <body>
@@ -35,6 +45,8 @@
   <h1>Do obejrzenia</h1>
   <p class="pod">Co agenci zrobili i uważają, że warto, żebyś zobaczył. Najnowsze na górze.
      Każda karta mówi, kto to zrobił i czym — i czy coś podobnego już kiedyś było.</p>
+
+  <p id="zegar" class="zegar" hidden></p>
 
   <div id="lista"><p class="pusto">Wczytuję…</p></div>
 
@@ -87,6 +99,49 @@ fetch('zgloszenia.json', { cache: 'no-store' })
     }).join('');
   })
   .catch((e) => { el.innerHTML = '<p class="pusto">Nie udało się wczytać zgłoszeń: ' + esc(e.message) + '</p>'; });
+
+// Czytelnik czerwonego zegara. Sam wyzwalacz (`.github/workflows/dom-pod-adresem.yml`) niczego nie
+// zmienia, dopoki ktos go nie czyta, a Jozz nie zaglada na GitHuba - to byloby zdanie, nie mechanizm
+// (uwaga drugiej linii, 14 XI). Wiec jedna linia o tym stoi tam, gdzie on patrzy: na tym pasku.
+// Publiczne API GitHuba, bez klucza. Gdy nie odpowie albo zabraknie limitu - nie pokazujemy nic.
+(function () {
+  const el = document.getElementById('zegar');
+  if (!el) return;
+  // `status=completed`, bo `per_page=1` bez tego zwraca takze przebieg w toku (`conclusion: null`),
+  // a wtedy pasek pokazywalby falszywy czerwony co trzy godziny (druga linia, 14 XI 14:57).
+  const API = 'https://api.github.com/repos/Jozzpoly/Jaskinia/actions/workflows/dom-pod-adresem.yml/runs?per_page=1&status=completed';
+  const kiedy = (t) => {
+    const m = Math.round((Date.now() - new Date(t).getTime()) / 60000);
+    if (m < 60) return m + ' min temu';
+    const h = Math.round(m / 60);
+    return h < 48 ? h + ' h temu' : Math.round(h / 24) + ' dni temu';
+  };
+  fetch(API, { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then((d) => {
+      const b = d && d.workflow_runs && d.workflow_runs[0];
+      if (!b) { el.textContent = 'Zegar sprawdzający Dom pod adresem: jeszcze nie chodził.'; el.hidden = false; return; }
+      // Trzy stany, nie dwa. Zielony, ktory sie zestarzal, klamie cisza: GitHub wylacza `schedule`
+      // w repo bez ruchu po 60 dniach, a zegar chodzi co 3 h, wiec po ~7 h (dwa opuszczone sloty)
+      // brak nowego przebiegu znaczy, ze zegar stanal - i to trzeba powiedziec, nie przemilczec.
+      const godzin = (Date.now() - new Date(b.created_at).getTime()) / 3600000;
+      const ok = b.conclusion === 'success';
+      if (!ok) {
+        el.className = 'zegar zle';
+        el.textContent = 'Dom pod adresem: ostatnie sprawdzenie ' + kiedy(b.created_at) + ' NIE przeszło ('
+          + b.conclusion + '). Agenci mają to naprawić.';
+      } else if (godzin > 7) {
+        el.className = 'zegar stoi';
+        el.textContent = 'Zegar sprawdzający Dom pod adresem stanął: ostatni raz ' + kiedy(b.created_at)
+          + ', a miał chodzić co 3 h. Ostatnie sprawdzenie było dobre, ale to stara wiadomość.';
+      } else {
+        el.className = 'zegar ok';
+        el.textContent = 'Dom pod adresem: sprawdzony ' + kiedy(b.created_at) + ', wszystko się zgadza.';
+      }
+      el.hidden = false;
+    })
+    .catch(() => { /* bez sieci albo bez limitu: lepiej nic nie mowic, niz zmyslic */ });
+})();
 </script>
 </body>
 </html>

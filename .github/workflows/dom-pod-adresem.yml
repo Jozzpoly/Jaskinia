@@ -1,0 +1,23 @@
+# Czy Dom Jozza naprawde stoi pod adresem, ktorego uzywa.
+#
+# Zestaw testow w `ci.yml` sprawdza kod. Tego nie wystarczy dla trasy `/dom/`: w prawdziwym Workerze
+# strone przerabia `HTMLRewriter`, ktorego w Node nie ma, wiec `node --test` sprawdza wylacznie wersje
+# zapasowa - ta, ktorej Worker nigdy nie wykonuje (znalazl to Fable 14 XI 2026). Dlatego ta droga ma
+# wlasny wyzwalacz: zegar, ktory puka pod zywy adres i czerwienieje, gdy cos sie tam przewroci.
+# Nie wymaga, zeby ktokolwiek pamietal o sprawdzeniu.
+#
+# Czego to nadal nie mierzy: limitu 10 ms procesora. Widac go dopiero w logach Workera, nie w odpowiedzi.
+name: dom pod adresem
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sprawdz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dom, pasek i karty pod zywym adresem
+        run: node tools/pod-adresem.mjs
