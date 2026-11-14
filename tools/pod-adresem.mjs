@@ -5,7 +5,11 @@
 // tam, gdzie Jozz ja otwiera. Uruchamiany z zegara (`.github/workflows/dom-pod-adresem.yml`)
 // i recznie: `node tools/pod-adresem.mjs [adres]`.
 //
-// Kazda nieudana proba jest powtarzana, zeby chwilowa czkawka sieci nie malowala CI na czerwono.
+// Kazda nieudana proba jest powtarzana - wyjatek sieci i odpowiedz 5xx tak samo - zeby chwilowa
+// czkawka nie malowala CI na czerwono.
+//
+// Czego to NIE robi: nie zatrzymuje wdrozenia. Worker wdraza sie z `main` sam, a ten skrypt chodzi
+// z zegara, wiec zepsucie widac PO fakcie, do trzech godzin pozniej.
 
 const BAZA = process.argv[2] || process.env.JASKINIA_ADRES || 'https://jaskinia.jozzpoly.workers.dev';
 const PROBY = 3;
@@ -21,6 +25,9 @@ async function pobierz(sciezka) {
       const t0 = Date.now();
       const odp = await fetch(BAZA + sciezka, { redirect: 'follow' });
       const tresc = await odp.text();
+      // Powtarzamy takze odpowiedzi 5xx: 502 i 503 z Cloudflare to ta sama czkawka co wyjatek sieci,
+      // tylko z numerem. Pierwsza wersja powtarzala wylacznie wyjatki - znalazla to druga linia 14 XI.
+      if (odp.status >= 500 && i < PROBY) { await new Promise((r) => setTimeout(r, PRZERWA)); continue; }
       return { status: odp.status, tresc, ms: Date.now() - t0 };
     } catch (e) {
       ostatni = e;
