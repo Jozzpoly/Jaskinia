@@ -23,5 +23,6 @@ test('zgloszenia.json parsuje się i każda karta ma pola, które czyta pasek', 
     assert.match(new URL(k.adres).protocol, /^https?:$/, `karta ${k.nr}: adres tylko http(s)`);
     assert.ok(!Number.isNaN(Date.parse(k.czas)), `karta ${k.nr}: czas jako data ISO`);
     if (k.podobne !== undefined) assert.ok(Array.isArray(k.podobne), `karta ${k.nr}: podobne to tablica`);
+    for (const x of k.podobne || []) assert.ok(x && typeof x === 'object', `karta ${k.nr}: każdy element podobne to obiekt (pasek czyta x.data, x.repo, x.plik)`);
   }
 });
