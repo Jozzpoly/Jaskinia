@@ -24,6 +24,8 @@
   .podobne { margin: .6rem 0 0; padding: .55rem .75rem; border-left: 3px solid var(--linia);
              color: var(--przygaszony); font-size: .88rem; }
   .podobne ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+  .podobne summary { cursor: pointer; }
+  .podobne .uwaga { margin: .4rem 0 0; font-size: .95em; }
   .pusto { color: var(--przygaszony); }
   footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--linia); color: var(--przygaszony); font-size: .88rem; }
 </style>
@@ -72,10 +74,14 @@ fetch('zgloszenia.json', { cache: 'no-store' })
         + (k.commit ? ' · commit <code>' + esc(k.commit) + '</code>' : '')
         + (k.czas ? ' · ' + kiedy(k.czas) : '');
       const p = Array.isArray(k.podobne) ? k.podobne : [];
+      // Zwiniete i nazwane po imieniu: to wynik wyszukiwania slow, nie osad, ze rzecz juz kiedys byla.
+      // Rozwiniete na wierzchu uczylo nieufnosci do calej karty, bo trafienia bywaja przypadkowe.
       const podobne = p.length
-        ? '<div class="podobne">Podobne było już wcześniej:<ul>' + p.map((x) =>
-            '<li>' + esc(x.data || '') + ' · ' + esc(x.repo || '') + ' · <code>' + esc(x.plik || '') + '</code></li>').join('') + '</ul></div>'
-        : '<div class="podobne">Nic podobnego nie znaleziono w zapisanych pracach.</div>';
+        ? '<details class="podobne"><summary>Wyszukane podobne zapisy (' + p.length + ')</summary>'
+          + '<p class="uwaga">Wyszukiwanie po słowach w zapisanych pracach, nie ocena. Bywa trafione i bywa przypadkowe — zobacz sam.</p>'
+          + '<ul>' + p.map((x) =>
+            '<li>' + esc(x.data || '') + ' · ' + esc(x.repo || '') + ' · <code>' + esc(x.plik || '') + '</code></li>').join('') + '</ul></details>'
+        : '<div class="podobne">Wyszukiwanie po słowach nie znalazło nic podobnego w zapisanych pracach.</div>';
       return '<article class="karta"><h2>' + esc(k.co || '(bez opisu)') + '</h2>'
         + przycisk + '<p class="skad">' + skad + '</p>' + podobne + '</article>';
     }).join('');

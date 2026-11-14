@@ -54,15 +54,36 @@ export async function dom(url, env = {}, doFetch = fetch) {
   // Strona Domu dostaje jeden odnosnik od nas: z jego codziennego okna da sie dojsc do paska
   // "Do obejrzenia" jednym kliknieciem. Stara Jaskinia zostaje nietknieta - to jest obwoluta
   // nowej Jaskini wokol cudzej strony, dokladana tu i tylko tu.
-  const html = await odp.text();
-  return new Response(wstawOdnosnik(html), { status: 200, headers: naglowki });
+  //
+  // Strumieniowo, przez HTMLRewriter. Pierwsza wersja (14 XI 06:17) wciagala cala strone do napisu
+  // (`await odp.text()`), a strona Domu wazy 2,5 MB: dekodowanie, przeszukanie i dwa kawalki tego
+  // napisu to kilka-kilkanascie ms procesora, a darmowy Worker ma 10 ms na zadanie. Dzialalo, ale
+  // ocieralo sie o limit przy kazdym otwarciu Domu, wiec przy wiekszej stronie Jozz zobaczylby blad
+  // Cloudflare zamiast swojej Jaskini. HTMLRewriter nie buduje napisu w ogole.
+  if (typeof HTMLRewriter === 'function') {
+    const przerobiona = new HTMLRewriter()
+      .on('body', { element(el) { el.append(ODNOSNIK_PASEK, { html: true }); } })
+      .transform(new Response(odp.body, { status: 200, headers: naglowki }));
+    return przerobiona;
+  }
+  // Poza runtime Workera (testy w Node) zostaje wersja na napisie - ten sam odnosnik, ta sama tresc.
+  return new Response(wstawOdnosnik(await odp.text()), { status: 200, headers: naglowki });
 }
 
-// Maly odnosnik wstawiany w strone Domu. Osobna funkcja, zeby dalo sie go sprawdzic testem bez sieci.
+// Maly odnosnik wstawiany w strone Domu. Osobna stala, zeby dalo sie go sprawdzic testem bez sieci.
+//
+// Dlaczego jest przy nim skrypt: w ukladzie kompaktowym stara Jaskinia rysuje na dole wlasna nawigacje
+// (`nav.jk-dock`, 63 px przy 375 px szerokosci), a odnosnik przyklejony do dolu zaslanial jej trzecia
+// zakladke - sprawdzone w przegladarce 14 XI. Progu, przy ktorym dock sie pojawia, nie zgaduje:
+// pięć linii mierzy jego wysokosc i odsuwa odnosnik dokladnie o tyle. Gdy docka nie ma, nic sie nie dzieje.
 export const ODNOSNIK_PASEK = `<a href="/do-obejrzenia/" id="jaskinia-do-obejrzenia" title="Nowa Jaskinia: co agenci dla Ciebie zrobili"`
-  + ` style="position:fixed;right:12px;bottom:12px;z-index:2147483000;padding:.45rem .7rem;border-radius:.5rem;`
-  + `background:#9a5b1e;color:#fff;font:600 13px/1.2 system-ui,sans-serif;text-decoration:none;opacity:.88;`
-  + `box-shadow:0 1px 6px rgba(0,0,0,.35)">Do obejrzenia ▸</a>`;
+  + ` style="position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147483000;`
+  + `padding:.45rem .7rem;border-radius:.5rem;background:#9a5b1e;color:#fff;font:600 13px/1.2 system-ui,sans-serif;`
+  + `text-decoration:none;opacity:.88;box-shadow:0 1px 6px rgba(0,0,0,.35)">Do obejrzenia ▸</a>`
+  + `<script>(function(){try{var a=document.getElementById('jaskinia-do-obejrzenia');if(!a)return;`
+  + `var f=function(){var d=document.querySelector('.jk-dock');var h=d?d.getBoundingClientRect().height:0;`
+  + `a.style.bottom='calc('+(12+Math.round(h))+'px + env(safe-area-inset-bottom,0px))';};`
+  + `f();addEventListener('resize',f);setTimeout(f,1500);}catch(e){}})();<\/script>`;
 
 export function wstawOdnosnik(html) {
   if (typeof html !== 'string' || html.includes('id="jaskinia-do-obejrzenia"')) return html;
