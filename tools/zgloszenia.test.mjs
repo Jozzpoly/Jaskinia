@@ -45,7 +45,7 @@ export const REPO_JAWNE = new Set([
   'reflexbrain-lab', 'simply_game_experiment', 'tysi-c-the-game', 'voxel-aeronautics-workshop', 'webxr-lab',
 ]);
 const POLA = new Set(['nr', 'czas', 'repo', 'galaz', 'commit', 'co', 'adres', 'agent', 'model', 'podobne', 'podobne_w_prywatnych']);
-const SCIEZKI_LOKALNE = /(?:^|[\s"'(])(?:[A-Za-z]:\\|\/home\/|\/root\/|\/tmp\/|\/mnt\/|\/Users\/|file:|\\\\)|localhost|127\.0\.0\.1/;
+const SCIEZKI_LOKALNE = /(?:^|[\s"'(])(?:[A-Za-z]:[\\/]|\/home\/|\/root\/|\/tmp\/|\/mnt\/|\/Users\/|file:|\\)|[A-Za-z]:[\\/](?:Users|home|Program|Windows)\b|localhost|127\.0\.0\.1/;
 
 export function adresDozwolony(adres) {
   const u = new URL(adres);
@@ -93,6 +93,12 @@ test('sito łapie to, po co jest (próby na kopiach w pamięci)', () => {
   assert.equal(sito(k({ adres: 'https://jozzpoly.github.io/jakies-prywatne/' })).length, 1);
   assert.equal(sito(k({ co: 'klucz ghp_' + 'a'.repeat(36) })).length, 1);
   assert.equal(sito(k({ co: 'plik w C:\\Gry\\x' })).length, 1);
+  // Ukosniki w druga strone tez sa lokalna sciezka: Windows przyjmuje oba zapisy, a pierwsza
+  // wersja sita szukala wylacznie litery dysku z lewym ukosnikiem. Znalezione druga linia
+  // 14 XI 14:47: karta z commit "C:/Users/..." przechodzila przez sito bez jednego bledu.
+  assert.equal(sito(k({ commit: 'C:/Users/ktos/tajne' })).length, 1);
+  assert.equal(sito(k({ co: 'zbudowane w D:/Program Files/x' })).length, 1);
+  assert.equal(sito(k({ galaz: 'C:/Users/ktos/galaz' })).length, 1);
   assert.equal(sito(k({ co: 'zobacz /home/claude/x' })).length, 1);
   assert.equal(sito(k({ notatka: 'cokolwiek' })).length, 1);
   assert.equal(sito(k({ podobne_w_prywatnych: 'nazwa' })).length, 1);
