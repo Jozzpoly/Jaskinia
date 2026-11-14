@@ -85,6 +85,19 @@
     }
    ],
    "nr": 3
+  },
+  {
+   "czas": "2026-11-14T06:13:15+00:00",
+   "repo": "Jozz-Cave-Workbench",
+   "galaz": "main",
+   "commit": "1ecd1c8",
+   "co": "Brief dla agentow przestal podawac nasze zdania jako Twoje reguly",
+   "adres": "https://jozzpoly.github.io/Jozz-Cave-Workbench/biblioteka-dla-agentow.md",
+   "agent": "Opus Code",
+   "model": "claude-opus-5",
+   "podobne": [],
+   "podobne_w_prywatnych": 1,
+   "nr": 4
   }
  ]
 }
