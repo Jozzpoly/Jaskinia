@@ -12,3 +12,22 @@
 10. **Rejestr tymczasowości:** przeczytaj [TYMCZASOWE.md](TYMCZASOWE.md) przed pierwszym commitem. Wprowadzasz coś tymczasowego, to dopisujesz wpis: co, dlaczego teraz, co może to zastąpić i kiedy wracamy.
 11. **Dwie nieudane próby tej samej hipotezy** oznaczają zmianę podejścia i zgłoszenie, a nie trzecią próbę tego samego.
 12. **Sekrety tylko w ustawieniach Cloudflare i GitHuba,** nigdy w kodzie, plikach, logach ani w odpowiedziach API. Kod może najwyżej powiedzieć, czy sekret jest ustawiony.
+
+## Słowa właściciela: kiedy agenci scalają sami (14 XI 2026, 23:46)
+
+Jego własne zdanie, dosłownie, z literówkami i bez naszej parafrazy — on sam ujął je w cudzysłów
+jako oświadczenie zgody:
+
+> Agenci scalają swoje pr gdy CI jest zielone i druga linia sprawdziła je u źródła.
+> Pr który który mówi, że sam jest dowodem albo decyzja o fundamencie,  scalają tylko po mojej zgodzie, wystarczy tylko "tak", albo inny synonim zgody lub potwierdzenia.
+
+Zaraz po nim dodał: *Nie jestem pewny czy to wystarczy na dłużej ale jakby co to będziemy budować
+lepsze wersję w przyszłości.* Czyli ta zasada sama jest tymczasowa (zob. rejestr tymczasowości).
+
+**Nasza wykładnia, nasza — nie jego.** Druga linia to agent, który **nie** robił tej zmiany i powtórzył
+polecenia u źródła: testy, próbne scalenie z dzisiejszym `main`, sprawdzenie pod żywym adresem, jeśli
+rzecz ma adres. Wynik zapisuje z poleceniem, w PR-ze albo w przekazie między liniami. Gdy opis PR-a
+mówi o sobie, że jest dowodem, a autor zmienił zdanie później — wygrywa wersja ostrożniejsza, dopóki
+właściciel nie powie *tak*. Nieodwracalne zostaje u niego (jego słowa z 10 XI): usuwanie, publikacja
+jego dorobku, prywatność, dostępy, pieniądze i rzeczywiste przełączenie Jaskini, której używa na co
+dzień. Scalenie, które przełącza jego codzienne okno, nie jest *swoim PR-em* w sensie tej zgody.
