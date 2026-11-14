@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './index.mjs';
-import { zdrowie, dom, DOM_ZRODLO } from './trasy.mjs';
+import { zdrowie, dom, DOM_ZRODLO, wstawOdnosnik } from './trasy.mjs';
 
 const SEKRET = 'wartosc-sekretu-testowa-7f3a';
 
@@ -55,6 +55,26 @@ test('/dom/ podaje dzisiejszy Dom z GitHub Pages pod adresem Workera, i tylko je
   const inny = await dom(new URL('https://x.dev/dom/dane/library.json'), {}, fakeFetch);
   assert.equal(inny.status, 404, 'tylko strona i status.json, żadnego otwartego pośrednika');
   assert.equal(pytane.length, 2);
+});
+
+test('strona Domu dostaje jeden odnośnik do paska, a status.json zostaje nietknięty', async () => {
+  const strona = '<html><body><header>Jaskinia</header></body></html>';
+  const fakeFetch = async (u) => (u.endsWith('status.json')
+    ? new Response('{"schema":"x"}', { headers: { 'content-type': 'application/json' } })
+    : new Response(strona, { headers: { 'content-type': 'text/html; charset=utf-8' } }));
+
+  const res = await dom(new URL('https://x.dev/dom/'), {}, fakeFetch);
+  const html = await res.text();
+  assert.ok(html.includes('href="/do-obejrzenia/"'), 'z Domu ma być jedno kliknięcie do paska');
+  assert.ok(html.includes('<header>Jaskinia</header>'), 'strona Domu zostaje taka, jaka była');
+  assert.ok(html.indexOf('jaskinia-do-obejrzenia') < html.indexOf('</body>'), 'odnośnik wchodzi przed </body>');
+
+  const st = await dom(new URL('https://x.dev/dom/status.json'), {}, fakeFetch);
+  assert.equal(await st.text(), '{"schema":"x"}', 'do danych nic nie dopisujemy');
+
+  // Dwa przejścia nie dokładają drugiego odnośnika, a strona bez </body> wraca bez zmian.
+  assert.equal(wstawOdnosnik(wstawOdnosnik(strona)), wstawOdnosnik(strona));
+  assert.equal(wstawOdnosnik('<p>bez body</p>'), '<p>bez body</p>');
 });
 
 test('/dom bez ukośnika przekierowuje, a gdy Pages nie odpowiada, Worker mówi to wprost', async () => {
