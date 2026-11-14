@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pl">
+<meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Studio R2: dziesięć przebiegów</title>
+<style>
+ :root { --tlo:#faf7f2; --tekst:#1c1917; --sz:#6b625a; --ramka:#e2dbd1; --ok:#1a7f4b; --zle:#a3341f; --akcent:#9a5b1e; }
+ @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --tlo:#17150f; --tekst:#f1ece4; --sz:#a79d91; --ramka:#38322a; --ok:#49c187; --zle:#e8806a; --akcent:#d08a3c; } }
+ :root[data-theme="dark"] { --tlo:#17150f; --tekst:#f1ece4; --sz:#a79d91; --ramka:#38322a; --ok:#49c187; --zle:#e8806a; --akcent:#d08a3c; }
+ * { box-sizing:border-box }
+ body { margin:0; background:var(--tlo); color:var(--tekst); font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+ main { max-width:1100px; margin:0 auto; padding:2rem 16px 4rem; }
+ h1 { font-size:1.6rem; margin:0 0 .4rem; }
+ .lead { color:var(--sz); max-width:62ch; }
+ .lead strong { color:var(--tekst) }
+ .skad { border:1px solid var(--ramka); border-radius:.6rem; padding:.9rem 1rem; margin:1.6rem 0; font-size:.93rem; color:var(--sz); }
+ .skad code { font-size:.86em; word-break:break-all }
+ .siatka { display:grid; gap:1.2rem; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); margin:0; padding:0; }
+ .k { margin:0; border:1px solid var(--ramka); border-radius:.6rem; overflow:hidden; background:color-mix(in srgb, var(--tlo) 80%, var(--tekst) 4%); }
+ .k img { display:block; width:100%; height:auto; border-bottom:1px solid var(--ramka); }
+ figcaption { padding:.6rem .75rem; font-size:.87rem; display:flex; flex-wrap:wrap; gap:.5rem; align-items:baseline }
+ .n { font-weight:700; color:var(--sz) }
+ .s { font-weight:600 } .ok { color:var(--ok) } .zle { color:var(--zle) }
+ .m { color:var(--sz); flex:1 1 100%; font-size:.82rem }
+ a { color:var(--akcent) }
+ footer { margin-top:2.5rem; padding-top:1.2rem; border-top:1px solid var(--ramka); color:var(--sz); font-size:.88rem; max-width:62ch }
+</style>
+<main>
+<h1>Studio R2: dziesięć przebiegów jednego dnia</h1>
+<p class="lead">To są zrzuty z dziesięciu przebiegów CI gałęzi <code>experiment/browser-studio-r2-source-world-2026-11-10</code>
+(Studio R2: edytor źródła i żywy świat w oknach Jaskini), z 10 listopada 2026.
+<strong>Pięć nie przeszło, pięć przeszło</strong>, na przemian: czerwone, czerwone, zielone,
+czerwone, zielone, czerwone, zielone, czerwone, zielone, zielone. Ostatnie dwa są zielone —
+ale to nie było dojście po prostej.</p>
+<p class="lead">Do dzisiaj dało się je zobaczyć tylko po <strong>ściągnięciu na czyjś dysk</strong>:
+artefakty CI wygasały 17 XI, więc 13 XI ktoś je skopiował do gałęzi, żeby nie przepadły.
+Gałąź nie miała adresu, więc dowód dalej wymagał dysku. <strong>Teraz ma adres.</strong></p>
+
+<p class="skad"><strong>Skąd to jest i jak sprawdzić, że nie zmyślam.</strong>
+Pliki skopiowane bez zmiany treści z gałęzi <code>dowody/ci-studio-r2-2026-11</code> w repozytorium
+<code>Jozz-Cave-Workbench</code>. Nazwa katalogu to <code>run&lt;numer przebiegu&gt;_&lt;commit&gt;</code>,
+więc do źródła wraca się przez
+<code>gh api repos/Jozzpoly/Jozz-Cave-Workbench/actions/runs/&lt;numer&gt;</code>.
+Ta strona dokłada tylko układ i podpisy — żaden obraz nie był ruszany.</p>
+
+<div class="siatka">
+  <figure class="k">
+    <a href="studio-r2-native-evidence__run42875171360_13209d8/studio-r2-native-failure.png"><img loading="lazy" src="studio-r2-native-evidence__run42875171360_13209d8/studio-r2-native-failure.png" alt="Zrzut z przebiegu 42875171360: Studio R2, test rodzimy nie przeszło"></a>
+    <figcaption><span class="n">1</span> <span class="s zle">nie przeszło</span>
+      <span class="m">przebieg <code>42875171360</code> · commit <code>13209d8</code></span></figcaption>
+  </figure>
+  <figure class="k">
+    <a href="studio-r2-native-evidence__run42875409601_3eb1205/studio-r2-native-failure.png"><img loading="lazy" src="studio-r2-native-evidence__run42875409601_3eb1205/studio-r2-native-failure.png" alt="Zrzut z przebiegu 42875409601: Studio R2, test rodzimy nie przeszło"></a>
+    <figcaption><span class="n">2</span> <span class="s zle">nie przeszło</span>
+      <span class="m">przebieg <code>42875409601</code> · commit <code>3eb1205</code></span></figcaption>
+  </figure>
+  <figure class="k">
+    <a href="studio-r2-native-evidence__run42876119388_6c8fe96/studio-r2-native-pass.png"><img loading="lazy" src="studio-r2-native-evidence__run42876119388_6c8fe96/studio-r2-native-pass.png" alt="Zrzut z przebiegu 42876119388: Studio R2, test rodzimy przeszło"></a>
+    <figcaption><span class="n">3</span> <span class="s ok">przeszło</span>
+      <span class="m">przebieg <code>42876119388</code> · commit <code>6c8fe96</code></span></figcaption>
+  </figure>
+  <figure class="k">
+    <a href="studio-r2-native-evidence__run42876521745_4cd6af9/studio-r2-native-failure.png"><img loading="lazy" src="studio-r2-native-evidence__run42876521745_4cd6af9/studio-r2-native-failure.png" alt="Zrzut z przebiegu 42876521745: Studio R2, test rodzimy nie przeszło"></a>
+    <figcaption><span class="n">4</span> <span class="s zle">nie przeszło</span>
+      <span class="m">przebieg <code>42876521745</code> · commit <code>4cd6af9</code></span></figcaption>
+  </figure>
+  <figure class="k">
+    <a href="studio-r2-native-evidence__run42876830739_d1e1d26/studio-r2-native-pass.png"><img loading="lazy" src="studio-r2-native-evidence__run42876830739_d1e1d26/studio-r2-native-pass.png" alt="Zrzut z przebiegu 42876830739: Studio R2, test rodzimy przeszło"></a>
+    <figcaption><span class="n">5</span> <span class="s ok">przeszło</span>
+      <span class="m">przebieg <code>42876830739</code> · commit <code>d1e1d26</code></span></figcaption>
+  </figure>
+  <figure class="k">
+    <a href="studio-r2-native-evidence__run42877182107_fd7963d/studio-r2-native-failure.png"><img loading="lazy" src="studio-r2-native-evidence__run42877182107_fd7963d/studio-r2-native-failure.png" alt="Zrzut z przebiegu 42877182107: Studio R2, test rodzimy nie przeszło"></a>
+    <figcaption><span class="n">6</span> <span class="s zle">nie przeszło</span>
+      <span class="m">przebieg <code>42877182107</code> · commit <code>fd7963d</code></span></figcaption>
+  </figure>
+  <figure class="k">
+    <a href="studio-r2-native-evidence__run42877424716_a5b25a4/studio-r2-native-pass.png"><img loading="lazy" src="studio-r2-native-evidence__run42877424716_a5b25a4/studio-r2-native-pass.png" alt="Zrzut z przebiegu 42877424716: Studio R2, test rodzimy przeszło"></a>
+    <figcaption><span class="n">7</span> <span class="s ok">przeszło</span>
+      <span class="m">przebieg <code>42877424716</code> · commit <code>a5b25a4</code></span></figcaption>
+  </figure>
+  <figure class="k">
+    <a href="studio-r2-native-evidence__run42877662340_3089dbe/studio-r2-native-failure.png"><img loading="lazy" src="studio-r2-native-evidence__run42877662340_3089dbe/studio-r2-native-failure.png" alt="Zrzut z przebiegu 42877662340: Studio R2, test rodzimy nie przeszło"></a>
+    <figcaption><span class="n">8</span> <span class="s zle">nie przeszło</span>
+      <span class="m">przebieg <code>42877662340</code> · commit <code>3089dbe</code></span></figcaption>
+  </figure>
+  <figure class="k">
+    <a href="studio-r2-native-evidence__run42878014859_259a648/studio-r2-native-pass.png"><img loading="lazy" src="studio-r2-native-evidence__run42878014859_259a648/studio-r2-native-pass.png" alt="Zrzut z przebiegu 42878014859: Studio R2, test rodzimy przeszło"></a>
+    <figcaption><span class="n">9</span> <span class="s ok">przeszło</span>
+      <span class="m">przebieg <code>42878014859</code> · commit <code>259a648</code></span></figcaption>
+  </figure>
+  <figure class="k">
+    <a href="studio-r2-native-evidence__run42878283069_08d3599/studio-r2-native-pass.png"><img loading="lazy" src="studio-r2-native-evidence__run42878283069_08d3599/studio-r2-native-pass.png" alt="Zrzut z przebiegu 42878283069: Studio R2, test rodzimy przeszło"></a>
+    <figcaption><span class="n">10</span> <span class="s ok">przeszło</span>
+      <span class="m">przebieg <code>42878283069</code> · commit <code>08d3599</code></span></figcaption>
+  </figure>
+</div>
+
+<footer>
+<p><strong>Czym ten adres jest, a czym nie.</strong> To katalog w Jaskini, pod tym samym adresem
+co pasek &bdquo;Do obejrzenia&rdquo;. Zrzuty s&#261; nietkni&#281;te &mdash; dok&#322;adnie te, kt&oacute;re zapisa&#322; automat 10 XI.
+Strona nie jest indeksowana i nie uruchamia niczego poza wy&#347;wietleniem obraz&oacute;w.</p>
+<p>Do 14 XI 16:28 le&#380;a&#322;o to na ga&#322;&#281;zi podgl&#261;du <code>podglad/dowody-studio-r2</code>, czyli pod adresem,
+kt&oacute;ry ginie razem z ga&#322;&#281;zi&#261;. Pierwsza karta na pasku wskazywa&#322;a w&#322;a&#347;nie tam: rzecz uratowana
+przed wyga&#347;ni&#281;ciem wisia&#322;a na czym&#347;, co te&#380; wygasa. Dlatego sta&#322;a tu, na <code>main</code>.</p>
+<p>Zrobi&#322; Opus Code, 14 XI 2026, jako pierwsz&#261; rzecz na pasku &bdquo;Do obejrzenia&rdquo;, kt&oacute;ra nie jest
+o robocie agent&oacute;w nad agentami.</p>
+</footer>
+</main>
+</html>
