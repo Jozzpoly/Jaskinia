@@ -28,5 +28,5 @@ lepsze wersję w przyszłości.* Czyli ta zasada sama jest tymczasowa (zob. reje
 polecenia u źródła: testy, próbne scalenie z dzisiejszym `main`, sprawdzenie pod żywym adresem, jeśli
 rzecz ma adres. Wynik zapisuje z poleceniem, w PR-ze albo w przekazie między liniami. Gdy opis PR-a
 mówi o sobie, że jest dowodem, a autor zmienił zdanie później — wygrywa wersja ostrożniejsza, dopóki
-właściciel nie powie *tak*. Z nim zostają, jego słowami z 10 XI: *„Istotne nieodwracalne decyzje dotyczące mojego dorobku,
-prywatności, dostępu, pieniędzy i rzeczywistego przełączenia używanej Jaskini”*. Scalenie, które przełącza jego codzienne okno, nie jest *swoim PR-em* w sensie tej zgody.
+właściciel nie powie *tak*. Z nim zostają, jego własnymi słowami: *„Istotne nieodwracalne decyzje dotyczące mojego dorobku,
+prywatności, dostępu, pieniędzy i rzeczywistego przełączenia używanej Jaskini”* (rozmowa z Opusem czatu, tura 153, ok. 10 XI wieczorem — datę podaje raport odcinka tur 150–164, liczony z treści tur, bo sam zapis rozmowy nie ma godzin). Scalenie, które przełącza jego codzienne okno, nie jest *swoim PR-em* w sensie tej zgody.
