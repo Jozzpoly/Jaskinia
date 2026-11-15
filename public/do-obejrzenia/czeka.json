@@ -5,25 +5,25 @@
  "czeka": [
   {
    "nr": 2,
-   "co": "Przeczytać zlecenie dla agenta Feniksa i odpalić go, jeśli się zgadza",
-   "dlaczego_ty": "Sam powiedziałeś: osobny agent, i chciałeś zobaczyć zlecenie przed odpaleniem. Odpalenie agenta jest Twoim ruchem, nie moim.",
-   "jesli_nic": "Cała aplikacja Studia zostaje na dwóch gałęziach, a marzenie, doświadczenia i porządek z tej pracy nie są nigdzie spisane. Nic nie przepada od razu - gałęzie zostają.",
+   "co": "Agent Feniksa skończył zlecenie u Ciebie na komputerze i czeka na jedno słowo: wypchnąć gałąź i otworzyć szkic PR-a",
+   "dlaczego_ty": "Agent pracuje w Twojej sesji i pyta Ciebie, bo wypchnięcie wychodzi z Twojego dysku na zewnątrz.",
+   "jesli_nic": "Cała jego praca zostaje tylko na Twoim dysku — jedyna kopia. Główna gałąź Feniksa jest nietknięta, nic się nie psuje.",
    "od": "2026-11-15",
    "kto": "Opus Code",
    "adres": "/zlecenia/2026-11-15-feniks-jedna-galaz",
    "waga": "teraz",
    "sprawdzone": "2026-11-15",
-   "dowod": "Zmierzone: jedno czyste scalenie i jeden konflikt na 25 wierszach, razem 43 pliki. Zlecenie mówi to na początku, żeby nie zużyć agenta na kwadrans pracy."
+   "dowod": "Jego raport: obie gałęzie scalone na jednej, świadectwo napisane, próba zimnego czytelnika zdana, 41 plików źródłowych (nie 43 jak w zleceniu — rozbieżność opisana)."
   },
   {
    "nr": 3,
-   "co": "Odpalić rundę z Fable o fundament nowej Jaskini (tekst do wklejenia gotowy)",
-   "dlaczego_ty": "To Ty go odpalasz i Ty mówiłeś, że może dziś. Jego okno kończy się 16 XI.",
-   "jesli_nic": "Fable zostaje podagentem: odpowie na pytanie o fundament, ale nie poprowadzi własnej roboty. Paczka dla niego jest gotowa w obu połowach.",
+   "co": "Runda z Fable o fundament — odpalasz sam, kiedy zechcesz (jego okno do 16 XI)",
+   "dlaczego_ty": "Sam powiedziałeś, że paczkę odpalisz osobiście. Jako podagenta do planowania i podważania używamy go już my.",
+   "jesli_nic": "Nic się nie psuje — Twoimi słowami: „Przepadnie fable nic się nie dzieje”. Projekt pierwszej cegły fundamentu robi już Fable jako nasz podagent.",
    "od": "2026-11-14",
    "kto": "Opus Code i Opus czatu",
    "adres": "/zlecenia/2026-11-15-fable-fundament",
-   "waga": "teraz",
+   "waga": "opcjonalne",
    "sprawdzone": "2026-11-15"
   },
   {
@@ -39,16 +39,16 @@
    "dowod": "Próbne scalenie każdego z dzisiejszą główną gałęzią: 102/0, 104/0, 105/0, 105/0, bez konfliktów."
   },
   {
-   "nr": 5,
-   "co": "Ochrona gałęzi - opcjonalna, a najmocniejszy powód jest w Feniksie",
-   "dlaczego_ty": "Ustawień repozytorium nie zmienia żaden agent: obie linie są od tego odcięte i tak ma zostać.",
-   "jesli_nic": "Obowiązuje umowa, nie mechanizm: zapisaliśmy w czterech repozytoriach, że nie kasujemy gałęzi. Trzy gałęzie, które już zniknęły, były scalone, więc nic nie przepadło - ale w Feniksie cała aplikacja leży na dwóch gałęziach i tam gałąź naprawdę jest jedyną kopią.",
-   "od": "2026-11-13",
-   "kto": "Opus Code i Opus czatu",
-   "adres": "https://github.com/Jozzpoly/Feniks-Studio/settings/rules",
-   "waga": "opcjonalne",
-   "sprawdzone": "2026-11-15",
-   "dowod": "Feniks: główna gałąź ma 6 plików, a dwie gałęzie z aplikacją 16 i 31."
+   "nr": 6,
+   "co": "Klucz rutyny do budzenia agenta komentarzem z Jaskini — dopiero gdy wybierzemy tę drogę",
+   "dlaczego_ty": "Token rutyny tworzysz tylko Ty i trzymasz go w ustawieniach Cloudflare — agenci kluczy nie dotykają.",
+   "jesli_nic": "Twój wpis nie obudzi agenta, dotrze dopiero, gdy agent sam zacznie pracę. Może się też okazać, że klucz nie będzie potrzebny — projekt pierwszej cegły sprawdza drogę bez klucza.",
+   "czego_brakuje": "Najpierw wybór drogi budzenia (projekt pierwszej cegły). Dopiero potem poprosimy o klucz, z dokładnymi krokami.",
+   "od": "2026-11-15",
+   "kto": "Opus czatu",
+   "adres": null,
+   "waga": "kiedys",
+   "sprawdzone": "2026-11-15"
   }
  ],
  "odlozone_przez_ciebie": [
