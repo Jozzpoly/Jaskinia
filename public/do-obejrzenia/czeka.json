@@ -4,19 +4,6 @@
  "zebrane_z": "prywatna pamięć wspólna i repozytoria, nie z historii rozmów - wszystko, o co proszono wyłącznie w czacie przed 15 XI, może tu nie być",
  "czeka": [
   {
-   "nr": 1,
-   "co": "Most skrzynki czeka na jednorazowe podłączenie w Cloudflare",
-   "dlaczego_ty": "Sekrety wpisujesz tylko Ty - żaden agent nie ma do tego dostępu i tak ma zostać.",
-   "jesli_nic": "Pasek zostaje jednokierunkowy: agenci kładą tu rzeczy, a Twój komentarz nie ma jak do nich dojść. To jest dokładnie ta rzecz, którą 14 XI nazwałeś swoją ambicją numer jeden.",
-   "czego_brakuje": "Czego dokładnie potrzebuje, musi podać Opus czatu - to jego budowa z 11 XI, a ja nie zgaduję kroków, których nie zmierzyłem.",
-   "od": "2026-11-11",
-   "kto": "Opus czatu",
-   "adres": null,
-   "waga": "teraz",
-   "sprawdzone": "2026-11-15",
-   "dowod": "W skrzynce nie ma ani jednej wiadomości od czterech dni: jedyny plik to znacznik pustego katalogu."
-  },
-  {
    "nr": 2,
    "co": "Przeczytać zlecenie dla agenta Feniksa i odpalić go, jeśli się zgadza",
    "dlaczego_ty": "Sam powiedziałeś: osobny agent, i chciałeś zobaczyć zlecenie przed odpaleniem. Odpalenie agenta jest Twoim ruchem, nie moim.",
