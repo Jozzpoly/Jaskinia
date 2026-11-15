@@ -25,18 +25,6 @@
    "waga": "kiedys",
    "sprawdzone": "2026-11-15",
    "dowod": "Próbne scalenie każdego z dzisiejszą główną gałęzią: 102/0, 104/0, 105/0, 105/0, bez konfliktów."
-  },
-  {
-   "nr": 6,
-   "co": "Klucz rutyny do budzenia agenta komentarzem z Jaskini — dopiero gdy wybierzemy tę drogę",
-   "dlaczego_ty": "Token rutyny tworzysz tylko Ty i trzymasz go w ustawieniach Cloudflare — agenci kluczy nie dotykają.",
-   "jesli_nic": "Twój wpis nie obudzi agenta, dotrze dopiero, gdy agent sam zacznie pracę. Może się też okazać, że klucz nie będzie potrzebny — projekt pierwszej cegły sprawdza drogę bez klucza.",
-   "czego_brakuje": "Najpierw wybór drogi budzenia (projekt pierwszej cegły). Dopiero potem poprosimy o klucz, z dokładnymi krokami.",
-   "od": "2026-11-15",
-   "kto": "Opus czatu",
-   "adres": null,
-   "waga": "kiedys",
-   "sprawdzone": "2026-11-15"
   }
  ],
  "odlozone_przez_ciebie": [
