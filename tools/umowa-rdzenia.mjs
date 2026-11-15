@@ -451,15 +451,18 @@ export function adapterLinii(nazwa, Rdzen, { op = true } = {}) {
 //     w nazwę, a `zalozGlowe` po prostu nie istnieje.
 // `op` jest u nich obowiązkowe i ma kształt, więc adapter dorabia świeży tam, gdzie
 // umowa go nie podała. Treść przyjmują tekstem, więc adapter serializuje JSON — tak samo
-// jak ich własne testy. `importuj` NIE MA i tego nie nadrabiam: ich opis #10 mówi to
-// wprost, a zmyślony import pokazałby wynik, którego nikt nie ma.
+// jak ich własne testy. `importuj`: gdy pisano ten adapter, opis #10 mówił, że importu nie ma.
+// Dawca ma go teraz (`worker/miejsce.mjs`, `Rdzen.importuj`: tylko do pustego Miejsca, każda
+// treść musi dać swój identyfikator), więc adapter go woła, a nie zmyśla. Odrzucenie importu
+// zamienia na wyjątek, bo tak U6 i U7 odróżniają „weszło” od „odrzucone” (15 XI, Opus czatu).
 export function adapterMiejsce(nazwa, M, { sqlZNode }) {
   let n = 0;
   const swiezyOp = () => 'umowa.auto.' + String(++n).padStart(4, '0');
   const imie = (k) => (k === WLASCICIEL ? 'jozz' : 'opus-code');
+  const nowy = () => { let t = Date.parse('2026-11-11T00:00:00Z'); return new M.Rdzen(sqlZNode(), { teraz: () => (t += 1000) }); };
   return {
     nazwa,
-    nowy: () => { let t = Date.parse('2026-11-11T00:00:00Z'); return new M.Rdzen(sqlZNode(), { teraz: () => (t += 1000) }); },
+    nowy,
     glowaNazwa: (rodzaj) => 'wspolne:umowa-' + (rodzaj === 'wspolna' ? 'a' : 'b'),
     zapisz: async (r, { rodzaj, tresc, kto, op }) => {
       const w = await r.wykonaj(imie(kto), { op: op ?? swiezyOp(), co: 'zapisz', rodzaj, tresc: JSON.stringify(tresc) });
@@ -477,6 +480,20 @@ export function adapterMiejsce(nazwa, M, { sqlZNode }) {
       czas: Date.parse(a.kiedy),         // u nich ISO; umowa pyta o czas, nie o jego zapis
     })),
     eksport: (r) => JSON.stringify(r.eksport()),
+    importuj: async (t) => {
+      const r = nowy();
+      const w = await r.importuj(JSON.parse(t));
+      if (!w.ok) throw new Error(`${w.status}: ${w.blad}`);
+      return r;
+    },
+    // Treść w Miejscu to tekst (JSON z `zapisz` wyżej), więc podmiana idzie w pole `tresc`, a identyfikator zostaje stary.
+    podmienTresc: (t, id, nowa) => {
+      const d = JSON.parse(t);
+      const z = d.zapisy.find((x) => x.id === id);
+      if (!z) throw new Error('nie ma takiego zapisu w eksporcie: ' + id);
+      z.tresc = JSON.stringify(nowa);
+      return JSON.stringify(d);
+    },
   };
 }
 
