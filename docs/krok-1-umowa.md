@@ -192,7 +192,8 @@ Cofnięcie to przesunięcie tej samej głowy z powrotem. Jest nowym aktem, więc
   - Gdy akt o op `cofnij.akt:<akt>` już istnieje: `powtorzone: true`, zero nowych aktów. Tak samo dla ponowienia.
     Dzięki temu dwa urządzenia cofające ten sam ruch i ponowione żądanie po zgubionej odpowiedzi dają jeden akt.
   - Gdy `akt` nie jest wierzchem: `409`, `powod: "nie-wierzch"`, z aktualnymi `cofnij` i `ponow`. Zero aktów.
-  - Gdy stos jest pusty: `409`, `powod: "pusto"`.
+  - Gdy stos jest pusty: `409`, `powod: "pusto"`. Przy `obciete: true` znaczy to: starsze ruchy istnieją,
+    ale są poza oknem.
 - **Dokąd wraca głowa:** na `z` aktu, który trzyma wpis. Gdy `z` jest puste (pierwsze położenie karty), głowa
   idzie na zapis `auto: true` tej karty; ten zapis ma stały op `cofnij.akt:<trzyma>.z`, więc cofnięcie pierwszego
   położenia to dwa akty, a jego powtórzenie nie dopisuje trzeciego.
@@ -241,11 +242,13 @@ Sprawdziany leżą obok kodu (`worker/*.test.mjs`), a dla klienta w `testy/klien
 - `glowaRzeczy(id)`, `glowaKarty(przestrzen, co)`, `przedrostekPrzestrzeni(przestrzen)` → nazwy głów;
   `coZGlowy(glowa)` → `rzecz/<id>` albo `null`.
 - `opPary(op)` → `{ z, p }`; `opCofniecia(nr)`, `opPonowienia(nr)`; `rozbierzOp(op)` → `{ rodzaj, akt }`, gdzie
-  `rodzaj` to `cofnij`, `ponow` albo `zwykly`. Rozpoznanie idzie pełnym wzorem (`^cofnij\.akt:(\d+)$`):
+  `rodzaj` to `cofnij`, `ponow` albo `zwykly`. Rozpoznanie idzie pełnym wzorem (`^cofnij\.akt:([1-9]\d{0,14})$`):
   `cofnij.akt:2.p` i `cofnij.akt:2x` to zwykłe op.
   `akt` jest liczbą całkowitą, a dla `zwykly` ma wartość `null`; wejście, które nie jest tekstem, to `zwykly`.
   `opPary` tylko dokleja końcówki i niczego nie sprawdza (sprawdza `opKlienta` w drzwiach). `opCofniecia`
-  i `opPonowienia` dla wartości, która nie jest dodatnią liczbą całkowitą, zwracają `null`.
+  i `opPonowienia` dla wartości, która nie jest dodatnią liczbą całkowitą o najwyżej 15 cyfrach, zwracają `null`.
+  Numer w `op` nie ma zer wiodących, nie jest zerem i ma najwyżej 15 cyfr; inaczej to zwykłe op. Dzięki temu
+  budowanie i rozpoznanie są symetryczne, a numer nie traci dokładności.
 
 ### 5.2 `rzuty.mjs` (tylko czyta)
 
@@ -369,6 +372,11 @@ KS9 `id` z wielką literą albo z końcówką `.json`: `false`. KS10 `czytaj` za
 KS11 dwa wejścia różniące się tylko pominiętym polem opcjonalnym, kolejnością `do` albo `CRLF` dają ten sam tekst
 kanoniczny. KS12 najdłuższa dozwolona nazwa przestrzeni z najdłuższym `id` daje nazwę głowy, którą rdzeń przyjmuje.
 KS13 `opKlienta` odrzuca kropkę i dwukropek; `rozbierzOp("cofnij.akt:2.p")` mówi `zwykly`.
+KS14 funkcje `op` na złym wejściu: `rozbierzOp` dla wartości, która nie jest tekstem, mówi `zwykly` z `akt: null`
+bez wyjątku; `opCofniecia` i `opPonowienia` dla `0`, `-1`, `1.5`, tekstu, `NaN` i `null` zwracają `null`; `opPary`
+niczego nie sprawdza. KS15 `cofnij.akt:007`, `cofnij.akt:0` i numer 16-cyfrowy to zwykłe op;
+`rozbierzOp(opCofniecia(n)).akt` jest liczbą (nie tekstem) równą `n`, a dla zwykłego op wynik to dokładnie
+`{ rodzaj: "zwykly", akt: null }`.
 
 **Rzuty (RZ).** RZ1 przedrostek zwraca tylko swoje głowy, także gdy obok istnieją przestrzenie `a_b` i `axb`.
 RZ2 `limit: 2` przy pięciu głowach: `pokazane` 2, `razem` 5. RZ3 prywatne głowy: agent `403`, właściciel widzi.
@@ -381,14 +389,16 @@ i `wroc_na` równym `z`. ST3 ruch, cofnięcie: cel ponowienia ma `trzyma` równe
 cofnięcie, ponowienie: cel cofnięcia ma `trzyma` równe numerowi ponowienia i `wroc_na` jak na początku.
 ST5 ruch A, ruch B, cofnięcie B, nowy ruch C: nie ma nic do ponowienia; do cofnięcia jest C, potem A.
 ST6 cofnięcie wpisu spoza wierzchu zdejmuje właśnie ten wpis (odporność funkcji; drzwi na to nie pozwalają).
-ST7 cofnięcie wskazujące numer, którego nie ma, przy nieobciętym oknie: `niespojne`, liczy się jak zwykły ruch.
+ST7 cofnięcie wskazujące numer, którego nie ma, przy nieobciętym oknie: `niespojne` zawiera numer tego aktu,
+a akt liczy się jak zwykły ruch.
 ST8 pierwsze położenie: `wroc_na` jest `null`. ST9 po k ruchach i k cofnięciach budowanych według kolejnych
 celów cel cofnięcia jest `null`, a `glebokosc.ponow` równa k (losowe ciągi z ustalonym ziarnem). ST10 ta sama
 karta ruszona dwa razy, dwa cofnięcia: drugi cel ma `trzyma` równe numerowi pierwszego ruchu, choć głowę
 przesunął ostatnio akt cofnięcia. ST11 obcięte okno, w którym jest cofnięcie ruchu sprzed okna: wpis pojawia
 się na "cofniętych" i nic nie znika z "zrobionych". ST12 obcięte okno z ponowieniem cofnięcia sprzed okna:
 wpis pojawia się na "zrobionych", a "cofnięte" zostają. ST13 `cofnij.akt:X`, gdzie `X` trzyma wpis innej głowy:
-`niespojne`. ST14 op `cofnij.akt:2.p` jest zwykłym ruchem.
+`niespojne`. ST14 op `cofnij.akt:2.p` jest zwykłym ruchem. ST15 obcięte okno, cel równy numerowi pierwszego aktu okna,
+wpisu nie ma: `niespojne`. ST16 `stos(akty)` bez drugiego argumentu działa jak z `obciete: false`.
 
 **Przestrzeń (PR).** PR1 `poloz` zapisuje dokładnie dwa akty. PR2 to samo `op` drugi raz: `powtorzone`, zero
 nowych aktów, `karta` aktualna. PR3 zła `wersja`: `409`, `powod: "wersja"`, aktualna karta, zero aktów.
@@ -483,6 +493,9 @@ i pod kciukiem i czy pierwszy rzut oka jest zwarty. Wynik idzie do dziennika oce
 - **Klucze podglądu są jawne.** Każdy, kto zna adres, wejdzie jako właściciel próbny. Dlatego próba jest
   podpisana i nic prywatnego na nią nie trafia. Prywatne użycie wymaga wpuszczania urządzeń, którego tu nie ma.
 - **Automat nie omija kart położonych ręcznie.**
+- **Niespójne akty** (drugie cofnięcie tego samego wpisu, cofnięcie wskazujące cudzą głowę) nie powstają przez
+  drzwi kroku 1; mogą przyjść tylko z importu albo z bezpośredniego zapisu do rdzenia. Stos liczy je wtedy jak
+  zwykłe ruchy i wypisuje w `niespojne`. Dwóch cofnięć tego samego celu sprzed okna nie da się odróżnić.
 
 ## 9. Wygląd i droga do oczu właściciela
 
