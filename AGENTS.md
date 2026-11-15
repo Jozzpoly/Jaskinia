@@ -29,4 +29,4 @@ polecenia u źródła: testy, próbne scalenie z dzisiejszym `main`, sprawdzenie
 rzecz ma adres. Wynik zapisuje z poleceniem, w PR-ze albo w przekazie między liniami. Gdy opis PR-a
 mówi o sobie, że jest dowodem, a autor zmienił zdanie później — wygrywa wersja ostrożniejsza, dopóki
 właściciel nie powie *tak*. Z nim zostają, jego własnymi słowami: *„Istotne nieodwracalne decyzje dotyczące mojego dorobku,
-prywatności, dostępu, pieniędzy i rzeczywistego przełączenia używanej Jaskini”* (rozmowa z Opusem czatu, tura 153, zapis z 13 XI; **daty wypowiedzenia nie ustaliliśmy u źródła** — zapis nie ma godzin, a powtarzane wcześniej „10 XI” nie ma pokrycia w żadnym pliku z tego dnia). Scalenie, które przełącza jego codzienne okno, nie jest *swoim PR-em* w sensie tej zgody.
+prywatności, dostępu, pieniędzy i rzeczywistego przełączenia używanej Jaskini”* (rozmowa z Opusem czatu, tura 153, ok. 10 XI wieczorem — datę podaje raport odcinka tur 150–164, liczony z treści tur, bo sam zapis rozmowy nie ma godzin). Scalenie, które przełącza jego codzienne okno, nie jest *swoim PR-em* w sensie tej zgody.
