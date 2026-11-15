@@ -454,7 +454,7 @@ export function adapterLinii(nazwa, Rdzen, { op = true } = {}) {
 // jak ich własne testy. `importuj`: gdy pisano ten adapter, opis #10 mówił, że importu nie ma.
 // Dawca ma go teraz (`worker/miejsce.mjs`, `Rdzen.importuj`: tylko do pustego Miejsca, każda
 // treść musi dać swój identyfikator), więc adapter go woła, a nie zmyśla. Odrzucenie importu
-// zamienia na wyjątek, bo tak U6 i U7 odróżniają „weszło” od „odrzucone” (15 XI, Opus czatu).
+// zamienia na wyjątek, bo tak U6 i U7 odróżniają "weszło" od "odrzucone" (15 XI, Opus czatu).
 export function adapterMiejsce(nazwa, M, { sqlZNode }) {
   let n = 0;
   const swiezyOp = () => 'umowa.auto.' + String(++n).padStart(4, '0');
