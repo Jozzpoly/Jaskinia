@@ -17,12 +17,12 @@
   },
   {
    "nr": 3,
-   "co": "Czy Fable rusza dziś jako samodzielny agent, a nie podagent",
+   "co": "Odpalić rundę z Fable o fundament nowej Jaskini (tekst do wklejenia gotowy)",
    "dlaczego_ty": "To Ty go odpalasz i Ty mówiłeś, że może dziś. Jego okno kończy się 16 XI.",
    "jesli_nic": "Fable zostaje podagentem: odpowie na pytanie o fundament, ale nie poprowadzi własnej roboty. Paczka dla niego jest gotowa w obu połowach.",
    "od": "2026-11-14",
-   "kto": "Opus Code",
-   "adres": null,
+   "kto": "Opus Code i Opus czatu",
+   "adres": "/zlecenia/2026-11-15-fable-fundament",
    "waga": "teraz",
    "sprawdzone": "2026-11-15"
   },
