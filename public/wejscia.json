@@ -1,7 +1,8 @@
 {
  "wersja": 1,
  "opis": "Rzeczy Jozza, które da się otworzyć i ruszyć od razu, bez zadania. Powstało 15 XI 2026, bo zmierzyliśmy, że osiem jego projektów działa pod adresem, a drzwi Jaskini nie prowadziły do żadnego z nich.",
- "zrodlo_opisow": "Każdy adres otwarty po kolei 15 XI 2026 około 04:20 i opisany z tego, co pokazał - nie z plików w repozytorium. Pole telefon mówi tylko tyle, co strona sama o sobie deklaruje w treści albo czym okazuje się jej kod: meta viewport, obsługa dotyku, odczyt liczby palców. Pod kciukiem nikt tego jeszcze nie sprawdził, bo do takiego pomiaru potrzeba widocznego okna przeglądarki - przy zerowej szerokości każdy wynik wychodzi fałszywie dobry.",
+ "status": "Spis tymczasowy, brudnopis. Ma zniknąć, gdy powstanie Przegląd ze Ścianą w jednym - to jego pierwszy filar z 15 XI 16:02, a granie, buildy i wersje milowe należą tam, nie do osobnej listy na drzwiach.",
+ "zrodlo_opisow": "Każdy adres otwarty po kolei 15 XI 2026 między 04:00 a 04:15 i opisany z tego, co pokazał - nie z plików w repozytorium. Pole telefon mówi tylko tyle, co strona sama o sobie deklaruje w treści albo czym okazuje się jej kod: meta viewport, obsługa dotyku, odczyt liczby palców. Żadnej z nich nikt nie sprawdził kciukiem; sprawdzony jest tylko układ tej strony na szerokości 375 pikseli (15 XI 16:20, bez przewijania w bok).",
  "czego_tu_nie_ma": "Rzeczy, które mają gotowe wejście, ale nie mają adresu: Splot, Mini Feniks, Riftworks, edytor rigów, piaskownica pojazdów i gra wieloosobowa Tysiąc. Nie zgadujemy za nie.",
  "wejscia": [
   {

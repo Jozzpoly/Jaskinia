@@ -28,7 +28,10 @@ const data = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)
 function sito(d) {
   const bledy = [];
   if (d.wersja !== 1) bledy.push('format inny niż v1');
-  for (const p of ['opis', 'zrodlo_opisow']) if (!d[p]) bledy.push(`brak pola ${p} na górze`);
+  // `status` jest obowiązkowy, żeby nikt nie zapomniał napisać, czym ten spis jest: brudnopisem,
+  // który ma zniknąć przy Przeglądzie ze Ścianą. Bez tego pola lista cicho awansuje na standard.
+  for (const p of ['opis', 'zrodlo_opisow', 'status']) if (!d[p]) bledy.push(`brak pola ${p} na górze`);
+  bledy.push(...bledyTekstow({ opis: d.opis, zrodlo_opisow: d.zrodlo_opisow, status: d.status }, 'góra pliku'));
   if (!Array.isArray(d.wejscia)) return [...bledy, 'wejscia nie jest tablicą'];
   const adresy = new Set();
   for (const w of d.wejscia) {
@@ -60,9 +63,12 @@ test('drzwi naprawdę czytają ten plik, a nie tylko mają go w repo', () => {
   assert.match(html, /wejscia\.json/, 'drzwi pobierają wejscia.json');
   assert.match(html, /id="wejscia"/, 'drzwi mają miejsce, w które wstawiają tę listę');
   assert.match(html, /dom\/status\.json/, 'drzwi biorą świeżość ze starej Jaskini, zamiast kopiować jej stan');
-  // Na telefonie nie ma najechania myszą, więc dymek `title` tam nie istnieje. Powód przy
-  // „niesprawdzonym" musi trafić na ekran, bo sam znacznik wprowadzałby w błąd.
-  assert.match(html, /telefon === 'nieznane' && w\.skad_wiem/, 'przy niesprawdzonym powód idzie na ekran, nie tylko w dymek');
+  // Na telefonie nie ma najechania myszą, więc dymek `title` tam nie istnieje. Powód musi trafić
+  // na ekran przy KAŻDYM wejściu, bo sam znacznik byłby twierdzeniem bez pokrycia.
+  assert.match(html, /if \(w\.skad_wiem\) \{ const d = document\.createElement/, 'powód idzie na ekran przy każdym wejściu, nie tylko w dymek');
+  // Znacznik mówi, że strona DEKLARUJE dotyk — nie, że pod kciukiem działa (jego potrzeba 2).
+  assert.doesNotMatch(html, /'działa na telefonie'/, 'podpis nie twierdzi więcej, niż zmierzyliśmy');
+  assert.match(html, /deklaruje sterowanie dotykiem/, 'podpis mówi o deklaracji strony');
 });
 
 test('sito łapie to, po co jest (próby na kopiach w pamięci)', () => {
@@ -70,7 +76,7 @@ test('sito łapie to, po co jest (próby na kopiach w pamięci)', () => {
     nazwa: 'x', adres: 'https://jozzpoly.github.io/Combat-Lab/', co_to_jest: 'y',
     telefon: 'nieznane', skad_wiem: 'nie sprawdziliśmy', sprawdzone: '2026-11-15',
   };
-  const k = (zmiana) => ({ wersja: 1, opis: 'o', zrodlo_opisow: 'z', wejscia: [{ ...dobre, ...zmiana }] });
+  const k = (zmiana) => ({ wersja: 1, opis: 'o', zrodlo_opisow: 'z', status: 's', wejscia: [{ ...dobre, ...zmiana }] });
   assert.deepEqual(sito(k({})), []);
   assert.deepEqual(sito(k({ adres: 'https://jaskinia.jozzpoly.workers.dev/studio/' })), []);
   assert.equal(sito(k({ skad_wiem: '' })).length, 1, 'znacznik o telefonie bez źródła nie przechodzi');
@@ -83,6 +89,6 @@ test('sito łapie to, po co jest (próby na kopiach w pamięci)', () => {
   assert.equal(sito(k({ co_to_jest: 'leży w C:/Users/ktos/tajne' })).length, 1, 'lokalna ścieżka');
   assert.equal(sito(k({ skad_wiem: 'klucz ghp_' + 'a'.repeat(36) })).length, 1, 'sekret w dowolnym polu');
   assert.equal(sito(k({ pilne: true })).length, 1, 'nieznane pole trzeba dopisać świadomie');
-  assert.equal(sito({ wersja: 1, opis: 'o', zrodlo_opisow: 'z', wejscia: [dobre, { ...dobre }] }).length, 1, 'ten sam adres dwa razy');
-  assert.equal(sito({ wersja: 1, wejscia: [] }).length, 2, 'brak opisu i źródła opisów na górze');
+  assert.equal(sito({ wersja: 1, opis: 'o', zrodlo_opisow: 'z', status: 's', wejscia: [dobre, { ...dobre }] }).length, 1, 'ten sam adres dwa razy');
+  assert.equal(sito({ wersja: 1, wejscia: [] }).length, 3, 'brak opisu, źródła opisów i statusu na górze');
 });

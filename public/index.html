@@ -144,7 +144,10 @@
     let dane;
     try { dane = await fetch('/wejscia.json', { cache: 'no-store' }).then((r) => r.json()); }
     catch (e) { stan.textContent = 'Lista wejść się nie wczytała (to normalne poza Cloudflare).'; return; }
-    const podpis = { tak: 'działa na telefonie', nie: 'tylko komputer' };
+    // Podpisy mówią, co naprawdę wiemy, a nie czego się domyślamy. „Działa na telefonie" było
+    // twierdzeniem, a mieliśmy deklarację strony — jego potrzeba 2: bez wydmuszki (druga linia,
+    // Opus czatu, 15 XI 04:50). Sprawdzone pod kciukiem nic tu jeszcze nie jest.
+    const podpis = { tak: 'deklaruje sterowanie dotykiem', nie: 'strona mówi: tylko komputer' };
     for (const w of dane.wejscia || []) {
       const li = document.createElement('li');
       const a = document.createElement('a');
@@ -155,18 +158,19 @@
       if (w.skad_wiem) z.title = w.skad_wiem;
       const co = document.createElement('div'); co.className = 'co'; co.textContent = w.co_to_jest;
       li.append(a, z, co);
-      // Przy „niesprawdzonym" znacznik sam w sobie wprowadza w błąd, a na telefonie nie ma
-      // najechania myszą, więc dymek nie istnieje: wtedy powód idzie na ekran, nie w `title`.
-      if (w.telefon === 'nieznane' && w.skad_wiem) {
-        const d = document.createElement('div'); d.className = 'co'; d.textContent = w.skad_wiem; li.append(d);
-      }
+      // Powód idzie na ekran przy KAŻDYM wejściu, nie tylko przy niesprawdzonym: na telefonie nie
+      // ma najechania myszą, więc dymek `title` tam nie istnieje, a znacznik bez źródła byłby
+      // twierdzeniem bez pokrycia. `title` zostaje dla myszy.
+      if (w.skad_wiem) { const d = document.createElement('div'); d.className = 'co skad'; d.textContent = w.skad_wiem; li.append(d); }
       lista.append(li);
     }
-    stan.textContent = (dane.wejscia || []).length + ' rzeczy, które otworzysz i ruszysz od razu. Opisy z otwarcia każdej z nich.';
+    stan.textContent = (dane.wejscia || []).length + ' rzeczy, które otworzysz i ruszysz od razu. Opisy z otwarcia każdej z nich. To spis tymczasowy — ma zniknąć, gdy powstanie Przegląd ze Ścianą.';
     try {
       const s = await fetch('/dom/status.json', { cache: 'no-store' }).then((r) => r.json());
       const z = (s.data || {}).zagraj;
-      if (z) stan.textContent += ' Czy adresy odpowiadają, sprawdza stara Jaskinia: ' + z.answering + ' z ' + z.of + ', ostatnio ' + z.checked_at + '.';
+      // Liczba jest stamtąd, gdzie ktoś ją naprawdę liczy, i mówi o JEJ wejściach — nie udajemy,
+      // że dotyczy akurat tych siedmiu (druga linia, 15 XI: „usuwa zgadywanie").
+      if (z) stan.textContent += ' Czy adresy w ogóle odpowiadają, sprawdza u siebie stara Jaskinia: ' + z.answering + ' z ' + z.of + ' jej wejść, ostatnio ' + z.checked_at + '.';
     } catch (e) { stan.textContent += ' Nie wiadomo, kiedy ostatnio sprawdzano, czy adresy odpowiadają.'; }
   })();
 </script>
