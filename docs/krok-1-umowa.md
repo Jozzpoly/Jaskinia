@@ -106,8 +106,8 @@ skrót treści:
 ### 3.2 `miejsce-karty` (w: 1), głowa `jozz:przestrzen/<nazwa>/rzecz/<id>`
 
 ```json
-{ "w": 1, "co": "rzecz/combat-lab", "auto": false, "x": 0, "y": 0, "szer": 240, "wys": 150, "zwinieta": false }
-{ "w": 1, "co": "rzecz/combat-lab", "auto": true, "zwinieta": false }
+{ "w": 1, "co": "rzecz/combat-lab", "x": 0, "y": 0, "szer": 240, "wys": 150, "zwinieta": false }
+{ "w": 1, "co": "rzecz/combat-lab", "x": null, "y": null, "szer": null, "wys": null, "zwinieta": false }
 ```
 
 - Człon `rzecz/` w nazwie głowy i pole `co` są po to, żeby później na płaszczyźnie mogło stanąć coś innego
@@ -116,17 +116,24 @@ skrót treści:
 - Zakresy: `x`, `y` od -10 000 000 do 10 000 000; `szer`, `wys` od 40 do 100 000. Poza zakresem: przycięcie
   i wpis w `przyciete`.
 - `zwinieta: true` zostawia `x`, `y`, `szer`, `wys` bez zmian. Rozwinięcie przywraca dokładnie to, co było.
-- `auto: true` znaczy: karta stoi tam, gdzie kładzie ją automat. Karta bez głowy też. Miejsca automatyczne
-  liczy klient jedną funkcją z tej samej listy rzeczy, więc są takie same na każdym urządzeniu; serwer ich nie zapisuje.
+- **Ręka albo miara, osobno dla położenia i dla rozmiaru.** `x` i `y` są oba liczbami (położenie przypięte ręką)
+  albo oba `null` (kładzie automat). `szer` i `wys` tak samo: oba liczbami (rozmiar ustawiony ręką) albo oba `null`
+  (rozmiar z miary; w kroku 1 to domyślny rozmiar automatu). Przesunięcie karty nie przypina jej rozmiaru,
+  a zmiana rozmiaru nie przypina położenia. Karta bez głowy znaczy to samo co same `null`.
+- Miejsca automatyczne liczy klient jedną funkcją z tej samej listy rzeczy i z tych samych kart położonych ręką,
+  więc są takie same na każdym urządzeniu; serwer ich nie zapisuje.
+- **Kolejność warstw** jest regułą rzutu, nie polem: na wierzchu leży karta, której głowa ma najwyższą `wersja`
+  (świeżo ruszona jest na górze); karty bez głowy leżą pod spodem, w kolejności listy rzeczy.
 - Przybliżenie widoku nie jest polem karty. To stan oka, osobny na każdym urządzeniu.
 
 ### 3.3 `slowo` (w: 1), bez głowy
 
 ```json
-{ "w": 1, "tekst": "...", "o": "rzecz/combat-lab", "do": [], "nawiazuje": { "akt": 41, "jako": "odpowiedz" } }
+{ "w": 1, "tekst": "...", "temat": null, "o": "rzecz/combat-lab", "do": [], "nawiazuje": { "akt": 41, "jako": "odpowiedz" } }
 ```
 
 - `tekst`: po obcięciu białych znaków z brzegów 1 do 20 000 znaków. Dłuższy: `413`, bez cichego ucinania.
+- `temat`: `null` albo tekst do 200 znaków. Mówi, o czym jest słowo; `o` mówi, przy której rzeczy stoi.
 - **`nawiazuje` wskazuje akt, nie zapis.** Autor i czas są w akcie, więc to samo zdanie od dwóch autorów jest
   jednym zapisem, a dwoma wpisami. Numer aktu przechodzi przez eksport i import bez zmian. `jako`: `odpowiedz`,
   `dopisek` albo `poprawka`. Dopisek i poprawka są nowym zapisem, stary zostaje.
@@ -143,8 +150,8 @@ z ciasteczkiem musi mieć nagłówek `Origin` równy adresowi strony, inaczej `4
 | --- | --- | --- | --- |
 | `GET /api/miejsce/rzeczy` | | `{ razem, pokazane, rzeczy: [{ id, glowa, wersja, zapis, rzecz, niepoprawna, slow }] }` | |
 | `GET /api/miejsce/rzecz/<id>` | | `{ id, glowa, wersja, zapis, rzecz, niepoprawna, slowa, historia, sasiedzi }`, trzy ostatnie jako listy z `razem` i `pokazane` | `404` |
-| `POST /api/miejsce/rzecz/<id>/slowo` | `{ op, tekst, do?, nawiazuje? }` | `{ powtorzone, zapis, akt }` | `400`, `404`, `413` |
-| `GET /api/miejsce/przestrzen/<nazwa>` | | `{ przestrzen, razem, pokazane, karty, cofnij, ponow, obciete, kursor }` | |
+| `POST /api/miejsce/rzecz/<id>/slowo` | `{ op, tekst, temat?, do?, nawiazuje? }` | `{ powtorzone, zapis, akt }` | `400`, `404`, `413` |
+| `GET /api/miejsce/przestrzen/<nazwa>` | | `{ przestrzen, razem, pokazane, karty, cofnij, ponow, obciete, niespojne, kursor }` | |
 | `POST /api/miejsce/przestrzen/<nazwa>/poloz` | `{ op, co, miejsce, wersja }` | `{ powtorzone, bez_zmian, karta, akty, przyciete }` | `400`, `403`, `404`, `409` |
 | `POST /api/miejsce/przestrzen/<nazwa>/cofnij` | `{ akt }` | `{ powtorzone, cofniete: { akt }, karta, cofnij, ponow }` | `400`, `403`, `409` |
 | `POST /api/miejsce/przestrzen/<nazwa>/ponow` | `{ akt }` | `{ powtorzone, ponowione: { akt }, karta, cofnij, ponow }` | `400`, `403`, `409` |
@@ -158,7 +165,8 @@ z ciasteczkiem musi mieć nagłówek `Origin` równy adresowi strony, inaczej `4
 - `cofnij` i `ponow` w odpowiedzi to `{ mozna, akt }`: `akt` jest numerem, który trzeba podać, żeby cofnąć albo ponowić.
 - `kursor` to numer ostatniego aktu w całym dzienniku w chwili odczytu; klient podaje go drzwiom dawcy
   `/dziennik?od=`, żeby dowiedzieć się, co przybyło.
-- `obciete` mówi, że okno cofania było pełne (4.2).
+- `obciete` mówi, że okno cofania było pełne (4.2). `niespojne` to lista numerów aktów, których stos nie umiał
+  dopasować (5.3); zwykle pusta.
 - Ścieżki dawcy (`/akt`, `/dziennik`, `/nowe`, `/glowa`, `/zapis`, `/widzialem`, `/eksport`, `/import`) zostają,
   z jednym zwężeniem z zasady 3.
 
@@ -195,12 +203,13 @@ Cofnięcie to przesunięcie tej samej głowy z powrotem. Jest nowym aktem, więc
   - Gdy stos jest pusty: `409`, `powod: "pusto"`. Przy `obciete: true` znaczy to: starsze ruchy istnieją,
     ale są poza oknem.
 - **Dokąd wraca głowa:** na `z` aktu, który trzyma wpis. Gdy `z` jest puste (pierwsze położenie karty), głowa
-  idzie na zapis `auto: true` tej karty; ten zapis ma stały op `cofnij.akt:<trzyma>.z`, więc cofnięcie pierwszego
+  idzie na zapis tej karty z samymi `null` (karta wraca do automatu); ten zapis ma stały op `cofnij.akt:<trzyma>.z`, więc cofnięcie pierwszego
   położenia to dwa akty, a jego powtórzenie nie dopisuje trzeciego.
 - Co jest na stosie, liczy czysta funkcja z samych aktów (5.3), więc cofanie działa po przeładowaniu i z drugiego
   urządzenia. Nowy zwykły ruch czyści to, co było do ponowienia.
 - **Głębokość.** Stos liczy się z ostatnich 200 przesunięć w przestrzeni. Cofnięcia i ponowienia też zajmują to
   okno, więc przy pełnym oknie da się cofnąć około 100 ruchów. `obciete: true` mówi, że okno było pełne.
+- Zwinięcie, rozwinięcie i powrót do automatu są zwykłymi ruchami, więc też są krokami cofania. To celowe.
 - Słowa się nie cofa: dopisuje się następne.
 
 ### 4.3 Wartości `powod`
@@ -274,7 +283,7 @@ Zapytanie o sam prywatny przedrostek od kogoś innego: `403`. Przy szerszym prze
 
 Drugi argument jest opcjonalny, `obciete` domyślnie `false`. `niespojne` to lista numerów aktów, pusta, gdy
 wszystko się zgadza. `glebokosc` to rozmiary obu kupek. Wejście ma rosnące, niepowtarzające się numery;
-funkcja tego nie sprawdza. Akt `zapisz` zapisu `auto` (op z końcówką `.z`) nie jest przesunięciem i nigdy
+funkcja tego nie sprawdza. Akt `zapisz` zapisu powrotu do automatu (op z końcówką `.z`) nie jest przesunięciem i nigdy
 nie trafia na wejście.
 
 Dwie kupki wpisów `{ glowa, trzyma, wroc_na }`: "zrobione" i "cofnięte". Reguły, w kolejności aktów:
@@ -354,8 +363,8 @@ Dwie kupki wpisów `{ glowa, trzyma, wroc_na }`: "zrobione" i "cofnięte". Regu�
 - `gesty.mjs`: `krok(stan, zdarzenie)` → `{ stan, zamiary }`. Zdarzenia: `dol`, `ruch`, `gora`, `anuluj`, `kolko`.
   Cel zdarzenia `dol`: `karta`, `uchwyt`, `tlo`. Zamiary: `podglad` (rysuj, nie zapisuj), `poloz` (raz, na końcu
   gestu, tylko gdy coś się zmieniło), `stuk`, `oko`.
-- `auto-uklad.mjs`: `ulozAutomatycznie(idRzeczy, opcje)` → miejsca dla kart bez własnego położenia; ta sama
-  lista daje zawsze ten sam układ.
+- `auto-uklad.mjs`: `ulozAutomatycznie(rzeczy, { zajete })` → miejsca dla kart bez przypiętego położenia. Omija
+  prostokąty kart położonych ręką (`zajete`). Ta sama lista i te same zajęte prostokąty dają zawsze ten sam układ.
 - `drzwi.mjs`: `nowyOp()`, `wyslij(...)` z ponowieniem tym samym `op` przy błędzie sieci i `5xx` (najwyżej 3 razy);
   odpowiedzi `4xx` nie ponawia, poza `op-zajety`, przy którym bierze nowy `op` raz.
 - `szkic.mjs`: szkic słowa przeżywa przeładowanie; wyjątek magazynu przeglądarki nie wywraca strony.
@@ -367,7 +376,7 @@ Kto buduje moduł, nie zmienia jego sprawdzianów. Brakujący przypadek zgłasza
 **Kształty (KS).** KS1 `kanon` daje ten sam tekst dla tych samych danych w innej kolejności kluczy. KS2 liczby
 ułamkowe w miejscu karty są zaokrąglane. KS3 `szer: 5` daje 40 i wpis w `przyciete`. KS4 nieznane pole: `400`.
 KS5 `wejscie.adres` z `http:` albo `javascript:`: `400`. KS6 pusty `tekst` po obcięciu: `400`; 20 001 znaków: `413`.
-KS7 postać `auto: true` nie przyjmuje `x`, a przyjmuje `zwinieta`. KS8 `nawiazuje.jako` spoza listy: `400`.
+KS7 `x` bez `y` albo `szer` bez `wys`: `400`; same `null` z `zwinieta: true` są poprawne. KS8 `nawiazuje.jako` spoza listy: `400`.
 KS9 `id` z wielką literą albo z końcówką `.json`: `false`. KS10 `czytaj` zapisu z `w: 2` mówi `nieznana-wersja`.
 KS11 dwa wejścia różniące się tylko pominiętym polem opcjonalnym, kolejnością `do` albo `CRLF` dają ten sam tekst
 kanoniczny. KS12 najdłuższa dozwolona nazwa przestrzeni z najdłuższym `id` daje nazwę głowy, którą rdzeń przyjmuje.
@@ -404,7 +413,7 @@ wpisu nie ma: `niespojne`. ST16 `stos(akty)` bez drugiego argumentu działa jak 
 nowych aktów, `karta` aktualna. PR3 zła `wersja`: `409`, `powod: "wersja"`, aktualna karta, zero aktów.
 PR4 agent: `403`, zero aktów. PR5 nieznana rzecz: `404`, zero aktów. PR6 zwinięcie i rozwinięcie: te same cztery
 liczby. PR7 cofnięcie i ponowienie wracają do tych samych liczb, także na nowym obiekcie rdzenia nad tą samą
-bazą. PR8 cofnięcie pierwszego położenia: karta ma `auto: true`, przybyły dwa akty, powtórzenie nie dodaje
+bazą. PR8 cofnięcie pierwszego położenia: karta ma `x` i `y` równe `null`, przybyły dwa akty, powtórzenie nie dodaje
 żadnego. PR9 dwa cofnięcia z tym samym `akt`, drugie po zakończeniu pierwszego: drugie `powtorzone`, zero nowych
 aktów. PR10 karta, której głowa rzeczy wskazuje zapis innego rodzaju, zostaje w układzie z `brak_rzeczy`.
 PR11 przycięcie widać w odpowiedzi i w zapisanym miejscu. PR12 nic do cofnięcia: `409`, `powod: "pusto"`.
@@ -443,8 +452,8 @@ w miejscu. KL3 ciągnięcie zaczęte na karcie o rozmiarze 40 na 40 daje `poloz`
 samym rozmiarem. KL4 ciągnięcie zaczęte na uchwycie zmienia rozmiar, nie położenie. KL5 ruch poniżej 6 px:
 `stuk`, bez `poloz`. KL6 `anuluj` w trakcie: bez `poloz`. KL7 w trakcie ruchu są tylko `podglad`, a `poloz`
 jest jeden, na końcu. KL8 drugi palec w trakcie ciągnięcia karty anuluje je i zaczyna przybliżanie. KL9 uchwyt
-przy dotyku ma co najmniej 44 px przy każdym przybliżeniu. KL10 automat daje ten sam układ dla tej samej listy
-i nie nakłada kart na siebie. KL11 `wyslij` ponawia z tym samym `op` po błędzie sieci, nie ponawia po `409`
+przy dotyku ma co najmniej 44 px przy każdym przybliżeniu. KL10 automat daje ten sam układ dla tej samej listy,
+nie nakłada kart na siebie i otacza kartę położoną ręką w środku, zamiast na nią wejść. KL11 `wyslij` ponawia z tym samym `op` po błędzie sieci, nie ponawia po `409`
 z powodem `wersja`, a po `op-zajety` bierze nowy `op` raz.
 
 ## 7. Sprawdziany pod adresem
@@ -473,6 +482,8 @@ najmniej 12 px. K4 cele dotyku mają co najmniej 44 px. K5 ciągnięcie małej k
 zmienia rozmiaru. K6 ciągnięcie uchwytu zmienia rozmiar. K7 zwinięcie i rozwinięcie guzikiem. K8 cofnięcie po
 przeładowaniu. K9 "próba" widać bez przewijania. K10 szkic słowa przeżywa przeładowanie. K11 stara karta dostaje
 komunikat i aktualny stan, nic nie ginie. K12 strona przestrzeni ma w zwykłym tekście blok dla agentów z adresem danych.
+K13 po przeładowaniu kolejność nachodzących kart jest ta sama: na wierzchu ostatnio ruszona. K14 po cofnięciu widać,
+która karta wróciła: karta na ekranie wraca ruchem, a karta poza ekranem dostaje krótką wzmiankę z nazwą.
 
 **W: ręka właściciela.** Tego nie sprawdzi żaden agent: czy przesuwanie i zmiana rozmiaru są wygodne pod myszą
 i pod kciukiem i czy pierwszy rzut oka jest zwarty. Wynik idzie do dziennika ocen, nie do tego pliku.
@@ -492,7 +503,6 @@ i pod kciukiem i czy pierwszy rzut oka jest zwarty. Wynik idzie do dziennika oce
 - **Doręczenie prywatnych słów** wymaga zmiany reguły widoczności w rdzeniu (3.3).
 - **Klucze podglądu są jawne.** Każdy, kto zna adres, wejdzie jako właściciel próbny. Dlatego próba jest
   podpisana i nic prywatnego na nią nie trafia. Prywatne użycie wymaga wpuszczania urządzeń, którego tu nie ma.
-- **Automat nie omija kart położonych ręcznie.**
 - **Niespójne akty** (drugie cofnięcie tego samego wpisu, cofnięcie wskazujące cudzą głowę) nie powstają przez
   drzwi kroku 1; mogą przyjść tylko z importu albo z bezpośredniego zapisu do rdzenia. Stos liczy je wtedy jak
   zwykłe ruchy i wypisuje w `niespojne`. Dwóch cofnięć tego samego celu sprzed okna nie da się odróżnić.
@@ -536,3 +546,6 @@ Najważniejsze zmiany:
 6. Kolejność kroków w `poloz` jest częścią umowy, razem z tym, ile aktów zostawia odmowa.
 7. Postać kanoniczna wpisuje wszystkie pola; nazwy głów kart dostały człon rodzaju; `telefon` mówi o deklaracji
    strony, nie o działaniu; data siewu nie przesuwa głów; czytający sprawdza zapis pod głową.
+8. Po drugiej linii z 23:31: położenie i rozmiar karty są przypinane osobno (`null` znaczy: z automatu albo z miary),
+   więc osobna postać `auto` zniknęła; słowo ma `temat`; kolejność warstw jest regułą rzutu; automat omija karty
+   położone ręką; odpowiedź przestrzeni niesie `niespojne`.
