@@ -243,6 +243,9 @@ Sprawdziany leżą obok kodu (`worker/*.test.mjs`), a dla klienta w `testy/klien
 - `opPary(op)` → `{ z, p }`; `opCofniecia(nr)`, `opPonowienia(nr)`; `rozbierzOp(op)` → `{ rodzaj, akt }`, gdzie
   `rodzaj` to `cofnij`, `ponow` albo `zwykly`. Rozpoznanie idzie pełnym wzorem (`^cofnij\.akt:(\d+)$`):
   `cofnij.akt:2.p` i `cofnij.akt:2x` to zwykłe op.
+  `akt` jest liczbą całkowitą, a dla `zwykly` ma wartość `null`; wejście, które nie jest tekstem, to `zwykly`.
+  `opPary` tylko dokleja końcówki i niczego nie sprawdza (sprawdza `opKlienta` w drzwiach). `opCofniecia`
+  i `opPonowienia` dla wartości, która nie jest dodatnią liczbą całkowitą, zwracają `null`.
 
 ### 5.2 `rzuty.mjs` (tylko czyta)
 
@@ -266,6 +269,11 @@ Zapytanie o sam prywatny przedrostek od kogoś innego: `403`. Przy szerszym prze
 `{ doCofniecia, doPonowienia, glebokosc: { cofnij, ponow }, niespojne }`, gdzie cel to `null` albo
 `{ glowa, trzyma, wroc_na }`.
 
+Drugi argument jest opcjonalny, `obciete` domyślnie `false`. `niespojne` to lista numerów aktów, pusta, gdy
+wszystko się zgadza. `glebokosc` to rozmiary obu kupek. Wejście ma rosnące, niepowtarzające się numery;
+funkcja tego nie sprawdza. Akt `zapisz` zapisu `auto` (op z końcówką `.z`) nie jest przesunięciem i nigdy
+nie trafia na wejście.
+
 Dwie kupki wpisów `{ glowa, trzyma, wroc_na }`: "zrobione" i "cofnięte". Reguły, w kolejności aktów:
 
 1. **Zwykły akt** (`rozbierzOp` mówi `zwykly`) kładzie na "zrobione" wpis `{ glowa, trzyma: nr, wroc_na: z }`
@@ -277,9 +285,10 @@ Dwie kupki wpisów `{ glowa, trzyma, wroc_na }`: "zrobione" i "cofnięte". Regu�
    i kładzie na "zrobione" wpis `{ glowa, trzyma: nr, wroc_na: z }`. Niczego nie czyści.
 4. **Cel poza oknem.** Jeśli wpisu z reguły 2 albo 3 nie ma, okno jest obcięte i wskazany numer jest mniejszy
    od numeru pierwszego aktu w oknie: akt odtwarza wpis z samego siebie na właściwej kupce (cofnięcie na
-   "cofnięte", ponowienie na "zrobione") i niczego nie czyści.
+   "cofnięte", ponowienie na "zrobione") i niczego nie czyści. Odtworzony wpis ma głowę i `z` samego aktu.
 5. **Niespójność.** W każdym innym wypadku braku wpisu (zły numer, inna głowa) akt trafia do `niespojne`
-   i liczy się jak zwykły (reguła 1).
+   i liczy się jak zwykły (reguła 1). Numer równy numerowi pierwszego aktu w oknie albo większy
+   jest w oknie, więc brak wpisu to niespójność.
 6. `doCofniecia` to wierzch "zrobionych", `doPonowienia` to wierzch "cofniętych".
 
 ### 5.4 `przestrzen.mjs`
