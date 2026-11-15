@@ -23,6 +23,10 @@ export function zdrowie(request, env = {}) {
     zmienneAccess: Boolean(env.POLICY_AUD && env.TEAM_DOMAIN),
     sekretDanych: Boolean(env.GITHUB_DANE_TOKEN),
     pamiecFaktow: Boolean(env.FAKTY),
+    // Krok 1 rdzenia (15 XI 2026): czy ten adres ma magazyn, klucze i czy jest podglądem z jawnymi kluczami próbnymi.
+    miejsce: Boolean(env.MIEJSCE),
+    klucze: Boolean(env.KLUCZE),
+    podglad: env.PODGLAD === 'tak',
   };
 }
 
