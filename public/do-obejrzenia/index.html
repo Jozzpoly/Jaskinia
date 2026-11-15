@@ -38,6 +38,29 @@
  .zegar.stoi { border-color:var(--akcent); color:var(--akcent); font-weight:600; }
  .zegar.zle { border-color:var(--zegar-zle); color:var(--zegar-zle); font-weight:700;
               background:color-mix(in srgb, var(--zegar-zle) 12%, transparent); }
+
+ /* „Czeka na Ciebie": rzeczy, które nie ruszą bez niego. Osobne od kart, bo karty mówią „zrobione",
+    a to mówi „stoi na Tobie". Dodane 15 XI, gdy powiedzial, ze prosby agentow przepadaja mu w czacie. */
+ .czeka { margin:1.5rem 0 2rem; padding:1rem 1.1rem; background:var(--karta);
+          border:1px solid var(--akcent); border-radius:.6rem; }
+ .czeka > h2 { font-size:1.05rem; margin:0 0 .2rem; color:var(--akcent); }
+ .czeka > .pod { margin:0 0 1rem; font-size:.9rem; }
+ .czeka ol { list-style:none; margin:0; padding:0; }
+ .czeka li { padding:.9rem 0 0; border-top:1px solid var(--linia); margin:.9rem 0 0; }
+ .czeka li:first-child { border-top:0; margin-top:0; padding-top:0; }
+ .czeka h3 { font-size:1rem; margin:0 0 .35rem; line-height:1.35; }
+ .czeka .dlaczego { margin:0 0 .4rem; }
+ .czeka .skutek { margin:0 0 .5rem; color:var(--przygaszony); font-size:.92rem; }
+ .czeka .skutek b { color:var(--tekst); font-weight:600; }
+ .czeka .meta { margin:.45rem 0 0; color:var(--przygaszony); font-size:.85rem; }
+ .czeka .znak { display:inline-block; margin:0 .4rem .3rem 0; padding:.1rem .45rem; border-radius:.3rem;
+                font-size:.78rem; font-weight:700; letter-spacing:.02em; border:1px solid var(--linia);
+                color:var(--przygaszony); vertical-align:.1em; }
+ .czeka .znak.teraz { border-color:var(--akcent); color:var(--akcent); }
+ .czeka .stare { color:var(--zegar-zle); font-weight:600; }
+ .czeka details { margin:1rem 0 0; font-size:.9rem; color:var(--przygaszony); }
+ .czeka details summary { cursor:pointer; }
+ .czeka details li { border-top:0; margin:.5rem 0 0; padding:0; }
 </style>
 </head>
 <body>
@@ -46,14 +69,18 @@
   <p class="pod">Co agenci zrobili i uważają, że warto, żebyś zobaczył. Najnowsze na górze.
      Każda karta mówi, kto to zrobił i czym — i czy coś podobnego już kiedyś było.</p>
 
+  <section id="czeka" class="czeka" hidden></section>
+
   <p id="zegar" class="zegar" hidden></p>
 
   <div id="lista"><p class="pusto">Wczytuję…</p></div>
 
   <footer>
-    Źródło: <a href="zgloszenia.json">zgloszenia.json</a> — dopisuje je <code>zglos.py</code>, kiedy agent
+    Źródło kart: <a href="zgloszenia.json">zgloszenia.json</a> — dopisuje je <code>zglos.py</code>, kiedy agent
     oddaje rzecz. Karta nie powstaje sama z commita: agent musi świadomie powiedzieć, że to dla Ciebie.
-    <br>Wstecz: <a href="/">Jaskinia</a> · <a href="/dom/">Dom</a> · <a href="/powroty/">Powroty</a>
+    <br>Źródło listy „Czeka na Ciebie": <a href="czeka.json">czeka.json</a> — wpis schodzi stąd tylko wtedy,
+    gdy odpowiesz albo gdy agent go wycofa z powodem.
+    <br>Wstecz: <a href="/">Jaskinia</a> · <a href="/zlecenia/">Zlecenia</a> · <a href="/dom/">Dom</a> · <a href="/powroty/">Powroty</a>
   </footer>
 </main>
 <script>
@@ -141,6 +168,65 @@ fetch('zgloszenia.json', { cache: 'no-store' })
       el.hidden = false;
     })
     .catch(() => { /* bez sieci albo bez limitu: lepiej nic nie mowic, niz zmyslic */ });
+})();
+
+// Sekcja „Czeka na Ciebie". Czyta `czeka.json` z tego repo — bez sieci zewnetrznej, bez klucza.
+// Powstala 15 XI 2026: wlasciciel powiedzial, ze prosby agentow przepadaja mu w natloku rozmow,
+// bo jedynym sposobem odzyskania ich jest przewijanie scian tekstu. Lista w czacie jest po kilku
+// godzinach nieistniejaca, wiec ta lista ma adres. Gdy plik jest pusty albo nie odpowiada,
+// sekcja po prostu sie nie pokazuje — cisza jest lepsza niz puste pudelko.
+(function () {
+  const box = document.getElementById('czeka');
+  const ZNAK = { teraz: 'teraz', kiedys: 'kiedyś', opcjonalne: 'opcjonalne' };
+  const KOLEJNOSC = { teraz: 0, kiedys: 1, opcjonalne: 2 };
+  const dni = (d) => Math.floor((Date.now() - Date.parse(d)) / 86400000);
+  const odkad = (d) => { const n = dni(d); return n <= 0 ? 'dziś' : n === 1 ? 'od wczoraj' : 'od ' + n + ' dni'; };
+
+  fetch('czeka.json', { cache: 'no-store' })
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then((d) => {
+      const w = (Array.isArray(d && d.czeka) ? d.czeka : [])
+        .slice()
+        .sort((a, b) => (KOLEJNOSC[a.waga] ?? 9) - (KOLEJNOSC[b.waga] ?? 9) || Date.parse(a.od) - Date.parse(b.od));
+      if (!w.length) return;
+
+      const wpis = (k) => {
+        const adres = k.adres ? bezpieczny(k.adres) : null;
+        // „Potwierdzone" to nie data powstania: mowi, kiedy agent ostatni raz sprawdzil, ze wpis
+        // jest jeszcze aktualny. Po tygodniu bez potwierdzenia widac to wprost, zamiast przemilczec.
+        const st = dni(k.sprawdzone);
+        const potw = Number.isFinite(st)
+          ? (st > 7
+              ? '<span class="stare">nikt nie potwierdził od ' + st + ' dni</span>'
+              : 'potwierdzone ' + (st <= 0 ? 'dziś' : st === 1 ? 'wczoraj' : st + ' dni temu'))
+          : '';
+        return '<li>'
+          + '<h3><span class="znak ' + esc(k.waga) + '">' + esc(ZNAK[k.waga] || k.waga) + '</span>'
+          + esc(k.co) + '</h3>'
+          + '<p class="dlaczego">' + esc(k.dlaczego_ty) + '</p>'
+          + '<p class="skutek"><b>Jeśli nic nie zrobisz:</b> ' + esc(k.jesli_nic) + '</p>'
+          + (k.czego_brakuje ? '<p class="skutek"><b>Czego brakuje, żeby to było możliwe:</b> ' + esc(k.czego_brakuje) + '</p>' : '')
+          + (adres ? '<p><a class="otworz" href="' + esc(adres) + '">Otwórz</a></p>' : '')
+          + '<p class="meta">' + esc(odkad(k.od)) + ' · prosi: ' + esc(k.kto)
+          + (potw ? ' · ' + potw : '')
+          + (k.dowod ? '<br>' + esc(k.dowod) : '')
+          + '</p></li>';
+      };
+
+      const odlozone = Array.isArray(d.odlozone_przez_ciebie) ? d.odlozone_przez_ciebie : [];
+      box.innerHTML = '<h2>Czeka na Ciebie</h2>'
+        + '<p class="pod">Rzeczy, które nie ruszą bez Ciebie. Każda mówi, dlaczego to Ty '
+        + 'i co będzie, jeśli nic nie zrobisz. Wpis schodzi stąd, gdy odpowiesz albo gdy agent '
+        + 'go wycofa — nigdy po cichu.</p>'
+        + '<ol>' + w.map(wpis).join('') + '</ol>'
+        + (odlozone.length
+            ? '<details><summary>Odłożone Twoją decyzją (' + odlozone.length + ') — nie przypomnienie</summary><ul>'
+              + odlozone.map((o) => '<li>' + esc(o.co) + ' — <em>' + esc(o.twoja_decyzja) + '</em></li>').join('')
+              + '</ul></details>'
+            : '');
+      box.hidden = false;
+    })
+    .catch(() => { /* brak pliku albo zepsuty: nie pokazujemy pustego pudelka */ });
 })();
 </script>
 </body>

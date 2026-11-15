@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Zlecenie: Feniks Studio na jednej gałęzi — Jaskinia</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="stylesheet" href="style-wspolny.css">
+</head>
+<body>
+<main>
+<h1>Zlecenie: Feniks Studio na jednej gałęzi</h1>
+<p class="pod">Napisał Opus Code, 15 XI 2026. <strong>Propozycja — czeka na przeczytanie przez
+właściciela, zanim ktokolwiek odpali agenta.</strong> Nic z tego nie jest zrobione.</p>
+
+<div class="uwaga">
+<p><strong>Najważniejsze, na początku, żeby nie trzeba było szukać.</strong> Samo „wszystko na
+jednej gałęzi" to <strong>jedno czyste scalenie i jeden konflikt na 25 wierszach</strong> —
+zmierzone, nie zgadnięte. To nie jest robota na osobnego agenta. Robotą jest to drugie:
+<strong>marzenie, doświadczenia i porządek.</strong></p>
+</div>
+
+<h2>Czego chce właściciel</h2>
+<p>Jego słowa, dosłownie, z literówkami:</p>
+<blockquote>
+<p>Co gdybym z osobnym agentem jakoś to ogarnął i zmieścił na jedną gałąź?<br>
+Tam nic dobrego nie ma jeśli chodzi o próby wykonania:p<br>
+Najwaazmiwksze jest mazenie, doświadczenia I porządek aby to w przyszłości można było spróbować
+wykonać poprawnie i wedle moich ambicji.</p>
+</blockquote>
+<p>I wcześniej, o tym, czemu repozytorium stoi:</p>
+<blockquote><p>Stoi bo czeka na poważną jaskinię.</p></blockquote>
+<p><strong>Czyli: liczy się marzenie, doświadczenie i porządek — nie kod.</strong> Kod jest tam
+materiałem na świadectwo, nie dorobkiem do ratowania.</p>
+
+<h2>Co już zmierzone — nie odkrywaj tego od nowa</h2>
+<p>Sprawdzone 15 XI 2026 poleceniami, nie z pamięci (Opus Code).</p>
+<table>
+<tr><th>co</th><th>liczba</th></tr>
+<tr><td><code>main</code></td><td><strong>6 plików</strong>, zero aplikacji</td></tr>
+<tr><td><code>checkpoint/astra-v5-core-2026-10-18</code> (PR&nbsp;#1)</td>
+    <td><strong>16 plików</strong>: <code>src/</code> (3 moduły), <code>tests/</code> (2),
+        <code>tools/build.mjs</code>, <code>package.json</code>, 2 plany</td></tr>
+<tr><td><code>experiment/tworzywo-construction</code> (PR&nbsp;#2)</td>
+    <td><strong>31 plików</strong>: cały <code>experiments/material-as-construction/</code>
+        z <code>probes/relations/</code></td></tr>
+<tr><td>obrazy PNG</td><td><strong>4</strong> — jedyny wizualny zapis tego, co próbowano</td></tr>
+<tr><td>wszystko razem na jednej gałęzi</td><td><strong>43 pliki</strong></td></tr>
+</table>
+
+<h3>Pomiar, który przesądza o kształcie zlecenia</h3>
+<ul>
+<li><code>experiment/tworzywo-construction</code> → <code>main</code>:
+<strong>scala się bez konfliktu</strong>.</li>
+<li><code>checkpoint/astra-v5-core-2026-10-18</code> → <code>main</code>: <strong>jeden konflikt,
+wyłącznie <code>README.md</code></strong> — jeden blok, 25 wierszy w pliku o 68.
+<code>AGENTS.md</code> i <code>.gitignore</code> scalają się same.</li>
+</ul>
+<p>Powtórzenie pomiaru w kopii obok, bez ruszania zdalnych gałęzi:</p>
+<pre><code>git worktree add -b proba/wszystko-na-jednej ../proba origin/main
+cd ../proba
+git merge --no-edit origin/experiment/tworzywo-construction    # czysto
+git merge --no-edit origin/checkpoint/astra-v5-core-2026-10-18 # konflikt: README.md
+git diff --name-only --diff-filter=U</code></pre>
+
+<h2>Zlecenie</h2>
+<h3>1. Jedna gałąź (kwadrans)</h3>
+<p>Z <code>origin/main</code> zrób gałąź <code>feniks/wszystko-na-jednej</code> i scal w nią
+<strong>obie</strong> gałęzie. Konflikt w <code>README.md</code> rozwiąż tak, żeby
+<strong>oba zdania zostały prawdą</strong>: <code>main</code> mówi, że aplikacji tu nie ma, gałąź
+mówi, co wnosi — po scaleniu obie rzeczy są jednocześnie prawdziwe i README musi to unieść,
+a nie wybrać jedną stronę.</p>
+
+<h3>2. Świadectwo: marzenie, doświadczenia, porządek (główna robota)</h3>
+<p>Jeden dokument wejściowy na tej gałęzi — nazwa Twoja — który <strong>zimny czytelnik</strong>
+(agent, który nigdy nie widział Feniksa) przeczyta i odpowie bez zaglądania w kod:</p>
+<ol>
+<li><strong>Marzenie.</strong> Czym Studio miało być, słowami właściciela i z datami. Źródła, które
+już są: <code>docs/research/2026-10-16-wspolny-warsztat.md</code>,
+<code>docs/superpowers/specs/2026-10-14-…-design.md</code>,
+<code>docs/superpowers/plans/2026-10-15-…</code>, <code>…/2026-10-18-miejsce-w-jaskini.md</code>,
+<code>…/2026-10-18-studio-po-v6-do-recenzji.md</code>, oraz wątki <strong>PR #1 i PR #2</strong>.</li>
+<li><strong>Doświadczenia.</strong> Co naprawdę spróbowano i <strong>co z tego nie wyszło</strong>.
+Tu są cztery PNG-i i <code>verification.json</code> — jedyny dowód, że coś działało albo nie.
+Opisz każdy obraz jednym zdaniem: co widać i czego to dowodzi. Nie dopowiadaj za nie.</li>
+<li><strong>Porządek.</strong> Gdzie co leży po scaleniu: co jest dawcą do czytania, co próbą obok,
+co nie ma prawa być fundamentem. Właściciel mówi, że <em>nic dobrego tam nie ma, jeśli chodzi
+o próby wykonania</em> — jeśli Twój pomiar mówi to samo, <strong>napisz to</strong>, nie łagodź.</li>
+<li><strong>Gdyby wracać.</strong> Od czego zacząć, czego nie powtarzać, co musiałaby mieć Jaskinia,
+żeby to miało sens. Bez planu prac i bez terminów — repozytorium stoi z jego decyzji.</li>
+</ol>
+
+<h3>3. Czego ten dokument nie może robić</h3>
+<p>Nie może ogłaszać, że Studio jest gotowe, obiecane ani wznowione. Nie przypisuje właścicielowi
+zdań agentów. Nie nazywa fundamentem niczego, czego nikt nie zbudował.</p>
+
+<h2>Twarde granice</h2>
+<ul>
+<li><strong>Nic nie kasujesz.</strong> Żadnej gałęzi, żadnego pliku, żadnego PR-a. Dla tej pracy
+gałąź jest jedyną kopią.</li>
+<li><strong>Nic nie nadpisujesz.</strong> Zero <code>push --force</code>, zero <code>rebase</code>
+na gałęziach <code>checkpoint/…</code> i <code>experiment/…</code>, zero <code>commit --amend</code>
+na cudzym. Scalenie dokłada, nie zastępuje.</li>
+<li><strong>PNG-i bajt w bajt.</strong> Nie przetwarzaj, nie kompresuj.</li>
+<li><strong><code>main</code> zostaje bez zmian.</strong> Scalenie
+<code>feniks/wszystko-na-jednej</code> do <code>main</code> jest <strong>decyzją o fundamencie</strong>
+i czeka na słowo właściciela — tak mówi jego własna zasada wpisana w <code>AGENTS.md</code>
+Feniksa. Otwórz PR i zostaw otwarty.</li>
+<li><strong>Nie wznawiasz prac.</strong> Repozytorium stoi, bo tak zdecydował. Nie piszesz nowego
+kodu Studia.</li>
+<li><strong>Nie zlecasz właścicielowi niczego na GitHubie.</strong></li>
+<li><strong>Sekrety:</strong> żadne nie są potrzebne. Jeśli uznasz, że są — wyszedłeś z zakresu.</li>
+<li><strong>PR-y #1 i #2 zostają otwarte.</strong> Po scaleniu dopisujesz w każdym jedno zdanie,
+gdzie teraz leży komplet.</li>
+</ul>
+
+<h2>Czego potrzebuje taki agent</h2>
+<p>Prawo zapisu do <code>Jozzpoly/Feniks-Studio</code> (gałęzie i PR-y), <code>git</code>
+i <code>gh</code>. Nic więcej. Nie potrzebuje dostępu do prywatnej pamięci wspólnej ani do
+Cloudflare.</p>
+
+<h2>Jak poznać, że zlecenie wykonane — sprawdzalnie, nie uznaniowo</h2>
+<ol>
+<li><code>git ls-tree -r --name-only origin/feniks/wszystko-na-jednej | wc -l</code> →
+<strong>43</strong>.</li>
+<li><code>git ls-remote --heads origin | wc -l</code> → <strong>tyle samo, co przed robotą</strong>.</li>
+<li>Cztery PNG-i mają te same sumy kontrolne co na gałęziach źródłowych.</li>
+<li><strong>Próba zimnego czytelnika:</strong> agent, który nie zna Feniksa, czyta tylko dokument
+wejściowy i w pięć minut odpowiada na cztery pytania z punktu 2 — bez kodu, bez szukania po
+GitHubie. Jeśli nie odpowie, dokument jest siódmym plikiem, nie świadectwem, i trzeba to
+powiedzieć wprost.</li>
+<li><code>main</code> ma dalej <strong>6 plików</strong>.</li>
+</ol>
+
+<h2>Ile to ma trwać</h2>
+<p>Punkt 1 — kwadrans. Punkt 2 — jedna runda, nie kampania. Jeśli po dwóch podejściach dokument
+nadal nie przechodzi próby zimnego czytelnika, <strong>zgłoś to zamiast trzeciego podejścia</strong>.</p>
+
+<footer>
+<p>Ta strona stoi tutaj, a nie w czacie, z jednego powodu: 15 XI właściciel powiedział, że rzeczy,
+o które go prosimy, <em>przepadają przez natłok tego, co się dzieje</em>, bo jedynym sposobem
+odzyskania ich jest przewijanie ścian tekstu. Zlecenie wysłane w rozmowie jest po kilku godzinach
+nieistniejące. To zlecenie ma adres.</p>
+<p>Wstecz: <a href="/zlecenia/">Zlecenia</a> · <a href="/do-obejrzenia/">Do obejrzenia</a> ·
+<a href="/">Jaskinia</a></p>
+</footer>
+</main>
+</body>
+</html>

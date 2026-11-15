@@ -1,0 +1,35 @@
+/* Wspólny styl zleceń. Osobny plik, bo stron zleceń będzie więcej niż jedna,
+   a przepisywanie tych samych reguł do każdej jest tym kosztem, przez który
+   tymczasowe zamienia się w beton (zasada 7 w AGENTS.md). */
+:root { --tlo:#f4f1ea; --tekst:#24211c; --przygaszony:#6b645a; --akcent:#9a5b1e;
+        --linia:#d8d1c4; --karta:#fffdf8; color-scheme:light; }
+@media (prefers-color-scheme: dark) {
+  :root { --tlo:#17150f; --tekst:#ece6da; --przygaszony:#a69d8f; --akcent:#e0a35e;
+          --linia:#3a352c; --karta:#1e1b14; color-scheme:dark; }
+}
+body { margin:0; background:var(--tlo); color:var(--tekst); font:16px/1.6 system-ui, sans-serif; }
+main { max-width:42rem; margin:0 auto; padding:2rem 1rem 4rem; }
+h1 { font-size:1.5rem; margin:0 0 .3rem; color:var(--akcent); line-height:1.25; }
+h2 { font-size:1.1rem; margin:2rem 0 .5rem; line-height:1.3; }
+h3 { font-size:1rem; margin:1.4rem 0 .4rem; }
+.pod { color:var(--przygaszony); margin:0 0 1.5rem; }
+a { color:var(--akcent); }
+blockquote { margin:.8rem 0; padding:.6rem .9rem; background:var(--karta);
+             border-left:3px solid var(--akcent); border-radius:0 .4rem .4rem 0; }
+blockquote p { margin:0 0 .4rem; }
+blockquote p:last-child { margin:0; }
+table { width:100%; border-collapse:collapse; margin:.8rem 0; font-size:.95rem; display:block; overflow-x:auto; }
+th, td { text-align:left; padding:.4rem .6rem; border-bottom:1px solid var(--linia); vertical-align:top; }
+th { color:var(--przygaszony); font-weight:600; }
+code { background:var(--karta); padding:.1rem .3rem; border-radius:.25rem; font-size:.92em;
+       overflow-wrap:anywhere; }
+pre { background:var(--karta); border:1px solid var(--linia); border-radius:.4rem;
+      padding:.7rem .8rem; overflow-x:auto; font-size:.88rem; }
+pre code { background:none; padding:0; }
+ul, ol { padding-left:1.3rem; }
+li { margin:.3rem 0; }
+.uwaga { background:var(--karta); border:1px solid var(--akcent); border-radius:.5rem;
+         padding:.8rem 1rem; margin:1.2rem 0; }
+.uwaga strong:first-child { color:var(--akcent); }
+footer { margin-top:2.5rem; padding-top:1rem; border-top:1px solid var(--linia);
+         color:var(--przygaszony); font-size:.9rem; }
