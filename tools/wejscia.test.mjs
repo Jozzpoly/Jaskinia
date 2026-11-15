@@ -60,6 +60,9 @@ test('drzwi naprawdę czytają ten plik, a nie tylko mają go w repo', () => {
   assert.match(html, /wejscia\.json/, 'drzwi pobierają wejscia.json');
   assert.match(html, /id="wejscia"/, 'drzwi mają miejsce, w które wstawiają tę listę');
   assert.match(html, /dom\/status\.json/, 'drzwi biorą świeżość ze starej Jaskini, zamiast kopiować jej stan');
+  // Na telefonie nie ma najechania myszą, więc dymek `title` tam nie istnieje. Powód przy
+  // „niesprawdzonym" musi trafić na ekran, bo sam znacznik wprowadzałby w błąd.
+  assert.match(html, /telefon === 'nieznane' && w\.skad_wiem/, 'przy niesprawdzonym powód idzie na ekran, nie tylko w dymek');
 });
 
 test('sito łapie to, po co jest (próby na kopiach w pamięci)', () => {

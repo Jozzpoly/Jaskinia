@@ -154,7 +154,13 @@
       z.textContent = ' · ' + (podpis[w.telefon] || 'telefon niesprawdzony');
       if (w.skad_wiem) z.title = w.skad_wiem;
       const co = document.createElement('div'); co.className = 'co'; co.textContent = w.co_to_jest;
-      li.append(a, z, co); lista.append(li);
+      li.append(a, z, co);
+      // Przy „niesprawdzonym" znacznik sam w sobie wprowadza w błąd, a na telefonie nie ma
+      // najechania myszą, więc dymek nie istnieje: wtedy powód idzie na ekran, nie w `title`.
+      if (w.telefon === 'nieznane' && w.skad_wiem) {
+        const d = document.createElement('div'); d.className = 'co'; d.textContent = w.skad_wiem; li.append(d);
+      }
+      lista.append(li);
     }
     stan.textContent = (dane.wejscia || []).length + ' rzeczy, które otworzysz i ruszysz od razu. Opisy z otwarcia każdej z nich.';
     try {

@@ -1,7 +1,7 @@
 {
  "wersja": 1,
  "opis": "Rzeczy Jozza, które da się otworzyć i ruszyć od razu, bez zadania. Powstało 15 XI 2026, bo zmierzyliśmy, że osiem jego projektów działa pod adresem, a drzwi Jaskini nie prowadziły do żadnego z nich.",
- "zrodlo_opisow": "Każdy adres otwarty po kolei 15 XI 2026 około 04:20 i opisany z tego, co pokazał - nie z plików w repozytorium. Pole telefon mówi tylko tyle, co strona sama o sobie deklaruje w treści albo w kodzie; pod kciukiem nikt tego jeszcze nie sprawdził.",
+ "zrodlo_opisow": "Każdy adres otwarty po kolei 15 XI 2026 około 04:20 i opisany z tego, co pokazał - nie z plików w repozytorium. Pole telefon mówi tylko tyle, co strona sama o sobie deklaruje w treści albo czym okazuje się jej kod: meta viewport, obsługa dotyku, odczyt liczby palców. Pod kciukiem nikt tego jeszcze nie sprawdził, bo do takiego pomiaru potrzeba widocznego okna przeglądarki - przy zerowej szerokości każdy wynik wychodzi fałszywie dobry.",
  "czego_tu_nie_ma": "Rzeczy, które mają gotowe wejście, ale nie mają adresu: Splot, Mini Feniks, Riftworks, edytor rigów, piaskownica pojazdów i gra wieloosobowa Tysiąc. Nie zgadujemy za nie.",
  "wejscia": [
   {
@@ -33,7 +33,7 @@
    "adres": "https://jozzpoly.github.io/PROJECT-ANVIL-Machine-Matter-Physical-Fabric-Laboratory/",
    "co_to_jest": "Składasz mechanizm i puszczasz go w ruch: materia, łożyska, moment obrotowy, cofanie i ponawianie.",
    "telefon": "nieznane",
-   "skad_wiem": "Nie sprawdziliśmy sterowania.",
+   "skad_wiem": "Strona ma meta viewport, ale w jej kodzie nie ma ani jednej obsługi dotyku. Obsługa to przyciski, więc klikanie palcem ma szansę działać; składania palcem nikt nie przewidział.",
    "sprawdzone": "2026-11-15"
   },
   {
@@ -41,15 +41,15 @@
    "adres": "https://jozzpoly.github.io/ReflexBrain-Lab/",
    "co_to_jest": "Jedyna z tych stron napisana po polsku i wprost do Ciebie: zrób coś światu i zobacz, co zostanie. Przeciągasz obiekt, wrzucasz go pod obcy proces, odcinasz aktorowi pamięć.",
    "telefon": "nieznane",
-   "skad_wiem": "Nie sprawdziliśmy sterowania.",
+   "skad_wiem": "W kodzie nie ma obsługi dotyku, a cała zabawa polega na przeciąganiu obiektu. Na telefonie może się po prostu nie dać - sprawdź, zanim się nastawisz.",
    "sprawdzone": "2026-11-15"
   },
   {
    "nazwa": "Towarzysz i jego decyzje",
    "adres": "https://jozzpoly.github.io/Companion-Brain-Lab/",
    "co_to_jest": "Cztery sceny: otwarte pole, filar, drzwi, zderzenie czołowe. Puszczasz krok po kroku i widzisz, co towarzysz wziął pod uwagę, zanim się ruszył.",
-   "telefon": "nieznane",
-   "skad_wiem": "Nie sprawdziliśmy sterowania.",
+   "telefon": "tak",
+   "skad_wiem": "W kodzie strony jest trzynaście miejsc obsługujących dotyk, odczyt liczby palców i zdarzenia wskaźnika, do tego sto osiemdziesiąt sześć wzmianek o dotyku i telefonie. Ktoś ją pisał z myślą o kciuku.",
    "sprawdzone": "2026-11-15"
   },
   {
