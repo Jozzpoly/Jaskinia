@@ -24,6 +24,11 @@
   li { padding: .55rem 0; border-bottom: 1px solid var(--linia); display: grid; grid-template-columns: 1fr auto; gap: .1rem 1rem; }
   li .opis { grid-column: 1 / -1; color: var(--przygaszony); font-size: .9rem; overflow-wrap: anywhere; }
   li .kiedy { color: var(--przygaszony); font-size: .9rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  ul.wejscia { list-style: none; padding: 0; margin: .4rem 0 1.5rem; border-top: 1px solid var(--linia); }
+  ul.wejscia li { display: block; padding: .6rem 0; border-bottom: 1px solid var(--linia); }
+  ul.wejscia .co { color: var(--przygaszony); font-size: .9rem; overflow-wrap: anywhere; }
+  .znacznik { font-size: .78rem; letter-spacing: .04em; color: var(--przygaszony); white-space: nowrap; }
+  .znacznik.tak { color: var(--akcent); }
 </style>
 </head>
 <body>
@@ -31,6 +36,9 @@
   <h1>Jaskinia</h1>
   <p>Pierwszy podgląd nowej Jaskini. Jeśli widzisz tę stronę na telefonie i na komputerze, droga do Twoich urządzeń działa.</p>
   <p><a href="/dom/">Twój dzisiejszy Dom pod tym adresem →</a></p>
+  <h2>Wejdź i pobaw się</h2>
+  <p id="wejscia-stan" class="male">sprawdzam…</p>
+  <ul id="wejscia" class="wejscia"></ul>
   <p><a href="/do-obejrzenia/"><strong>Do obejrzenia &mdash; co agenci zrobili dla Ciebie &rarr;</strong></a><br>
     <span class="male">Karty oddane przez agentów: co to jest, czym otworzyć, kto i jakim modelem to zrobił,
       i czy coś podobnego już kiedyś było.</span></p>
@@ -125,6 +133,36 @@
   pytaj();
   setInterval(() => { if (!document.hidden && Date.now() - pytano >= PYTAJ_CO_MS) pytaj(); else rysuj(); }, RYSUJ_CO_MS);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (Date.now() - pytano >= 60e3) pytaj(); else rysuj(); } });
+  // Wejścia: rzeczy, które da się otworzyć i ruszyć od razu, bez zadania (potrzeby 16, 17, 42).
+  // Powstało 15 XI, bo pomiar pokazał osiem działających rzeczy Jozza i drzwi, które nie prowadziły
+  // do żadnej z nich. Opisy w `wejscia.json` są nasze — z otwarcia każdego adresu po kolei.
+  // Czy adres w ogóle odpowiada, sprawdza stara Jaskinia co kilka godzin: bierzemy stamtąd WSKAŹNIK,
+  // a nie kopię stanu. Kopia zgniłaby w kilka godzin — zmierzone na liście „Czeka na Ciebie” (15 XI).
+  (async () => {
+    const lista = document.getElementById('wejscia'), stan = document.getElementById('wejscia-stan');
+    if (!lista || !stan) return;
+    let dane;
+    try { dane = await fetch('/wejscia.json', { cache: 'no-store' }).then((r) => r.json()); }
+    catch (e) { stan.textContent = 'Lista wejść się nie wczytała (to normalne poza Cloudflare).'; return; }
+    const podpis = { tak: 'działa na telefonie', nie: 'tylko komputer' };
+    for (const w of dane.wejscia || []) {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = w.adres; a.textContent = w.nazwa; a.rel = 'noopener'; a.target = '_blank';
+      const z = document.createElement('span');
+      z.className = 'znacznik' + (w.telefon === 'tak' ? ' tak' : '');
+      z.textContent = ' · ' + (podpis[w.telefon] || 'telefon niesprawdzony');
+      if (w.skad_wiem) z.title = w.skad_wiem;
+      const co = document.createElement('div'); co.className = 'co'; co.textContent = w.co_to_jest;
+      li.append(a, z, co); lista.append(li);
+    }
+    stan.textContent = (dane.wejscia || []).length + ' rzeczy, które otworzysz i ruszysz od razu. Opisy z otwarcia każdej z nich.';
+    try {
+      const s = await fetch('/dom/status.json', { cache: 'no-store' }).then((r) => r.json());
+      const z = (s.data || {}).zagraj;
+      if (z) stan.textContent += ' Czy adresy odpowiadają, sprawdza stara Jaskinia: ' + z.answering + ' z ' + z.of + ', ostatnio ' + z.checked_at + '.';
+    } catch (e) { stan.textContent += ' Nie wiadomo, kiedy ostatnio sprawdzano, czy adresy odpowiadają.'; }
+  })();
 </script>
 </body>
 </html>
