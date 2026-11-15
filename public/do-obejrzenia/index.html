@@ -42,7 +42,12 @@
  /* „Czeka na Ciebie": rzeczy, które nie ruszą bez niego. Osobne od kart, bo karty mówią „zrobione",
     a to mówi „stoi na Tobie". Dodane 15 XI, gdy powiedzial, ze prosby agentow przepadaja mu w czacie. */
  .czeka { margin:1.5rem 0 2rem; padding:1rem 1.1rem; background:var(--karta);
-          border:1px solid var(--akcent); border-radius:.6rem; }
+          border:1px solid var(--akcent); border-radius:.6rem;
+          /* Teksty wpisow pisza agenci, wiec moze trafic sie dlugie slowo albo adres bez spacji.
+             Na telefonie taki ciag rozpycha strone w bok. Tego nie dalo sie 15 XI sprawdzic pod
+             adresem (panel przegladarki byl zwiniety do zerowej szerokosci), wiec stoi tu
+             zabezpieczenie, a nie pomiar - do sprawdzenia przy otwartym panelu. */
+          overflow-wrap:anywhere; }
  .czeka > h2 { font-size:1.05rem; margin:0 0 .2rem; color:var(--akcent); }
  .czeka > .pod { margin:0 0 1rem; font-size:.9rem; }
  .czeka ol { list-style:none; margin:0; padding:0; }
