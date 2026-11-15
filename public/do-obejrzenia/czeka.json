@@ -1,0 +1,62 @@
+{
+ "wersja": 1,
+ "opis": "Rzeczy, które czekają na ruch właściciela. Powstało 15 XI 2026, bo powiedział, że prośby agentów przepadają mu w natłoku rozmów, a nie ma tradycji przewijania ścian tekstu. Wpis schodzi stąd tylko wtedy, gdy on odpowie albo gdy agent go wycofa z powodem. Pole sprawdzone mówi, kiedy agent ostatni raz potwierdził, że wpis jest jeszcze aktualny - nie kiedy powstał.",
+ "zebrane_z": "prywatna pamięć wspólna i repozytoria, nie z historii rozmów - wszystko, o co proszono wyłącznie w czacie przed 15 XI, może tu nie być",
+ "czeka": [
+  {
+   "nr": 2,
+   "co": "Przeczytać zlecenie dla agenta Feniksa i odpalić go, jeśli się zgadza",
+   "dlaczego_ty": "Sam powiedziałeś: osobny agent, i chciałeś zobaczyć zlecenie przed odpaleniem. Odpalenie agenta jest Twoim ruchem, nie moim.",
+   "jesli_nic": "Cała aplikacja Studia zostaje na dwóch gałęziach, a marzenie, doświadczenia i porządek z tej pracy nie są nigdzie spisane. Nic nie przepada od razu - gałęzie zostają.",
+   "od": "2026-11-15",
+   "kto": "Opus Code",
+   "adres": "/zlecenia/2026-11-15-feniks-jedna-galaz",
+   "waga": "teraz",
+   "sprawdzone": "2026-11-15",
+   "dowod": "Zmierzone: jedno czyste scalenie i jeden konflikt na 25 wierszach, razem 43 pliki. Zlecenie mówi to na początku, żeby nie zużyć agenta na kwadrans pracy."
+  },
+  {
+   "nr": 3,
+   "co": "Czy Fable rusza dziś jako samodzielny agent, a nie podagent",
+   "dlaczego_ty": "To Ty go odpalasz i Ty mówiłeś, że może dziś. Jego okno kończy się 16 XI.",
+   "jesli_nic": "Fable zostaje podagentem: odpowie na pytanie o fundament, ale nie poprowadzi własnej roboty. Paczka dla niego jest gotowa w obu połowach.",
+   "od": "2026-11-14",
+   "kto": "Opus Code",
+   "adres": null,
+   "waga": "teraz",
+   "sprawdzone": "2026-11-15"
+  },
+  {
+   "nr": 4,
+   "co": "Cztery stare szkice w nowej Jaskini: #1, #5, #6, #9 - czekają na Twoje tak albo na rundę z Fable",
+   "dlaczego_ty": "Twoja własna zasada z 14 XI: PR, który mówi, że sam jest dowodem albo decyzją o fundamencie, scalamy tylko po Twoim słowie. PR #1 mówi o sobie dokładnie to.",
+   "jesli_nic": "Zostają otwarte i nic się nie psuje. Wnoszą razem jedenaście testów oznaczonych jako wiadomo, że jeszcze nie działa - po scaleniu stałyby na głównej gałęzi jako zielone, choć opisują rzeczy niedziałające.",
+   "od": "2026-11-04",
+   "kto": "Opus Code i Opus czatu",
+   "adres": "https://github.com/Jozzpoly/Jaskinia/pull/1",
+   "waga": "kiedys",
+   "sprawdzone": "2026-11-15",
+   "dowod": "Próbne scalenie każdego z dzisiejszą główną gałęzią: 102/0, 104/0, 105/0, 105/0, bez konfliktów."
+  },
+  {
+   "nr": 5,
+   "co": "Ochrona gałęzi - opcjonalna, a najmocniejszy powód jest w Feniksie",
+   "dlaczego_ty": "Ustawień repozytorium nie zmienia żaden agent: obie linie są od tego odcięte i tak ma zostać.",
+   "jesli_nic": "Obowiązuje umowa, nie mechanizm: zapisaliśmy w czterech repozytoriach, że nie kasujemy gałęzi. Trzy gałęzie, które już zniknęły, były scalone, więc nic nie przepadło - ale w Feniksie cała aplikacja leży na dwóch gałęziach i tam gałąź naprawdę jest jedyną kopią.",
+   "od": "2026-11-13",
+   "kto": "Opus Code i Opus czatu",
+   "adres": "https://github.com/Jozzpoly/Feniks-Studio/settings/rules",
+   "waga": "opcjonalne",
+   "sprawdzone": "2026-11-15",
+   "dowod": "Feniks: główna gałąź ma 6 plików, a dwie gałęzie z aplikacją 16 i 31."
+  }
+ ],
+ "odlozone_przez_ciebie": [
+  {
+   "co": "Dług z pieniędzmi i dostępem: otwarte Workers AI w trzech starych workerach i stare klucze dostawcy w jednym z labów",
+   "twoja_decyzja": "Sam odłożyłeś to na później, dla tańszego modelu - to jest zapisane i nie jest przypomnieniem.",
+   "od": "2026-11-13",
+   "sprawdzone": "2026-11-15"
+  }
+ ]
+}
