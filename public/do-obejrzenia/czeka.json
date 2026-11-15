@@ -4,18 +4,6 @@
  "zebrane_z": "prywatna pamięć wspólna i repozytoria, nie z historii rozmów - wszystko, o co proszono wyłącznie w czacie przed 15 XI, może tu nie być",
  "czeka": [
   {
-   "nr": 2,
-   "co": "Feniks: szkic PR #7 — całe Studio na jednej gałęzi i świadectwo marzenia; przeczytać i powiedzieć, czy scalamy do głównej",
-   "dlaczego_ty": "Scalenie Feniksa do głównej gałęzi to decyzja o fundamencie — według Twojej zasady tylko po Twoim „tak”.",
-   "jesli_nic": "Nic się nie psuje: gałąź jest już na GitHubie, nie tylko na Twoim dysku, i reguła chroni ją przed skasowaniem. Główna gałąź zostaje z sześcioma plikami.",
-   "od": "2026-11-15",
-   "kto": "Opus Code",
-   "adres": "https://github.com/Jozzpoly/Feniks-Studio/pull/7",
-   "waga": "teraz",
-   "sprawdzone": "2026-11-15",
-   "dowod": "Sprawdzone przez Opusa czatu: gałąź zawiera główną i obie gałęzie źródłowe, 42 pliki ze świadectwem; główna bez zmian. Szkic otwarty 15 XI 03:07."
-  },
-  {
    "nr": 3,
    "co": "Runda z Fable o fundament — odpalasz sam, kiedy zechcesz (jego okno do 16 XI)",
    "dlaczego_ty": "Sam powiedziałeś, że paczkę odpalisz osobiście. Jako podagenta do planowania i podważania używamy go już my.",
