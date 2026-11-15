@@ -46,9 +46,17 @@ function sito(d) {
       bledy.push(`${n}: sprawdzone wcześniej niż od`);
     }
     // `adres: null` jest dozwolone i znaczy „nie ma czego otworzyć”, a nie „zapomniałem”.
+    // Adres wewnątrz Jaskini podajemy ścieżką, nie pełnym URL-em: ten plik czytamy najpierw pod
+    // adresem podglądu gałęzi, a pełny URL produkcji dawałby tam 404 na rzecz, której jeszcze nie ma.
+    // Ścieżka działa w obu miejscach — zmierzone 15 XI, zanim ten PR wszedł.
     if (w.adres !== null && w.adres !== undefined) {
-      try { if (!adresDozwolony(w.adres)) bledy.push(`${n}: adres poza Jaskinią i publicznymi repo Jozzpoly`); }
-      catch { bledy.push(`${n}: adres nie jest poprawnym URL`); }
+      if (typeof w.adres === 'string' && w.adres.startsWith('/')) {
+        if (w.adres.startsWith('//')) bledy.push(`${n}: ścieżka nie może zaczynać się od //, to obcy host`);
+        if (w.adres.includes('..')) bledy.push(`${n}: ścieżka bez ..`);
+      } else {
+        try { if (!adresDozwolony(w.adres)) bledy.push(`${n}: adres poza Jaskinią i publicznymi repo Jozzpoly`); }
+        catch { bledy.push(`${n}: adres nie jest poprawnym URL`); }
+      }
     }
     bledy.push(...bledyTekstow(w, n));
   }
@@ -81,6 +89,9 @@ test('sito łapie to, po co jest (próby na kopiach w pamięci)', () => {
   const k = (zmiana) => ({ wersja: 1, czeka: [{ ...dobry, ...zmiana }] });
   assert.deepEqual(sito(k({})), []);
   assert.deepEqual(sito(k({ adres: 'https://jaskinia.jozzpoly.workers.dev/zlecenia/' })), []);
+  assert.deepEqual(sito(k({ adres: '/zlecenia/cos' })), [], 'ścieżka wewnątrz Jaskini działa też pod adresem podglądu');
+  assert.equal(sito(k({ adres: '//example.com/' })).length, 1, 'dwa ukośniki to obcy host, nie ścieżka');
+  assert.equal(sito(k({ adres: '/../tajne' })).length, 1, 'ścieżka bez wyjścia w górę');
   assert.deepEqual(sito(k({ adres: 'https://github.com/Jozzpoly/Feniks-Studio/settings/rules' })), []);
   assert.equal(sito(k({ jesli_nic: '' })).length, 1, 'wpis bez skutku zaniechania nie przechodzi');
   assert.equal(sito(k({ dlaczego_ty: undefined })).length, 1, 'wpis bez powodu, dlaczego to on, nie przechodzi');
