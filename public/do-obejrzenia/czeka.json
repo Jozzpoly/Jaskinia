@@ -5,15 +5,15 @@
  "czeka": [
   {
    "nr": 2,
-   "co": "Agent Feniksa skończył zlecenie u Ciebie na komputerze i czeka na jedno słowo: wypchnąć gałąź i otworzyć szkic PR-a",
-   "dlaczego_ty": "Agent pracuje w Twojej sesji i pyta Ciebie, bo wypchnięcie wychodzi z Twojego dysku na zewnątrz.",
-   "jesli_nic": "Cała jego praca zostaje tylko na Twoim dysku — jedyna kopia. Główna gałąź Feniksa jest nietknięta, nic się nie psuje.",
+   "co": "Feniks: szkic PR #7 — całe Studio na jednej gałęzi i świadectwo marzenia; przeczytać i powiedzieć, czy scalamy do głównej",
+   "dlaczego_ty": "Scalenie Feniksa do głównej gałęzi to decyzja o fundamencie — według Twojej zasady tylko po Twoim „tak”.",
+   "jesli_nic": "Nic się nie psuje: gałąź jest już na GitHubie, nie tylko na Twoim dysku, i reguła chroni ją przed skasowaniem. Główna gałąź zostaje z sześcioma plikami.",
    "od": "2026-11-15",
    "kto": "Opus Code",
-   "adres": "/zlecenia/2026-11-15-feniks-jedna-galaz",
+   "adres": "https://github.com/Jozzpoly/Feniks-Studio/pull/7",
    "waga": "teraz",
    "sprawdzone": "2026-11-15",
-   "dowod": "Jego raport: obie gałęzie scalone na jednej, świadectwo napisane, próba zimnego czytelnika zdana, 41 plików źródłowych (nie 43 jak w zleceniu — rozbieżność opisana)."
+   "dowod": "Sprawdzone przez Opusa czatu: gałąź zawiera główną i obie gałęzie źródłowe, 42 pliki ze świadectwem; główna bez zmian. Szkic otwarty 15 XI 03:07."
   },
   {
    "nr": 3,
