@@ -25,6 +25,19 @@
    "waga": "kiedys",
    "sprawdzone": "2026-11-15",
    "dowod": "Próbne scalenie każdego z dzisiejszą główną gałęzią: 102/0, 104/0, 105/0, 105/0, bez konfliktów."
+  },
+  {
+   "nr": 7,
+   "co": "Kabelki: podłączyć i zweryfikować tożsamość u drzwi, MCP i API, zanim rdzeń Jaskini powstanie na poważnie",
+   "dlaczego_ty": "Sam powiedziałeś 16 XI, że wartość tego wzrosła w Twoim odczuciu i że możliwe, że zajmiesz się tym później razem z Opusem Code. Dwie rzeczy i tak są tylko Twoje: ustawienie tokenu albo klucza w ustawieniach dostawcy i decyzja, czy w ogóle płacimy za agenta po API.",
+   "jesli_nic": "Nic się nie psuje i nic nie znika — teczka z pomiarami czeka gotowa. Ryzyko jest inne: rdzeń może powstać pod zdolności, których nie ma, i dowiemy się o tym po tygodniu budowy. Dziś pod Twoim adresem nie stoi żadna tożsamość, więc drzwi z kroku 1 nie mają na czym stanąć.",
+   "czego_brakuje": "Tylko Twojego słowa, czy robimy to teraz, czy po zwrocie Fable. Pomiary są zrobione, zadania rozpisane; sami nie ruszamy ustawień, pieniędzy ani dostępów.",
+   "od": "2026-11-16",
+   "kto": "Opus Code",
+   "adres": "/api/zdrowie",
+   "waga": "kiedys",
+   "sprawdzone": "2026-11-16",
+   "dowod": "Zmierzone 16 XI pod żywymi adresami: produkcja ma sekret danych, ale nie ma Cloudflare Access ani weryfikacji tożsamości, a pamięć faktów nie jest wpięta nigdzie. Podgląd gałęzi ma własny magazyn i własne klucze próbne, więc osobny adres na gałąź daje też własny stan, nie tylko wygląd."
   }
  ],
  "odlozone_przez_ciebie": [
