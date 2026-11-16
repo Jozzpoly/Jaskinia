@@ -1,5 +1,7 @@
 # Umowa kroku 1: rzeczy, przestrzeń, słowo, cofnięcie
 
+**Stan 16 XI 2026: ta umowa nie jest już kierunkiem budowy.** Zostaje jako zapis pierwszego podejścia i dawca przypadków testowych. Powód: jej kształty zamykały potrzeby właściciela (rzecz utożsamiona z repozytorium, jedno pole o kilku znaczeniach, prawa wynikające z nazwy, brak drogi dla nowych rodzajów rzeczy). Nowy plan powstaje poza tym repozytorium i czeka na zatwierdzenie; do tego czasu nie buduj według tego pliku. Rdzeń (zapis, akt, głowa) i stos cofania zostają jako dawcy.
+
 Status: **próba** (zob. [TYMCZASOWE.md](../TYMCZASOWE.md)). **Wersja 2**, po ataku drugiej pary oczu (część 11).
 Ten plik jest umową między tym, kto pisze sprawdziany, tym, kto buduje moduł, i tym, kto sprawdza. Kod, który
 jej nie spełnia, nie wchodzi na gałąź. Sama umowa też jest do podważenia: zmiana idzie przez ten plik,
