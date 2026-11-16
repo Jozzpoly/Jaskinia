@@ -12,6 +12,7 @@
 10. **Rejestr tymczasowości:** przeczytaj [TYMCZASOWE.md](TYMCZASOWE.md) przed pierwszym commitem. Wprowadzasz coś tymczasowego, to dopisujesz wpis: co, dlaczego teraz, co może to zastąpić i kiedy wracamy.
 11. **Dwie nieudane próby tej samej hipotezy** oznaczają zmianę podejścia i zgłoszenie, a nie trzecią próbę tego samego.
 12. **Sekrety tylko w ustawieniach Cloudflare i GitHuba,** nigdy w kodzie, plikach, logach ani w odpowiedziach API. Kod może najwyżej powiedzieć, czy sekret jest ustawiony.
+13. **Konsumuj cudzą pracę.** Porzucony zapis innego agenta to materiał, nie cudzy teren: wchodzisz w niego, wchłaniasz żywe, oznaczasz martwe i zostawiasz oryginał pod spodem. Terenem jest tylko cudza gałąź, cudzy plik w trakcie pracy i cudza decyzja. Zanim założysz nowy dokument, znajdź ten, który już jest o tym samym, i dopisz tam; nowy zakładasz, gdy naprawdę nie ma gdzie. Wracasz po przerwie — najpierw sprawdź, co zmieniło się w środowisku, zamiast wracać do miejsca, w którym skończyłeś. Powód jest zmierzony (16 XI 2026, historia gita wspólnego repozytorium agentów): **738 nowych dokumentów na 32 wejścia w cudzą treść, 23 do 1**; 94% plików ma jednego autora przez całe życie. Właściciel prosił o porządek pięć razy i po każdej prośbie przybywało 22–57 nowych dokumentów i zero albo jedna konsumpcja. Pisanie obok wygląda na wynik, a jest zatorem.
 
 ## Słowa właściciela: kiedy agenci scalają sami (14 XI 2026, 23:46)
 
