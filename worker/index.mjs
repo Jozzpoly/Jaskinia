@@ -5,6 +5,7 @@ import { json, zdrowie, dom } from './trasy.mjs';
 import { odpowiedz, wCronie } from './fakty.mjs';
 import { ktoTo, wczytajKlucze } from './klucze.mjs';
 import { skrot } from './miejsce.mjs';
+import { cialoTekstem, ZLE_KODOWANIE } from './srodowisko-http.mjs';
 export { Miejsce } from './miejsce-do.mjs';
 
 // /api/miejsce/…: wspólny stan po stronie serwera, tylko z kluczem (krok 1 rdzenia, 15 XI 2026; wzięte z dawcy
@@ -18,8 +19,12 @@ async function miejsce(request, env) {
   const ct = request.headers.get('content-type');
   if (ct) naglowki.set('content-type', ct);
   const doMiejsca = new Request(request.url, { method: request.method, headers: naglowki, body: request.method === 'GET' ? undefined : await request.text() });
-  return env.MIEJSCE.get(env.MIEJSCE.idFromName('dom')).fetch(doMiejsca);
+  return obiektMiejsca(env).fetch(doMiejsca);
 }
+
+// Które Miejsce: nazwa obiektu przychodzi z ustawienia MIEJSCE_NAZWA (domyślnie `dom`). Inna nazwa to inne, puste
+// Miejsce pod tym samym adresem; poprzednie zostaje nietknięte pod swoją nazwą.
+const obiektMiejsca = (env) => env.MIEJSCE.get(env.MIEJSCE.idFromName(typeof env.MIEJSCE_NAZWA === 'string' && /^[a-z0-9-]{1,40}$/.test(env.MIEJSCE_NAZWA) ? env.MIEJSCE_NAZWA : 'dom'));
 
 // Środowisko (17 XI 2026): rzeczy tekstem pod adresem, jako dane i jedne drzwi do ruchu. Czytanie bez klucza działa
 // tylko na podglądzie (PODGLAD = tak), gdzie wszystko jest publiczne; ruch zawsze wymaga klucza. Kod gościa (/gosc/…)
@@ -53,8 +58,15 @@ async function srodowisko(request, env, url) {
   if (cialo) naglowki.set('x-cialo', cialo.slice(0, 80));
   const ct = request.headers.get('content-type');
   if (ct) naglowki.set('content-type', ct);
-  const dalej = new Request(request.url, { method: request.method, headers: naglowki, body: request.method === 'GET' ? undefined : await request.text() });
-  return env.MIEJSCE.get(env.MIEJSCE.idFromName('dom')).fetch(dalej);
+  let cialoZadania;
+  if (request.method !== 'GET') {
+    // Ścisłe dekodowanie tutaj, zanim treść pójdzie dalej jako tekst: po zwykłym dekodowaniu zły zapis znaków
+    // byłby już nie do odróżnienia od poprawnej treści.
+    cialoZadania = await cialoTekstem(request);
+    if (cialoZadania === null) return json({ blad: ZLE_KODOWANIE.blad }, 400);
+  }
+  const dalej = new Request(request.url, { method: request.method, headers: naglowki, body: cialoZadania });
+  return obiektMiejsca(env).fetch(dalej);
 }
 
 export default {

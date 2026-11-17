@@ -98,12 +98,21 @@ test('prawo z danych: ten sam ruch tego samego agenta daje skutek, propozycję a
   const teraz = await s.ruch('agent-probny', { ...ruch(), obszar: nowe });
   assert.equal(teraz.status, 403);
   assert.match(teraz.blad, /nie wolno nic/);
-  // agent nie przestawi ustawienia sam
+  // agent nie przestawi ustawienia sam: ruch zastrzeżony dla właściciela staje się propozycją do niego
   const o2 = s.rzecz(nowe);
   const proba = await s.ruch('agent-probny', { op: op(), co: 'poloz', rzecz: nowe, wersja: o2.wersja, rodzaj: 'obszar/1', cechy: { ...o2.cechy, ile_wolno: 'prowadzic' } });
-  assert.equal(proba.status, 403);
-  assert.match(proba.blad, /zmienia tylko właściciel/);
+  assert.equal(proba.skutek, 'propozycja');
+  assert.match(proba.powod, /zmienia tylko właściciel/);
+  assert.equal(proba.kto_przyjmuje, 'wlasciciel');
+  assert.equal(s.rzecz(nowe).cechy.ile_wolno, 'nic', 'ustawienie stoi, dopóki właściciel nie przyjmie');
+  // w obszarze, w którym agentom nie wolno nic, nie ma też propozycji
   assert.equal((await s.ruch('agent-probny', { op: op(), co: 'poloz', rodzaj: 'uczestnik/1', cechy: { imie: 'agent-probny', rola: 'wlasciciel' } })).status, 403);
+  // a tam, gdzie wolno proponować, dopisanie uczestnika jest propozycją tylko dla właściciela
+  const ucz = await s.ruch('agent-probny', { op: op(), co: 'poloz', rodzaj: 'uczestnik/1', obszar: null, cechy: { imie: 'ktos-nowy', rola: 'agent' } });
+  assert.equal(ucz.skutek, 'propozycja');
+  assert.equal(s.rzecz(ucz.propozycja).cechy.wymaga, 'wlasciciel');
+  assert.equal(s.ile({ rodzaj: 'uczestnik/1', gdzie: { imie: 'ktos-nowy' } }), 0);
+  assert.equal(s.rola('agent-probny'), 'agent', 'rzecz nie nadaje roli właściciela');
   assert.equal((await s.ruch(null, ruch())).status, 401, 'bez klucza nie ma ruchu');
 });
 
@@ -119,7 +128,10 @@ test('propozycja: przyjęcie robi z niej rzecz, odrzucenie zostawia ślad; jedno
   assert.equal(s.rzecz(p1.propozycja).cechy.stan, 'przyjeta');
   assert.equal(s.rzecz(p1.propozycja).cechy.wynik, tak.rzecz);
   const znow = await s.ruch('jozz', { op: oppr, co: 'przyjmij', propozycja: p1.propozycja });
-  assert.equal(znow.status, 409, 'rozstrzygnięta propozycja nie przyjmie się drugi raz');
+  assert.equal(znow.powtorzone, true, 'ponowienie tej samej czynności oddaje to, co stało się za pierwszym razem');
+  assert.equal(znow.rzecz, tak.rzecz);
+  const drugi = await s.ruch('jozz', { op: op(), co: 'przyjmij', propozycja: p1.propozycja });
+  assert.equal(drugi.status, 409, 'rozstrzygnięta propozycja nie przyjmie się drugi raz');
   const nie = await s.ruch('jozz', { op: op(), co: 'odrzuc', propozycja: p2.propozycja, powod: 'to już jest' });
   assert.equal(nie.skutek, 'odrzucona');
   assert.equal(s.rzecz(p2.propozycja).cechy.powod, 'to już jest');
@@ -159,9 +171,13 @@ test('gość: kod jest zapisem, wychodzi w piaskownicy, a rzecz gościa go wskaz
   const k = await s.kod('agent-probny', '<!doctype html><title>x</title><p>gość</p>', { op: op() });
   assert.equal(k.ok, true);
   assert.match(k.zapis, /^[0-9a-f]{64}$/);
-  assert.equal(s.kodGoscia(k.zapis), '<!doctype html><title>x</title><p>gość</p>');
+  assert.equal(s.kodGoscia(k.zapis), null, 'sam zapis kodu nie jest jeszcze stroną: nikt go nie zgłosił jako gościa');
   const g = await s.ruch('agent-probny', { op: op(), co: 'poloz', rodzaj: 'gosc/1', cechy: { nazwa: 'Mój', opis: 'próba', kod: k.zapis, umowa: 'okno/2' } });
   assert.equal(g.skutek, 'polozone');
+  assert.equal(s.kodGoscia(k.zapis), '<!doctype html><title>x</title><p>gość</p>');
+  const niekod = await s.ruch('agent-probny', { op: op(), co: 'poloz', rodzaj: 'gosc/1', cechy: { nazwa: 'Nie kod', opis: 'x', kod: s.rzecz(g.rzecz).zapis } });
+  assert.equal(niekod.status, 422, 'cecha kod musi wskazywać zapis rodzaju kod/1, nie dowolny zapis');
+  assert.equal((await s.ruch('agent-probny', { op: op(), co: 'poloz', rodzaj: 'kod/1', cechy: { a: 1 } })).status, 400, 'rodzaj kod jest zastrzeżony');
   const zly = await s.ruch('agent-probny', { op: op(), co: 'poloz', rodzaj: 'gosc/1', cechy: { nazwa: 'Zły', opis: 'x', kod: 'f'.repeat(64) } });
   assert.equal(zly.status, 422);
   assert.equal((await s.kod(null, '<p>x</p>', { op: op() })).status, 401);
@@ -256,4 +272,223 @@ test('drzwi HTTP: tekst, dane, ruch i kod gościa z nagłówkiem piaskownicy', a
   assert.equal((await zap('/gosc/' + 'a'.repeat(64))).status, 404);
   const puls = await (await zap('/api/srodowisko/puls')).json();
   assert.equal(puls.akt, s.ostatniNr());
+});
+
+// --- Druga noc (17 XI 2026): poprawki po niezależnym ataku i po psuciu (plan budowy, par. 0b) -----------------------
+
+test('op jest osobny dla każdego uczestnika: ten sam napis u dwóch agentów to dwie czynności', async () => {
+  const { s } = await swiat();
+  const wspolny = 'moja-czynnosc-0001';
+  const a = await s.ruch('agent-a', { op: wspolny, co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Od A' } });
+  const b = await s.ruch('agent-b', { op: wspolny, co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Od B' } });
+  assert.equal(a.skutek, 'polozone');
+  assert.equal(b.skutek, 'polozone', JSON.stringify(b));
+  assert.notEqual(a.rzecz, b.rzecz);
+  assert.equal((await s.ruch('agent-a', { op: wspolny, co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Co innego' } })).status, 409, 'ten sam op dla innej własnej czynności to konflikt');
+  assert.equal((await s.ruch('srodowisko', { op: op(), co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'x' } })).status, 403, 'imię automatu jest zastrzeżone');
+});
+
+test('propozycja leży przy rzeczy, a przyjmuje ją tylko ten, kto sam mógłby zrobić ten ruch ze skutkiem', async () => {
+  const { s, nowe } = await swiat();
+  const t = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Dzieło właściciela' } });
+  // agent A chce podmienić treść i przy okazji wynieść rzecz do obszaru, w którym agenci prowadzą
+  const p = await s.ruch('agent-a', { op: op(), co: 'poloz', rzecz: t.rzecz, wersja: t.wersja, rodzaj: 'projekt/1', cechy: { nazwa: 'Podmienione' }, obszar: nowe });
+  assert.equal(p.skutek, 'propozycja');
+  assert.equal(s.rzecz(p.propozycja).obszar, null, 'propozycja leży tam, gdzie rzecz, której dotyczy');
+  const b = await s.ruch('agent-b', { op: op(), co: 'przyjmij', propozycja: p.propozycja });
+  assert.equal(b.status, 403, 'agent B sam nie mógłby zrobić tego ruchu ze skutkiem, więc go nie przyjmie');
+  assert.equal(s.rzecz(t.rzecz).cechy.nazwa, 'Dzieło właściciela');
+  assert.equal((await s.ruch('agent-b', { op: op(), co: 'odrzuc', propozycja: p.propozycja })).status, 403);
+  const wyc = await s.ruch('agent-a', { op: op(), co: 'odrzuc', propozycja: p.propozycja, powod: 'jednak nie' });
+  assert.equal(wyc.skutek, 'wycofana', 'autor może swoją propozycję wycofać');
+  // z obszaru, w którym agentom nie wolno nic, nie da się niczego wynieść nawet propozycją
+  const zamkniety = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Zamknięty', ile_wolno: 'nic' } });
+  const wSrodku = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'projekt/1', obszar: zamkniety.rzecz, cechy: { nazwa: 'Schowane' } });
+  assert.equal((await s.ruch('agent-a', { op: op(), co: 'poloz', rzecz: wSrodku.rzecz, wersja: wSrodku.wersja, rodzaj: 'projekt/1', cechy: { nazwa: 'Schowane' }, obszar: null })).status, 403);
+});
+
+test('zmiana rodzaju rzeczy nie omija ochrony rdzenia', async () => {
+  const { s, nowe } = await swiat();
+  const k = s.ksztalty().get('obszar/1');
+  const p = await s.ruch('agent-a', { op: op(), co: 'poloz', rzecz: k.id, wersja: k.wersja, rodzaj: 'projekt/1', cechy: { nazwa: 'to już nie kształt' }, obszar: nowe });
+  assert.notEqual(p.skutek, 'polozone');
+  if (p.skutek === 'propozycja') assert.equal((await s.ruch('agent-b', { op: op(), co: 'przyjmij', propozycja: p.propozycja })).status, 403);
+  assert.ok(s.ksztaltDla('obszar/1'), 'kształt rdzenia stoi');
+  // agent nie oznaczy sam własnego rodzaju jako układu
+  const u = await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'fuszerka/1', opis: 'x', cechy: {}, uklad: true } });
+  assert.equal(u.skutek, 'propozycja');
+  assert.equal(s.rzecz(u.propozycja).cechy.wymaga, 'wlasciciel');
+  // obszaru z rzeczami nie da się zamienić w coś innego ani odłożyć, także właścicielowi
+  const o = s.rzecz(nowe);
+  await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'W Nowe' } });
+  assert.equal((await s.ruch('jozz', { op: op(), co: 'odloz', rzecz: nowe, wersja: o.wersja })).status, 409);
+});
+
+test('kształt: gdy pod nim leżą rzeczy, wolno tylko dokładać; reszta to następne pokolenie', async () => {
+  const { s } = await swiat();
+  const k = await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'ksztalt/1', cechy: postac });
+  // bez rzeczy autor jeszcze stroi kształt dowolnie
+  const k2 = await s.ruch('agent-a', { op: op(), co: 'poloz', rzecz: k.rzecz, wersja: k.wersja, rodzaj: 'ksztalt/1', cechy: { ...postac, cechy: { ...postac.cechy, sila: { typ: 'tekst' } } } });
+  assert.equal(k2.skutek, 'polozone');
+  const k3 = await s.ruch('agent-a', { op: op(), co: 'poloz', rzecz: k.rzecz, wersja: k2.wersja, rodzaj: 'ksztalt/1', cechy: postac });
+  await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'postac/1', cechy: { imie: 'Ania', sila: 7 } });
+  const zla = await s.ruch('agent-b', { op: op(), co: 'poloz', rzecz: k.rzecz, wersja: k3.wersja, rodzaj: 'ksztalt/1', cechy: { ...postac, cechy: { ...postac.cechy, imie: { typ: 'liczba', wymagana: true } } } });
+  assert.equal(zla.status, 409);
+  assert.match(zla.blad, /następne pokolenie: postac\/2/);
+  const wymagana = await s.ruch('agent-b', { op: op(), co: 'poloz', rzecz: k.rzecz, wersja: k3.wersja, rodzaj: 'ksztalt/1', cechy: { ...postac, cechy: { ...postac.cechy, wiek: { typ: 'liczba', wymagana: true } } } });
+  assert.equal(wymagana.status, 409);
+  const dobra = await s.ruch('agent-b', { op: op(), co: 'poloz', rzecz: k.rzecz, wersja: k3.wersja, rodzaj: 'ksztalt/1', cechy: { ...postac, cechy: { ...postac.cechy, wiek: { typ: 'liczba' } } } });
+  assert.equal(dobra.skutek, 'polozone', JSON.stringify(dobra));
+  assert.equal((await s.ruch('agent-b', { op: op(), co: 'odloz', rzecz: k.rzecz, wersja: dobra.wersja })).status, 409, 'kształtu z rzeczami nie da się odłożyć');
+});
+
+test('odkładanie, przywracanie i cofanie: każde jest nową wersją, nic nie znika', async () => {
+  const { s } = await swiat();
+  const a = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Pierwsza' } });
+  assert.equal(a.numer, 1);
+  const b = await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: a.rzecz, wersja: a.wersja, rodzaj: 'projekt/1', cechy: { nazwa: 'Druga' } });
+  assert.equal(b.numer, 2);
+  const c = await s.ruch('jozz', { op: op(), co: 'cofnij', rzecz: a.rzecz, wersja: b.wersja });
+  assert.equal(c.skutek, 'cofniete');
+  assert.equal(c.numer, 3);
+  assert.equal(c.z_wersji, a.wersja);
+  assert.equal(s.rzecz(a.rzecz).cechy.nazwa, 'Pierwsza');
+  const d = await s.ruch('jozz', { op: op(), co: 'cofnij', rzecz: a.rzecz, wersja: c.wersja, do: b.wersja });
+  assert.equal(s.rzecz(a.rzecz).cechy.nazwa, 'Druga', 'cofnięcie da się cofnąć: wskazana wersja wraca');
+  assert.deepEqual(s.historia(a.rzecz).map((h) => h.numer), [1, 2, 3, 4]);
+  assert.equal(s.wersja(a.rzecz, a.wersja).cechy.nazwa, 'Pierwsza');
+  const o = await s.ruch('jozz', { op: op(), co: 'odloz', rzecz: a.rzecz, wersja: d.wersja, powod: 'na później' });
+  assert.equal(o.skutek, 'odlozone');
+  assert.equal(s.spis({ rodzaj: 'projekt/1' }).length, 0, 'odłożona rzecz znika z list');
+  assert.equal(s.spis({ rodzaj: 'projekt/1', odlozone: 'tak' }).length, 1);
+  assert.equal(s.rzecz(a.rzecz).odlozone, true, 'ale zostaje pod swoim adresem');
+  assert.equal(s.rzecz(a.rzecz).powod, 'na później');
+  assert.match(stronaRzeczy(s, a.rzecz), /ODŁOŻONA/);
+  assert.equal((await s.ruch('jozz', { op: op(), co: 'odloz', rzecz: a.rzecz, wersja: o.wersja })).status, 409);
+  const p = await s.ruch('jozz', { op: op(), co: 'przywroc', rzecz: a.rzecz, wersja: o.wersja });
+  assert.equal(p.skutek, 'przywrocone');
+  assert.equal(s.spis({ rodzaj: 'projekt/1' }).length, 1);
+  // agent w obszarze, gdzie tylko proponuje: odłożenie jest propozycją, a przyjęcie ją wykonuje
+  const pr = await s.ruch('agent-a', { op: op(), co: 'odloz', rzecz: a.rzecz, wersja: p.wersja });
+  assert.equal(pr.skutek, 'propozycja');
+  assert.equal((await s.ruch('jozz', { op: op(), co: 'przyjmij', propozycja: pr.propozycja })).skutek, 'przyjeta');
+  assert.equal(s.rzecz(a.rzecz).odlozone, true);
+});
+
+test('klucz: tożsamość rzeczy liczy się z cech, więc to samo z zewnątrz trafia zawsze w tę samą rzecz', async () => {
+  const { s } = await swiat();
+  const zly = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'repo/1', opis: 'Repozytorium.', tytul: 'nazwa', klucz: ['numer'], cechy: { numer: { typ: 'liczba' }, nazwa: { typ: 'tekst' } } } });
+  assert.equal(zly.status, 422, 'cecha klucza musi być wymagana');
+  const k = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'repo/1', opis: 'Repozytorium.', tytul: 'nazwa', klucz: ['numer'], cechy: { numer: { typ: 'liczba', wymagana: true }, nazwa: { typ: 'tekst' } } } });
+  assert.equal(k.ok, true, JSON.stringify(k));
+  const a = await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'repo/1', cechy: { numer: 7, nazwa: 'jv-web' } });
+  const drugi = await s.ruch('agent-b', { op: op(), co: 'poloz', rodzaj: 'repo/1', cechy: { numer: 7, nazwa: 'jv-web-2' } });
+  assert.equal(drugi.status, 409, 'rzecz o tym kluczu już jest: ruch prosi o wersję');
+  assert.equal(drugi.rzecz, a.rzecz);
+  const zm = await s.ruch('agent-b', { op: op(), co: 'poloz', rodzaj: 'repo/1', wersja: 'dowolna', cechy: { numer: 7, nazwa: 'jv-web-2' } });
+  assert.equal(zm.skutek, 'polozone');
+  assert.equal(zm.rzecz, a.rzecz);
+  assert.equal(s.ile({ rodzaj: 'repo/1' }), 1);
+  assert.equal(s.rzecz(a.rzecz).cechy.nazwa, 'jv-web-2');
+  assert.equal((await s.ruch('agent-a', { op: op(), co: 'poloz', rzecz: a.rzecz, wersja: zm.wersja, rodzaj: 'repo/1', cechy: { numer: 8, nazwa: 'x' } })).status, 422, 'inna wartość klucza to inna rzecz');
+});
+
+test('pytanie po cechach i szukanie; lista nie myli podkreślnika z dżokerem', async () => {
+  const { s } = await swiat();
+  await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'prosba/1', cechy: { tresc: 'Zerknij na Żółwia', stan: 'czeka' } });
+  await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'prosba/1', cechy: { tresc: 'Stara sprawa', stan: 'zalatwiona' } });
+  assert.equal(s.spis({ rodzaj: 'prosba/1', gdzie: { stan: 'czeka' } }).length, 1);
+  assert.equal(s.ile({ rodzaj: 'prosba/1', gdzie: { stan: 'zalatwiona' } }), 1);
+  assert.equal(s.czeka().prosby.length, 1);
+  assert.equal(s.spis({ szukaj: 'żółwia' }).length, 1, 'szukanie nie patrzy na wielkość liter, także polskich');
+  assert.equal(s.spis({ szukaj: '100%_pewne' }).length, 0);
+  await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'a_b/1', cechy: { x: 1 } });
+  await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'axb/1', cechy: { x: 1 } });
+  assert.equal(s.ile({ rodzaj: 'a_b' }), 1);
+  assert.equal(s.ile({ rodzaj: '%' }), 0, 'zły zapis rodzaju nie pasuje do niczego');
+  assert.match(listaRzeczy(s, { rodzaj: 'prosba/1', gdzie: { stan: 'czeka' } }), /RZECZY rodzaju prosba\/1 \(gdzie stan = czeka\): 1/);
+  assert.equal(s.spis({ pomin: 4294967296 }).length, 0, 'duże pomin nie zawija się do zera');
+});
+
+test('wywóz i wwóz: po powrocie do pustego Miejsca stoi to samo środowisko', async () => {
+  const { r, s, glowny } = await swiat();
+  const og = s.rzecz(glowny);
+  await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: glowny, wersja: og.wersja, rodzaj: 'obszar/1', cechy: { ...og.cechy, ile_wolno: 'nic' } });
+  const p = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Przeniesiony' } });
+  await s.ruch('jozz', { op: op(), co: 'odloz', rzecz: p.rzecz, wersja: p.wersja });
+  const obraz = (x) => JSON.stringify([x.q(`SELECT id, rodzaj, obszar, zapis, akt, numer, odlozone, szukane, utworzyl, utworzono, zmienil, zmieniono FROM rzeczy ORDER BY id`), x.q(`SELECT od, cecha, cel FROM odniesienia ORDER BY od, cecha, cel`)]);
+  const e = JSON.parse(JSON.stringify(r.eksport()));
+  assert.equal(e.wersja, 'miejsce-3');
+  const r2 = new Rdzen(sqlZNode());
+  assert.equal((await r2.importuj(e)).ok, true);
+  const s2 = new Srodowisko(r2);
+  s2.przebuduj();
+  assert.equal(obraz(s2), obraz(s), 'spis po wwozie jest co do znaku ten sam');
+  assert.deepEqual(await s2.zasiej(ziarna({ wlasciciel: 'jozz' })), [], 'zasiew niczego nie sieje drugi raz');
+  assert.equal(s2.ustawienie(null, 'ile_wolno').wartosc, 'nic', 'ustawienie obszaru głównego przeszło');
+  assert.equal(r2.meta('obszar_nowe'), r.meta('obszar_nowe'));
+  assert.equal(s2.rzecz(p.rzecz).odlozone, true);
+  const bezStanu = (t) => t.split('\n').filter((w) => !w.startsWith('Adres:')).join('\n');
+  assert.equal(bezStanu(coTuJest(s2, {})), bezStanu(coTuJest(s, {})), 'opis pod adresem jest ten sam');
+  // i odbudowa spisu w miejscu niczego nie zmienia
+  const przed = obraz(s);
+  s.przebuduj();
+  assert.equal(obraz(s), przed);
+});
+
+test('ziarna: zmienione w kodzie odświeżają się same, dopóki nikt poza automatem ich nie ruszył', async () => {
+  const { r, s } = await swiat();
+  const lista = ziarna({ wlasciciel: 'jozz' });
+  const nazwa = 'zdolnosc-start';
+  const id = r.meta('ziarno:' + nazwa);
+  const zmien = (opis) => lista.map((z) => (z.nazwa === nazwa ? { ...z, cechy: { ...z.cechy, opis } } : z));
+  assert.deepEqual(await s.zasiej(zmien('Nowy opis z kodu.')), [nazwa + ' (odświeżone)']);
+  assert.equal(s.rzecz(id).cechy.opis, 'Nowy opis z kodu.');
+  assert.equal(s.rzecz(id).numer, 2);
+  assert.deepEqual(await s.zasiej(zmien('Nowy opis z kodu.')), [], 'to samo ziarno drugi raz nic nie robi');
+  const rz = s.rzecz(id);
+  await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: id, wersja: rz.wersja, rodzaj: rz.rodzaj, cechy: { ...rz.cechy, stan: 'cienko', dowod: 'ręką właściciela' } });
+  assert.deepEqual(await s.zasiej(zmien('Jeszcze inny opis z kodu.')), [], 'czyjaś zmiana wygrywa z zasiewem');
+  assert.equal(s.rzecz(id).cechy.dowod, 'ręką właściciela');
+});
+
+test('ponowienie po zmianie świata oddaje pierwszy wynik; kolejka nie gubi równoległych ruchów', async () => {
+  const { s, nowe } = await swiat();
+  const o1 = op();
+  const ruch = { op: o1, co: 'poloz', rodzaj: 'projekt/1', obszar: null, cechy: { nazwa: 'Propozycja agenta' } };
+  const p = await s.ruch('agent-a', ruch);
+  assert.equal(p.skutek, 'propozycja');
+  const og = s.rzecz(s.r.meta('obszar_glowny'));
+  await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: og.id, wersja: og.wersja, rodzaj: 'obszar/1', cechy: { ...og.cechy, ile_wolno: 'prowadzic' } });
+  const znow = await s.ruch('agent-a', ruch);
+  assert.equal(znow.powtorzone, true);
+  assert.equal(znow.skutek, 'propozycja', 'ponowienie nie ocenia ruchu drugi raz w zmienionym świecie');
+  assert.equal(znow.propozycja, p.propozycja);
+  const wyniki = await Promise.all(Array.from({ length: 24 }, (_, i) => s.ruch('agent-' + (i % 3), { op: op(), co: 'poloz', rodzaj: 'projekt/1', obszar: nowe, cechy: { nazwa: 'Równoległy ' + i } })));
+  assert.equal(wyniki.filter((w) => w.skutek === 'polozone').length, 24, JSON.stringify(wyniki.find((w) => w.skutek !== 'polozone')));
+});
+
+test('granice: zagnieżdżenie obszarów, surowe wartości, czas i adres', async () => {
+  const { s } = await swiat();
+  let rodzic = null;
+  for (let i = 0; i < 31; i++) {
+    const w = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'obszar/1', obszar: rodzic, cechy: { nazwa: 'Poziom ' + i, ...(i === 0 ? { ile_wolno: 'nic' } : {}) } });
+    assert.equal(w.skutek, 'polozone', `poziom ${i}: ${JSON.stringify(w)}`);
+    rodzic = w.rzecz;
+  }
+  assert.equal(s.ustawienie(rodzic, 'ile_wolno').wartosc, 'nic', 'ustawienie z korzenia dochodzi na samo dno');
+  let za = rodzic, ostatni;
+  for (let i = 0; i < 3; i++) { ostatni = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'obszar/1', obszar: za, cechy: { nazwa: 'Głębiej ' + i } }); if (ostatni.ok) za = ostatni.rzecz; }
+  assert.equal(ostatni.status, 422);
+  assert.match(ostatni.blad, /najwyżej na 32 poziomy/);
+  const gleboka = JSON.parse('{"a":'.repeat(60) + '1' + '}'.repeat(60));
+  assert.equal((await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'cos/1', cechy: gleboka })).status, 400);
+  assert.equal((await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'cos/1', cechy: { x: Infinity } })).status, 400);
+  const czas = (w) => s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'x', zycie: w } });
+  assert.equal((await czas('2026-02-30')).status, 422);
+  assert.equal((await czas('2026-02-28T10:00:00Z')).skutek, 'polozone');
+  const adres = (w) => s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'x', zrodlo: w } });
+  assert.equal((await adres('https://przyklad.pl/\u0007')).status, 422);
+  assert.equal((await adres('HTTPS://EXAMPLE.COM/')).skutek, 'polozone');
+  assert.equal((await adres('javascript:alert(1)')).status, 422);
 });

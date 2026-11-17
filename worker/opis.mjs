@@ -16,12 +16,17 @@ export const CO_ZNACZY = {
 
 export function czasowniki(s) {
   const lista = [
-    { nazwa: 'poloz', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'dołóż nową rzecz albo zmień istniejącą', wejscie: '{op, co:"poloz", rodzaj, cechy, obszar?, rzecz?, wersja?}', wynik: '{skutek: "polozone"|"propozycja", rzecz|propozycja, wersja, adres}' },
+    { nazwa: 'poloz', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'dołóż nową rzecz albo zmień istniejącą', wejscie: '{op, co:"poloz", rodzaj, cechy, obszar?, rzecz?, wersja?}', wynik: '{skutek: "polozone"|"propozycja", rzecz|propozycja, wersja, numer, adres}' },
+    { nazwa: 'odloz', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'odłóż rzecz: znika z list, zostaje pod swoim adresem i w historii, da się ją przywrócić', wejscie: '{op, co:"odloz", rzecz, wersja, powod?}', wynik: '{skutek: "odlozone"|"propozycja", rzecz, wersja, numer}' },
+    { nazwa: 'przywroc', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'przywróć odłożoną rzecz', wejscie: '{op, co:"przywroc", rzecz, wersja}', wynik: '{skutek: "przywrocone"|"propozycja", rzecz, wersja, numer}' },
+    { nazwa: 'cofnij', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'cofnij rzecz do wcześniejszej wersji (bez pola do: do poprzedniej); cofnięcie jest nową wersją, więc da się cofnąć także je', wejscie: '{op, co:"cofnij", rzecz, wersja, do?}', wynik: '{skutek: "cofniete"|"propozycja", rzecz, wersja, numer, z_wersji}' },
     { nazwa: 'przyjmij', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'przyjmij czekającą propozycję (zmiana wchodzi w życie)', wejscie: '{op, co:"przyjmij", propozycja}', wynik: '{skutek: "przyjeta", rzecz, adres}' },
-    { nazwa: 'odrzuc', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'odrzuć czekającą propozycję', wejscie: '{op, co:"odrzuc", propozycja, powod?}', wynik: '{skutek: "odrzucona"}' },
+    { nazwa: 'odrzuc', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'odrzuć czekającą propozycję; autor tym samym ruchem wycofuje własną', wejscie: '{op, co:"odrzuc", propozycja, powod?}', wynik: '{skutek: "odrzucona"|"wycofana"}' },
     { nazwa: 'kod', ktoredy: 'drzwi: POST /api/srodowisko/kod?op=…', opis: 'zapisz kod gościa (jeden plik HTML jako ciało żądania)', wejscie: 'tekst HTML', wynik: '{zapis, adres: "/gosc/<zapis>"}' },
-    { nazwa: 'spis', ktoredy: 'drzwi: GET /api/srodowisko/spis?rodzaj=&obszar=; tekstem: /rzeczy; okno: read spis', opis: 'lista rzeczy, opcjonalnie jednego rodzaju albo z jednego obszaru', wejscie: 'rodzaj?, obszar?', wynik: '{rzeczy: [{id, rodzaj, obszar, cechy, tytul, wersja, …}]}' },
-    { nazwa: 'rzecz', ktoredy: 'drzwi: GET /api/srodowisko/rzecz?id=; tekstem: /rzecz/<id>; okno: read rzecz', opis: 'jedna rzecz z historią i tym, co na nią wskazuje', wejscie: 'id', wynik: '{rzecz, historia, wskazuja}' },
+    { nazwa: 'spis', ktoredy: 'drzwi: GET /api/srodowisko/spis?rodzaj=&obszar=&gdzie.<cecha>=&szukaj=&odlozone=; tekstem: /rzeczy z tymi samymi dodatkami; okno: read spis', opis: 'lista rzeczy: jednego rodzaju, z jednego obszaru, o danej wartości cechy albo z danym słowem; odłożone tylko na życzenie (odlozone=tak albo razem)', wejscie: 'rodzaj?, obszar?, gdzie?, szukaj?, odlozone?, pomin?, ile?', wynik: '{rzeczy: [{id, rodzaj, obszar, cechy, tytul, wersja, numer, …}], razem, pokazane, wszystko}' },
+    { nazwa: 'rzecz', ktoredy: 'drzwi: GET /api/srodowisko/rzecz?id=; tekstem: /rzecz/<id>; okno: read rzecz', opis: 'jedna rzecz z historią i tym, co na nią wskazuje', wejscie: 'id', wynik: '{rzecz, historia: [{numer, akt, kto, kiedy}], wskazuja}' },
+    { nazwa: 'wersja', ktoredy: 'drzwi: GET /api/srodowisko/wersja?id=&akt=', opis: 'treść wcześniejszej wersji rzeczy (akt to znacznik z jej historii)', wejscie: 'id, akt', wynik: '{wersja: {rzecz, akt, numer, kto, kiedy, rodzaj, obszar, cechy, odlozone}}' },
+    { nazwa: 'widzialem', ktoredy: 'drzwi: POST /api/srodowisko/widzialem', opis: 'zapisz swoją wizytę: następny odczyt /co-tu-jest tym samym kluczem pokaże tylko to, co zmieniło się po niej', wejscie: '{akt?}', wynik: '{widziane_do}' },
     { nazwa: 'ksztalty', ktoredy: 'drzwi: GET /api/srodowisko/ksztalty; tekstem: /rodzaje; okno: read ksztalty', opis: 'wszystkie rodzaje rzeczy z opisem cech', wejscie: '-', wynik: '{ksztalty: [{dla, opis, cechy, …}]}' },
     { nazwa: 'wywoz', ktoredy: 'drzwi: GET /api/miejsce/eksport (tylko właściciel)', opis: 'całe Miejsce jako jeden plik: niezmienne zapisy, dziennik aktów i głowy; z tego da się odtworzyć spis bez kodu Jaskini', wejscie: '-', wynik: '{format: "jaskinia-miejsce", wersja, zebrane, zapisy, akty, glowy, odczyty}' },
     { nazwa: 'puls', ktoredy: 'drzwi: GET /api/srodowisko/puls', opis: 'numer ostatniego aktu; zmienia się po każdym ruchu', wejscie: '-', wynik: '{akt}' },
@@ -36,7 +41,7 @@ export function czasowniki(s) {
 
 function obszary(s) {
   const glowny = s.r.meta('obszar_glowny');
-  const wszystkie = s.spis({ rodzaj: 'obszar/1', limit: 2000 });
+  const wszystkie = s.wszystkie({ rodzaj: 'obszar/1' });
   const wynik = [];
   const ust = (id) => Object.fromEntries(Object.keys(USTAWIENIA).map((k) => [k, s.ustawienie(id, k)]));
   const poNazwie = (a, b) => s.tytul(a).localeCompare(s.tytul(b));
@@ -44,14 +49,14 @@ function obszary(s) {
   const dodaj = (o, glebokosc) => {
     if (widziane.has(o.id) || glebokosc > 32) return;
     widziane.add(o.id);
-    wynik.push({ id: o.id, nazwa: s.tytul(o), glebokosc, glowny: false, ustawienia: ust(o.id), ile: s.spis({ obszar: o.id, limit: 2000 }).length });
+    wynik.push({ id: o.id, nazwa: s.tytul(o), glebokosc, glowny: false, ustawienia: ust(o.id), ile: s.ile({ obszar: o.id }) });
     for (const d of wszystkie.filter((x) => x.obszar === o.id).sort(poNazwie)) dodaj(d, glebokosc + 1);
   };
   const g = glowny ? s.rzecz(glowny) : null;
   // Obszar główny pokazujemy raz, jako korzeń; rzeczy z obszarem null leżą właśnie w nim.
   if (g) widziane.add(g.id);
   wynik.push({ id: g ? g.id : null, nazwa: g ? s.tytul(g) : 'Miejsce', glebokosc: 0, glowny: true, ustawienia: ust(null),
-    ile: s.spis({ obszar: null, limit: 2000 }).length + (g ? s.spis({ obszar: g.id, limit: 2000 }).length : 0) });
+    ile: s.ile({ obszar: null }) + (g ? s.ile({ obszar: g.id }) : 0) });
   for (const d of wszystkie.filter((x) => (x.obszar === null || (g && x.obszar === g.id)) && (!g || x.id !== g.id)).sort(poNazwie)) dodaj(d, 1);
   return wynik;
 }
@@ -96,7 +101,9 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
     czasowniki: czasowniki(s),
     klucz_probny: podglad ? kluczProbny : null,
     probny_imie: podglad ? probnyImie : null,
-    zalatwione: { prosby: s.spis({ rodzaj: 'prosba/1', limit: 2000 }).filter((p) => p.cechy.stan === 'zalatwiona').length, propozycje_przyjete: s.spis({ rodzaj: 'propozycja/1', limit: 2000 }).filter((p) => p.cechy.stan === 'przyjeta').length, propozycje_odrzucone: s.spis({ rodzaj: 'propozycja/1', limit: 2000 }).filter((p) => p.cechy.stan === 'odrzucona').length },
+    zalatwione: { prosby: s.ile({ rodzaj: 'prosba/1', gdzie: { stan: 'zalatwiona' } }), propozycje_przyjete: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'przyjeta' } }), propozycje_odrzucone: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'odrzucona' } }), propozycje_wycofane: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'wycofana' } }) },
+    odlozone: s.ile({ odlozone: 'tak' }),
+    wlasciciel: s.wlasciciel,
   };
 }
 
@@ -122,8 +129,9 @@ export function coTuJest(s, opcje = {}) {
     'Jądro Miejsca nie wie, czym jest projekt ani okno. Start, czyli twarz dla ręki właściciela, jeszcze nie istnieje (punkt 8).',
     '',
     '2. CO TU JEST',
-    `Rzeczy: ${d.razem}. Według rodzaju: ${d.liczby.map((l) => `${l.rodzaj}: ${l.ile}`).join(', ') || 'jeszcze nic'}.`,
-    'Lista wszystkich rzeczy tekstem: /rzeczy   (jednego rodzaju: /rzeczy?rodzaj=projekt/1; z jednego obszaru: /rzeczy?obszar=<id>)',
+    `Rzeczy: ${d.razem}${d.odlozone ? ` (i ${d.odlozone} odłożonych, których listy nie pokazują: /rzeczy?odlozone=tak)` : ''}. Według rodzaju: ${d.liczby.map((l) => `${l.rodzaj}: ${l.ile}`).join(', ') || 'jeszcze nic'}.`,
+    'Lista wszystkich rzeczy tekstem: /rzeczy   (jednego rodzaju: /rzeczy?rodzaj=projekt/1; z jednego obszaru: /rzeczy?obszar=<id>;',
+    '  o danej wartości cechy: /rzeczy?rodzaj=prosba/1&gdzie.stan=czeka; ze słowem w którejkolwiek cesze: /rzeczy?szukaj=<słowo>)',
     'Jedna rzecz z historią: /rzecz/<id>',
     '',
     'Rodzaje (każdy ma kształt, czyli opis cech; pełna lista z cechami: /rodzaje):',
@@ -160,8 +168,12 @@ export function coTuJest(s, opcje = {}) {
     R !== 'wlasciciel' && d.obszary.map((x) => `  ${'  '.repeat(x.glebokosc)}${x.nazwa}${x.id && !x.glowny ? ` (id ${x.id})` : ''}: ${x.ustawienia.ile_wolno.wartosc} = ${CO_ZNACZY[x.ustawienia.ile_wolno.wartosc]}`),
     R !== 'wlasciciel' && [
       `Nowa rzecz bez podanego obszaru ląduje w obszarze "Nowe"${obszarNowe ? ` (id ${obszarNowe})` : ''}. Rzecz dołożona do obszaru, w którym wolno tylko proponować, staje się propozycją.`,
-      'Nikomu poza właścicielem nie wolno: zmieniać ustawień obszarów, dopisywać uczestników, zmieniać kształtów rodzajów ksztalt/1, obszar/1, uczestnik/1 i propozycja/1.',
-      'Niczego nie da się tu usunąć: każda zmiana jest nowym zapisem obok starego, a historia zostaje.',
+      'W obszarze z ustawieniem porzadkowac skutek od razu mają tylko rzeczy rodzaju oznaczonego jako układ; każda inna nowa rzecz i każda zmiana treści jest propozycją.',
+      'Przy zmianie i przenoszeniu liczy się obszar, w którym rzecz leży, i ten, do którego ma trafić: słabsze z dwóch praw wygrywa.',
+      'Tylko właściciel zmienia ze skutkiem: ustawienia obszarów, uczestników, kształty rodzajów ksztalt/1, obszar/1, uczestnik/1 i propozycja/1 oraz to, czy rodzaj jest układem.',
+      'Taki ruch zrobiony przez kogoś innego nie jest odrzucany: staje się propozycją do właściciela.',
+      'Propozycję przyjmuje właściciel albo uczestnik, który ten sam ruch mógłby zrobić sam ze skutkiem; autor może swoją tylko wycofać (co: odrzuc).',
+      'Niczego nie da się tu usunąć: każda zmiana jest nowym zapisem obok starego, a historia zostaje. Rzecz można odłożyć (co: odloz) i przywrócić.',
     ],
     `Możliwe wartości ile_wolno: ${STOPNIE.map((x) => `${x} (${CO_ZNACZY[x]})`).join('; ')}.`,
     '',
@@ -171,18 +183,21 @@ export function coTuJest(s, opcje = {}) {
     `  POST ${o}/api/srodowisko/ruch`,
     '  Authorization: Bearer <klucz>',
     '  Content-Type: application/json',
-    'Pole op to Twój własny identyfikator tej czynności (8 do 100 znaków z liter, cyfr, _ i -). Ponowienie z tym samym op niczego nie zrobi dwa razy.',
+    'Pole op to Twój własny identyfikator tej czynności (8 do 100 znaków z liter, cyfr, _ i -). Ponowienie z tym samym op niczego nie zrobi dwa razy',
+    'i odda to, co stało się za pierwszym razem. Każdy uczestnik ma własne op: cudze Ci nie przeszkadzają, a ten sam op dla innej Twojej czynności to błąd 409.',
     'Możesz dodać nagłówek X-Cialo: <czym działasz>, np. X-Cialo: curl; zostanie w historii przy ruchu.',
     '',
     'a) Nowa rzecz istniejącego rodzaju:',
     '  {"op":"moja-czynnosc-0001","co":"poloz","rodzaj":"projekt/1","cechy":{"nazwa":"Przykład","opis":"…"}}',
-    '  Odpowiedź: {"ok":true,"skutek":"polozone","rzecz":"<id>","wersja":<n>,"adres":"/rzecz/<id>"}',
-    '  albo, gdy w tym obszarze wolno Ci tylko proponować: {"ok":true,"skutek":"propozycja","propozycja":"<id>","powod":"…"}',
+    '  Odpowiedź: {"ok":true,"skutek":"polozone","rzecz":"<id>","wersja":<znacznik>,"numer":1,"adres":"/rzecz/<id>"}',
+    '  albo, gdy w tym obszarze wolno Ci tylko proponować: {"ok":true,"skutek":"propozycja","propozycja":"<id>","powod":"…","kto_przyjmuje":"…"}',
     '  Cechy sprawdza kształt rodzaju (/rodzaj/<rodzaj>). Cecha, której kształt nie zna, zostaje zachowana; cecha niezgodna z kształtem odbija ruch ze zdaniem, co jest nie tak.',
+    '  Dwie liczby przy rzeczy: numer to która to jej wersja (1, 2, 3…); wersja to znacznik, który podajesz przy zmianie (numer aktu w dzienniku, rośnie skokami).',
     '',
-    'b) Zmiana istniejącej rzeczy: to samo, z jej identyfikatorem i wersją z ostatniego odczytu (podajesz wszystkie cechy, nie tylko zmienione):',
-    '  {"op":"moja-czynnosc-0002","co":"poloz","rzecz":"<id>","wersja":<n>,"rodzaj":"projekt/1","cechy":{…}}',
-    '  Gdy ktoś zmienił rzecz po Twoim odczycie, dostaniesz 409 i aktualną wersję. Przeniesienie do innego obszaru: dodaj "obszar":"<id obszaru>" (albo null dla głównego).',
+    'b) Zmiana istniejącej rzeczy: to samo, z jej identyfikatorem i polem wersja z ostatniego odczytu (podajesz wszystkie cechy, nie tylko zmienione):',
+    '  {"op":"moja-czynnosc-0002","co":"poloz","rzecz":"<id>","wersja":<znacznik>,"rodzaj":"projekt/1","cechy":{…}}',
+    '  Gdy ktoś zmienił rzecz po Twoim odczycie, dostaniesz 409 i aktualny znacznik. Świadome nadpisanie bez czytania: "wersja":"dowolna".',
+    '  Przeniesienie do innego obszaru: dodaj "obszar":"<id obszaru>" (albo null dla głównego).',
     '',
     'c) Nowy rodzaj rzeczy: dołóż rzecz rodzaju ksztalt/1, która go opisuje. Nie trzeba niczego wdrażać.',
     '  {"op":"moja-czynnosc-0003","co":"poloz","rodzaj":"ksztalt/1","cechy":{"dla":"postac/1","opis":"Postać ze świata gry.","tytul":"imie",',
@@ -190,7 +205,11 @@ export function coTuJest(s, opcje = {}) {
     '  Od tej chwili można dokładać rzeczy rodzaju postac/1 (punkt a), a sam rodzaj widać w /rodzaje.',
     `  Typy cech: ${Object.entries(TYPY).map(([t, op]) => `${t} (${op})`).join('; ')}.`,
     '  Opis cechy: {"typ":…, "opis":"…", "wymagana":true|false}; dla typu rzecz można dodać "rodzaj"; dla lista: "z" (typ elementów, np. "tekst" albo {"typ":"rzecz","rodzaj":"projekt/1"}); dla wybor: "wartosci":[…].',
-    '  Następne pokolenie rodzaju (np. postac/2) to nowy kształt obok starego; stare rzeczy zostają takie, jakie są.',
+    '  Kolejność: najpierw kształt, potem rzeczy tego rodzaju. Rodzaj kod jest zastrzeżony dla kodu gości (punkt d).',
+    '  Klucz (nieobowiązkowy): "klucz":["nazwa_cechy",…] w kształcie znaczy, że tożsamość rzeczy liczy się z tych cech. Druga rzecz o tym samym kluczu',
+    '  nie powstanie: ruch bez pola rzecz trafi w tę istniejącą i poprosi o wersję. Przydatne dla rzeczy, które przychodzą z zewnątrz wiele razy.',
+    '  Gdy pod kształtem leżą już rzeczy, wolno w nim tylko dokładać cechy niewymagane, poszerzać wybór i zmieniać opisy. Każda inna zmiana to',
+    '  następne pokolenie rodzaju (np. postac/2): nowy kształt obok starego; stare rzeczy zostają takie, jakie są.',
     '',
     'd) Nowy gość (narzędzie albo inne przedstawienie rzeczy), dwa kroki:',
     `  1. POST ${o}/api/srodowisko/kod?op=moj-gosc-0001   (ciało żądania: jeden plik HTML; nagłówek Authorization jak wyżej)`,
@@ -200,15 +219,21 @@ export function coTuJest(s, opcje = {}) {
     '  Jak gość rozmawia z gospodarzem (z gotowym przykładem do skopiowania): /umowa-okna',
     '  Gość, który żyje pod własnym adresem (np. gra): zamiast "kod" podaj "adres":"https://…".',
     '',
-    'e) Propozycje: właściciel przyjmuje albo odrzuca: {"op":"…","co":"przyjmij","propozycja":"<id>"} albo {"op":"…","co":"odrzuc","propozycja":"<id>","powod":"…"}',
+    'e) Propozycje: {"op":"…","co":"przyjmij","propozycja":"<id>"} albo {"op":"…","co":"odrzuc","propozycja":"<id>","powod":"…"}. Kto może: punkt 4.',
+    '  Czekające propozycje: /rzeczy?rodzaj=propozycja/1&gdzie.stan=czeka',
     '',
-    'To samo do czytania jako dane (JSON): /api/srodowisko/opis, /api/srodowisko/spis, /api/srodowisko/rzecz?id=<id>, /api/srodowisko/ksztalty',
+    'f) Odkładanie i cofanie (nic nie znika; każde jest nową wersją tej samej rzeczy):',
+    '  {"op":"…","co":"odloz","rzecz":"<id>","wersja":<znacznik>,"powod":"…"}   rzecz znika z list, zostaje pod adresem; wraca przez co: przywroc',
+    '  {"op":"…","co":"cofnij","rzecz":"<id>","wersja":<znacznik>}             wraca treść poprzedniej wersji; z polem "do":<znacznik z historii> wraca wskazana',
+    '',
+    'To samo do czytania jako dane (JSON): /api/srodowisko/opis, /api/srodowisko/spis, /api/srodowisko/rzecz?id=<id>, /api/srodowisko/wersja?id=<id>&akt=<znacznik>, /api/srodowisko/ksztalty',
+    'Uwaga dla skryptów: sieć przed drzwiami odrzuca (403) domyślnego klienta Pythona; ustaw nagłówek User-Agent. Polskie litery wysyłaj z pliku w UTF-8.',
     '',
     '6. CO CZEKA NA WŁAŚCICIELA',
     !d.czeka.propozycje.length && !d.czeka.prosby.length ? 'Teraz nic nie czeka.' : null,
     d.czeka.propozycje.map((p) => `  propozycja od ${p.od}: ${p.rzecz ? 'zmiana rzeczy ' + p.rzecz : 'nowa rzecz'} rodzaju ${p.rodzaj}, czeka od ${dzien(p.kiedy)} -> /rzecz/${p.id}`),
     d.czeka.prosby.map((p) => `  prośba od ${p.od} (${p.tryb}): ${obetnij(p.tresc, 140)} -> /rzecz/${p.id}`),
-    `Już rozstrzygnięte (nie czekają): załatwione prośby: ${d.zalatwione.prosby} (/rzeczy?rodzaj=prosba/1); propozycje przyjęte: ${d.zalatwione.propozycje_przyjete}, odrzucone: ${d.zalatwione.propozycje_odrzucone} (/rzeczy?rodzaj=propozycja/1). Stan każdej stoi w jej cesze stan.`,
+    `Już rozstrzygnięte (nie czekają): załatwione prośby: ${d.zalatwione.prosby} (/rzeczy?rodzaj=prosba/1&gdzie.stan=zalatwiona); propozycje przyjęte: ${d.zalatwione.propozycje_przyjete}, odrzucone: ${d.zalatwione.propozycje_odrzucone}, wycofane przez autora: ${d.zalatwione.propozycje_wycofane} (/rzeczy?rodzaj=propozycja/1). Stan każdej stoi w jej cesze stan.`,
     'Prośbę do właściciela zostawia się jako rzecz rodzaju prosba/1 ze stanem "czeka".',
     '',
     '7. SPIS CZASOWNIKÓW (wszystko, co da się tu zrobić; ten sam spis czyta strona i agent)',
@@ -227,21 +252,25 @@ export function coTuJest(s, opcje = {}) {
 
 // Lista zawsze mówi swój zakres: ile jest wszystkich, które pokazuje i czy to już koniec. Ciało, które czyta
 // w kawałkach, musi wiedzieć, czy coś mu umknęło (uwaga sędziego po dowodach, 17 XI).
-export function listaRzeczy(s, { rodzaj = null, obszar, pomin = 0, ile = 300 } = {}) {
-  const n = Math.max(1, Math.min(1000, ile | 0 || 300));
-  const od = Math.max(0, pomin | 0);
-  const razem = s.ile({ rodzaj, obszar });
-  const rz = s.spis({ rodzaj, obszar, limit: n, pomin: od });
+export function listaRzeczy(s, { rodzaj = null, obszar, gdzie = null, szukaj = null, odlozone = 'nie', pomin = 0, ile = 300 } = {}) {
+  const calkowita = (x, domyslna) => { const l = Math.trunc(Number(x)); return Number.isFinite(l) ? l : domyslna; };
+  const n = Math.max(1, Math.min(1000, calkowita(ile, 300) || 300));
+  const od = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, calkowita(pomin, 0)));
+  const wybor = { rodzaj, ...(obszar !== undefined ? { obszar } : {}), gdzie, szukaj, odlozone };
+  const razem = s.ile(wybor);
+  const rz = s.spis({ ...wybor, limit: n, pomin: od });
   const koniec = od + rz.length >= razem;
-  const filtr = [rodzaj ? 'rodzaj=' + rodzaj : null, obszar !== undefined ? 'obszar=' + (obszar || '') : null].filter(Boolean).join('&');
+  const filtr = [rodzaj ? 'rodzaj=' + encodeURIComponent(rodzaj).replace(/%2F/g, '/') : null, obszar !== undefined ? 'obszar=' + (obszar || '') : null,
+    ...Object.entries(gdzie || {}).map(([k, w]) => `gdzie.${k}=${encodeURIComponent(String(w))}`), szukaj ? 'szukaj=' + encodeURIComponent(szukaj) : null, odlozone !== 'nie' ? 'odlozone=' + odlozone : null].filter(Boolean).join('&');
   const dalej = `/rzeczy?${filtr ? filtr + '&' : ''}pomin=${od + rz.length}&ile=${n}`;
   const nazwaObszaru = (id) => { if (!id) return 'główny'; const o = s.rzecz(id); return o ? s.tytul(o) : id; };
+  const opisWyboru = [gdzie && Object.keys(gdzie).length ? 'gdzie ' + Object.entries(gdzie).map(([k, w]) => `${k} = ${obetnij(String(w), 40)}`).join(' i ') : null, szukaj ? `ze słowem "${obetnij(szukaj, 40)}"` : null, odlozone === 'tak' ? 'tylko odłożone' : odlozone === 'razem' ? 'razem z odłożonymi' : null].filter(Boolean).join(', ');
   return wiersze(
-    `RZECZY${rodzaj ? ' rodzaju ' + rodzaj : ''}${obszar !== undefined ? ' w obszarze ' + nazwaObszaru(obszar) : ''}: ${razem}`,
+    `RZECZY${rodzaj ? ' rodzaju ' + obetnij(rodzaj, 90) : ''}${obszar !== undefined ? ' w obszarze ' + nazwaObszaru(obszar) : ''}${opisWyboru ? ' (' + opisWyboru + ')' : ''}: ${razem}`,
     rz.length ? `ZAKRES: pokazuję ${rz.length} z ${razem}, pozycje od ${od + 1} do ${od + rz.length}, od ostatnio zmienionej. ${koniec ? 'To jest koniec listy: nic więcej nie ma.' : 'To NIE jest cała lista. Dalszy ciąg: ' + dalej}` : `ZAKRES: lista jest pusta${od ? ' od pozycji ' + (od + 1) : ''}; wszystkich rzeczy w tym wyborze jest ${razem}.`,
     'Każdy wiersz: tytuł [rodzaj] id, obszar, ostatnia zmiana. Jedna rzecz z historią: /rzecz/<id>. Wszystko o Miejscu: /co-tu-jest',
     '',
-    rz.map((x) => `${obetnij(s.tytul(x), 80)} [${x.rodzaj}] ${x.id}, obszar: ${nazwaObszaru(x.obszar)}, zmienił ${x.zmienil} ${dzien(x.zmieniono)}`),
+    rz.map((x) => `${obetnij(s.tytul(x), 80)} [${x.rodzaj}] ${x.id}, obszar: ${nazwaObszaru(x.obszar)}, zmienił ${x.zmienil} ${dzien(x.zmieniono)}${x.odlozone ? ', ODŁOŻONA' : ''}`),
     '',
     koniec ? `KONIEC LISTY (pokazano ${od + rz.length} z ${razem}).` : `CIĄG DALSZY: ${dalej}   (pokazano ${od + rz.length} z ${razem})`,
     '',
@@ -265,10 +294,12 @@ export function listaRodzajow(s) {
 }
 
 export function stronaRodzaju(s, rodzaj) {
+  // Nazwa z adresu trafia do tekstu, więc najpierw musi być nazwą rodzaju, a nie czymkolwiek.
+  if (typeof rodzaj !== 'string' || !/^[a-z][a-z0-9_.-]{0,79}(\/[1-9][0-9]{0,5})?$/.test(rodzaj)) return wiersze('To nie jest nazwa rodzaju (małe litery, cyfry, kropka, - i _, potem /numer, np. projekt/1). Wszystkie rodzaje: /rodzaje', '');
   const k = s.ksztalty().get(rodzaj);
   const ile = (s.liczby().find((l) => l.rodzaj === rodzaj) || { ile: 0 }).ile;
   if (!k) return wiersze(`RODZAJ ${rodzaj}`, ile ? `Ten rodzaj nie ma kształtu: jest ${ile} rzeczy, ale nikt nie opisał ich cech. Kształt dokłada się ruchem: /co-tu-jest, punkt 5c.` : 'Nie ma takiego rodzaju. Wszystkie rodzaje: /rodzaje', '');
-  const przyklad = Object.fromEntries(Object.entries(k.cechy.cechy || {}).filter(([, d]) => d && d.wymagana).map(([n, d]) => [n, d.typ === 'liczba' ? 0 : d.typ === 'tak-nie' ? false : d.typ === 'lista' ? [] : d.typ === 'wybor' ? (d.wartosci || [''])[0] : d.typ === 'rzecz' ? '<id rzeczy>' : d.typ === 'zapis' ? '<id zapisu>' : '…']));
+  const przyklad = Object.fromEntries(Object.entries(k.cechy.cechy || {}).filter(([, d]) => d && d.wymagana).map(([n, d]) => [n, d.typ === 'liczba' ? 0 : d.typ === 'tak-nie' ? false : d.typ === 'lista' ? [] : d.typ === 'wybor' ? (d.wartosci || [''])[0] : d.typ === 'rzecz' ? '<id rzeczy>' : d.typ === 'zapis' ? '<id zapisu>' : d.typ === 'czas' ? '2026-11-17T12:00:00Z' : d.typ === 'adres' ? 'https://przyklad.pl/' : d.typ === 'dowolne' ? {} : '…']));
   return wiersze(
     `RODZAJ ${rodzaj}`,
     k.cechy.opis,
@@ -278,6 +309,7 @@ export function stronaRodzaju(s, rodzaj) {
     'CECHY',
     Object.entries(k.cechy.cechy || {}).map(([n, def]) => `  ${n}: ${cechaTekstem(def)}`),
     `  nazwa rzeczy: cecha ${k.cechy.tytul || 'nazwa'}`,
+    Array.isArray(k.cechy.klucz) ? `  klucz (tożsamość rzeczy liczy się z tych cech; druga rzecz o tym samym kluczu nie powstanie): ${k.cechy.klucz.join(', ')}` : null,
     '',
     'JAK DOŁOŻYĆ RZECZ TEGO RODZAJU',
     `  POST /api/srodowisko/ruch   {"op":"<twój identyfikator czynności>","co":"poloz","rodzaj":"${rodzaj}","cechy":${JSON.stringify(przyklad)}}`,
@@ -293,28 +325,36 @@ export function stronaRzeczy(s, id, { kto = null } = {}) {
   const wsk = s.wskazujaNa(id);
   const k = s.ksztaltDla(rz.rodzaj);
   const ob = rz.obszar ? s.rzecz(rz.obszar) : null;
-  const prawo = s.prawo(kto, { rodzaj: rz.rodzaj, obszar: rz.obszar });
+  const prawo = s.prawo(kto, { rodzaj: rz.rodzaj, obszar: rz.obszar, rzecz: rz });
   const wart = (w) => (typeof w === 'string' ? w : JSON.stringify(w));
+  const jestObszarem = rz.rodzaj === 'obszar/1';
   return wiersze(
-    `RZECZ: ${s.tytul(rz)}`,
-    `id: ${rz.id}   rodzaj: ${rz.rodzaj}${k ? ` (-> /rodzaj/${rz.rodzaj})` : ' (rodzaj bez kształtu)'}   wersja: ${rz.wersja}`,
-    `obszar: ${ob ? `${s.tytul(ob)} (id ${ob.id})` : 'główny'}; ile_wolno agentom: ${s.ustawienie(rz.obszar, 'ile_wolno').wartosc}`,
+    `RZECZ: ${s.tytul(rz)}${rz.odlozone ? '   [ODŁOŻONA]' : ''}`,
+    `id: ${rz.id}   rodzaj: ${rz.rodzaj}${k ? ` (-> /rodzaj/${rz.rodzaj})` : ' (rodzaj bez kształtu)'}   numer wersji: ${rz.numer}   wersja (znacznik do zmiany): ${rz.wersja}`,
+    rz.odlozone ? `Ta rzecz jest odłożona${rz.powod ? ': ' + obetnij(rz.powod, 300) : ''}. Listy jej nie pokazują; wraca ruchem co: przywroc.` : null,
+    `leży w obszarze: ${ob ? `${s.tytul(ob)} (id ${ob.id})` : 'główny'}; tam ile_wolno agentom: ${s.ustawienie(rz.obszar, 'ile_wolno').wartosc}`,
+    jestObszarem ? `sama jest obszarem: rzeczom, które w niej leżą, daje ile_wolno agentom: ${s.ustawienie(rz.id, 'ile_wolno').wartosc}; leży w niej ${s.ile({ obszar: rz.id })} rzeczy (/rzeczy?obszar=${rz.id})` : null,
     `dołożył: ${rz.utworzyl}, ${dzien(rz.utworzono)}   ostatnio zmienił: ${rz.zmienil}, ${dzien(rz.zmieniono)}`,
     '',
     'CECHY',
     Object.keys(rz.cechy).length ? Object.entries(rz.cechy).map(([n, w]) => `  ${n}${k && !(n in (k.cechy || {})) ? ' [cecha spoza kształtu]' : ''}: ${obetnij(wart(w), 2000)}`) : '  (żadnych)',
     rz.rodzaj === 'gosc/1' && rz.cechy.kod ? `  kod gościa pod adresem: /gosc/${rz.cechy.kod}` : null,
     '',
-    `HISTORIA (${h.length})`,
-    h.map((a) => `  akt ${a.akt}, ${dzien(a.kiedy)}, ${a.kto}${a.cialo ? ' [' + a.cialo + ']' : ''}`),
+    `HISTORIA (${h.length}; każda wersja: numer, znacznik, kiedy, kto; treść dawnej wersji: /api/srodowisko/wersja?id=${rz.id}&akt=<znacznik>)`,
+    h.map((a) => `  wersja ${a.numer}, znacznik ${a.akt}, ${dzien(a.kiedy)}, ${a.kto}${a.cialo ? ' [' + a.cialo + ']' : ''}`),
     '',
     wsk.length ? `CO NA NIĄ WSKAZUJE (${wsk.length})` : 'Nic na nią nie wskazuje.',
     wsk.map((w) => { const x = s.rzecz(w.od); return `  ${x ? obetnij(s.tytul(x), 70) + ' [' + x.rodzaj + ']' : '?'} przez cechę ${w.cecha} -> /rzecz/${w.od}`; }),
     '',
     'CO MOŻESZ Z NIĄ ZROBIĆ',
     prawo.tryb === 'skutek' ? '  Twój ruch na tej rzeczy ma skutek od razu.' : prawo.tryb === 'propozycja' ? `  Twój ruch na tej rzeczy stanie się propozycją: ${prawo.powod}.` : `  ${prawo.powod}.`,
-    `  Zmiana: POST /api/srodowisko/ruch   {"op":"<twój identyfikator>","co":"poloz","rzecz":"${rz.id}","wersja":${rz.wersja},"rodzaj":"${rz.rodzaj}","cechy":{…wszystkie cechy…}}`,
-    rz.rodzaj === 'propozycja/1' && rz.cechy.stan === 'czeka' ? `  Rozstrzygnięcie (właściciel): {"op":"…","co":"przyjmij","propozycja":"${rz.id}"} albo {"op":"…","co":"odrzuc","propozycja":"${rz.id}","powod":"…"}` : null,
+    rz.rodzaj === 'propozycja/1'
+      ? (rz.cechy.stan === 'czeka' ? `  Rozstrzygnięcie: {"op":"…","co":"przyjmij","propozycja":"${rz.id}"} albo {"op":"…","co":"odrzuc","propozycja":"${rz.id}","powod":"…"}   (kto może: /co-tu-jest, punkt 4${rz.cechy.wymaga === 'wlasciciel' ? '; tę przyjmuje tylko właściciel' : ''})` : `  Ta propozycja jest już rozstrzygnięta: ${rz.cechy.stan}.`)
+      : [
+        `  Zmiana: POST /api/srodowisko/ruch   {"op":"<twój identyfikator>","co":"poloz","rzecz":"${rz.id}","wersja":${rz.wersja},"rodzaj":"${rz.rodzaj}","cechy":{…wszystkie cechy…}}`,
+        rz.odlozone ? `  Przywrócenie: {"op":"…","co":"przywroc","rzecz":"${rz.id}","wersja":${rz.wersja}}` : `  Odłożenie: {"op":"…","co":"odloz","rzecz":"${rz.id}","wersja":${rz.wersja},"powod":"…"}`,
+        h.length > 1 ? `  Cofnięcie do poprzedniej wersji: {"op":"…","co":"cofnij","rzecz":"${rz.id}","wersja":${rz.wersja}}   (do innej: dodaj "do":<znacznik z historii>)` : null,
+      ],
     '  Wszystko o Miejscu: /co-tu-jest',
     '',
   );
@@ -341,7 +381,8 @@ export function umowaOkna() {
     '',
     'Od gościa:',
     '  hello    {name (do 60 znaków), version (do 40), wants: ["rzeczy"]}   przedstaw się; wants: ["rzeczy"] znaczy, że chcesz czytać rzeczy i dostawać "changed"',
-    '  read     {id, what: "spis", rodzaj?, obszar?}     lista rzeczy; rodzaj np. "projekt/1" albo samo "projekt"',
+    '  read     {id, what: "spis", rodzaj?, obszar?, gdzie?, szukaj?, pomin?}   lista rzeczy; rodzaj np. "projekt/1" (z pokoleniem) albo samo "projekt" (wszystkie pokolenia);',
+    '                                                    gdzie: {cecha: wartość}, np. {stan: "czeka"}; szukaj: słowo w którejkolwiek cesze',
     '  read     {id, what: "rzecz", rzecz: "<id>"}       jedna rzecz z historią',
     '  read     {id, what: "ksztalty"}                   rodzaje rzeczy z opisem cech',
     '  read     {id, what: "ja"}                         kim jest czytający i jako który gość jesteś otwarty',
@@ -358,8 +399,9 @@ export function umowaOkna() {
     '  remark   {text, at}                               uwaga właściciela, tylko gdy prosiłeś o nią w hello (wants: ["remark"])',
     '',
     'Kształt danych:',
-    '  read spis     -> {rzeczy: [{id, rodzaj, obszar, cechy, tytul, wersja, utworzyl, utworzono, zmienil, zmieniono}], razem}',
-    '  read rzecz    -> {rzecz: {…jak wyżej…}, historia: [{akt, kto, kiedy}], wskazuja: [{od, cecha}]}',
+    '  read spis     -> {rzeczy: [{id, rodzaj, obszar, cechy, tytul, wersja, numer, utworzyl, utworzono, zmienil, zmieniono}], razem, pokazane, pominiete, wszystko}',
+    '  read rzecz    -> {rzecz: {…jak wyżej…}, historia: [{numer, akt, kto, kiedy}], wskazuja: [{od, cecha}]}',
+    'Daty (utworzono, zmieniono, kiedy) są w zapisie ISO 8601 w czasie UTC, więc porządkują się jak zwykłe napisy. numer to która to wersja rzeczy; wersja to znacznik do zmiany.',
     '  read ksztalty -> {ksztalty: [{dla, opis, tytul, cechy: {nazwa: {typ, opis, wymagana}}, rzecz}]}',
     '  read ja       -> {uczestnik: {imie, rola}, gosc: {rzecz, nazwa}}',
     'Pole obszar w rzeczy to identyfikator rzeczy rodzaju obszar/1 (jej nazwa stoi w cesze nazwa) albo null, czyli obszar główny.',
@@ -384,9 +426,11 @@ export function umowaOkna() {
     '</script></body></html>',
     '',
     'JAK GO ZGŁOSIĆ: /co-tu-jest, punkt 5d (dwa żądania: kod, potem rzecz rodzaju gosc/1). Potem otwórz stronę główną (/): gość jest na liście i otwiera się w oknie.',
-    'Sprawdzenie bez przeglądarki: /gosc/<zapis> oddaje dokładnie ten plik, a /rzecz/<id gościa> pokazuje jego cechy.',
+    'Sprawdzenie bez przeglądarki: od chwili zgłoszenia gościa /gosc/<zapis> oddaje dokładnie ten plik, a /rzecz/<id gościa> pokazuje jego cechy.',
+    'Gospodarz wysyła hi po załadowaniu ramki; jeśli gość wyśle hello wcześniej, też dobrze (hello można wysłać więcej niż raz).',
     '',
-    'CZEGO JESZCZE NIE MA: ruchów z okna (gość na razie tylko czyta), wołania czasowników gościa, okna w przestrzeni Startu, pamięci gościa.',
+    'CZEGO JESZCZE NIE MA: ruchów z okna (gość na razie tylko czyta), własnej tożsamości gościa przy czytaniu, wołania czasowników gościa,',
+    'osadzania jednego gościa w drugim, okna w przestrzeni Startu, pamięci gościa.',
     '',
   );
 }
