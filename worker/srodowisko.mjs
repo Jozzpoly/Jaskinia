@@ -1032,11 +1032,13 @@ export class Srodowisko {
     if (nazwaRodzaju(rodzaj) === 'kod') return blad(400, 'rodzaj kod jest zastrzeżony dla kodu gości; kod zapisuje się przez POST /api/srodowisko/kod, a gościa zgłasza jako rzecz rodzaju gosc/1');
     const wada = wadaSurowej(cechy);
     if (wada) return blad(400, 'cechy: ' + wada);
-    const byl = this._powtorzenie(kto, c);
-    if (byl) return byl;
+    // Kolejność ma znaczenie: kto nie ma tu prawa, słyszy to także przy ponowieniu dawnej czynności, a ponowienie
+    // oddaje uchwyt rzeczy tylko oczom, które ją widzą (niezależny atak, 17 XI 2026).
     const bez = this._bezPrawa(kto, przezZ(slad));
     if (bez) return bez;
     const widzi = this._oczy(kto, przezZ(slad));
+    const byl = this._powtorzenie(kto, c, widzi);
+    if (byl) return byl;
     // Rzecz, która z natury należy do innej (miejsce do widoku), leży zawsze w tym samym obszarze co ona. Inaczej prawo
     // do jej zmiany liczyłoby się gdzie indziej niż prawo do rzeczy, której dotyczy: agent kładłby położenia w obszarze,
     // w którym prowadzi sam, a widok właściciela i tak by je brał (znalezione na podglądzie 17 XI).
@@ -1059,7 +1061,7 @@ export class Srodowisko {
       if (stara && zKlucza && !widzi(id)) return blad(409, 'rzecz o tym kluczu już jest, ale leży tam, dokąd nie masz wstępu: nie da się jej stąd ani zobaczyć, ani zmienić');
       // Rzecz o tym kluczu już jest: to zmiana, nie nowa rzecz, więc potrzebna jest wersja jak przy każdej zmianie.
       if (stara && zKlucza && !('wersja' in c)) return blad(409, `rzecz o tym kluczu już jest (${id}); żeby ją zmienić, podaj jej wersję z odczytu albo "wersja":"dowolna"`, { rzecz: id, wersja: stara.wersja });
-      if (stara && !zKlucza) return blad(409, 'ten op założył już inną rzecz; nowa rzecz potrzebuje nowego op', { rzecz: id });
+      if (stara && !zKlucza) return blad(409, 'ten op założył już inną rzecz; nowa rzecz potrzebuje nowego op', widzi(id) ? { rzecz: id } : {});
     }
     if (stara && !('wersja' in c)) return blad(400, 'wersja: numer z pola wersja Twojego ostatniego odczytu tej rzeczy; bez niego nie wiadomo, czy nie nadpisujesz cudzej zmiany', { wersja: stara.wersja });
     const rola = this.rola(kto);
@@ -1081,11 +1083,15 @@ export class Srodowisko {
   // Ponowienie tej samej czynności (ten sam uczestnik, ten sam op): oddajemy to, co stało się za pierwszym razem,
   // zamiast oceniać ruch drugi raz w innym już świecie (po zmianie ustawienia obszaru albo po rozstrzygnięciu).
   // Inna czynność pod tym samym op to konflikt, nigdy cichy sukces.
-  _powtorzenie(kto, c) {
+  _powtorzenie(kto, c, widzi = null) {
     const akt = (op) => this.q(`SELECT a.nr, a.glowa, a.zapis, z.rodzaj, z.tresc FROM akty a JOIN zapisy z ON z.id = a.zapis WHERE a.kto = ? AND a.op = ? AND a.co = 'przesun'`, kto, op)[0];
     const a = akt(c.op + '.p');
     if (!a || !String(a.glowa).startsWith('rzecz:')) return null;
     const id = a.glowa.slice(6);
+    // Rzecz, którą ta czynność kiedyś założyła albo zmieniła, mogła potem trafić tam, gdzie piszący jej nie widzi;
+    // przy ruchu z okna czynności wszystkich otwierających mają wspólnego aktora, więc "ta sama czynność" bywa cudza.
+    // Wtedy ponowienie nie oddaje uchwytu: mówi tylko, że op jest zajęty.
+    if (widzi && !widzi(id)) return blad(409, 'ten op należy już do innej czynności; nowa czynność potrzebuje nowego op');
     let t = {};
     try { t = JSON.parse(a.tresc) || {}; } catch { /* zostaje puste */ }
     const cechy = t.cechy && typeof t.cechy === 'object' ? t.cechy : {};
@@ -1120,11 +1126,13 @@ export class Srodowisko {
     if (typeof c.rzecz !== 'string' || !ID.test(c.rzecz)) return blad(400, 'rzecz: identyfikator rzeczy (26 znaków)');
     if (!(Number.isInteger(c.wersja) || c.wersja === 'dowolna')) return blad(400, 'wersja: liczba z pola wersja Twojego ostatniego odczytu tej rzeczy albo "dowolna"');
     if ('powod' in c && typeof c.powod !== 'string') return blad(400, 'powod: napis');
-    const byl = this._powtorzenie(kto, c);
-    if (byl) return byl;
+    // Kolejność ma znaczenie: kto nie ma tu prawa, słyszy to także przy ponowieniu dawnej czynności, a ponowienie
+    // oddaje uchwyt rzeczy tylko oczom, które ją widzą (niezależny atak, 17 XI 2026).
     const bez = this._bezPrawa(kto, przezZ(slad));
     if (bez) return bez;
     const widzi = this._oczy(kto, przezZ(slad));
+    const byl = this._powtorzenie(kto, c, widzi);
+    if (byl) return byl;
     const stara = widzi(c.rzecz);
     if (!stara) return blad(404, `nie ma rzeczy ${c.rzecz}`);
     const wersja = c.wersja === 'dowolna' ? stara.wersja : c.wersja;
@@ -1186,12 +1194,20 @@ export class Srodowisko {
     // Propozycja kosztuje uwagę właściciela, więc jeden uczestnik nie może ich mnożyć bez końca: jedna czekająca na
     // rzecz i najwyżej NAJWIECEJ_CZEKAJACYCH naraz (uwaga drugiej linii do PR 35: agent w pętli zalałby listę "czeka").
     if (stara) {
-      const juz = this.spis({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka', rzecz: stara.id }, limit: 1 })[0];
+      // przy ruchu z okna "ta sama propozycja" to ta sama rzecz, ten sam gość i ten sam otwierający: gość jest wspólny
+      // dla wszystkich, którzy otwierają to okno
+      const juz = this.spis({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka', rzecz: stara.id, ...(przez ? { przez } : {}) }, limit: 1 })[0];
       if (juz) return blad(409, `masz już czekającą propozycję zmiany tej rzeczy (${juz.id}); wycofaj ją (co: odrzuc) albo poczekaj na rozstrzygnięcie`, { propozycja: juz.id });
     }
-    if (this.ile({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka' } }) >= NAJWIECEJ_CZEKAJACYCH) return blad(429, `masz już ${NAJWIECEJ_CZEKAJACYCH} czekających propozycji; wycofaj którąś (co: odrzuc) albo poczekaj, aż zostaną rozstrzygnięte`);
-    // Propozycje z okien liczą się też temu, kto okna otworzył: inaczej wiele narzędzi w jednych rękach zalałoby listę.
-    if (przez && this.ile({ rodzaj: 'propozycja/1', gdzie: { przez, stan: 'czeka' } }) >= NAJWIECEJ_CZEKAJACYCH) return blad(429, `z okien otwartych przez ${przez} czeka już ${NAJWIECEJ_CZEKAJACYCH} propozycji; najpierw trzeba je rozstrzygnąć`);
+    // Jeden licznik na uczestnika: jego propozycje złożone wprost i te z okien, które otworzył, razem. Przy ruchu
+    // z okna liczy się otwierający, nie gość: gość jest wspólny dla wszystkich otwierających, więc licznik na gościa
+    // pozwalał jednemu uczestnikowi zająć limit całego narzędzia (okno właściciela dostawało 429), a dwa osobne
+    // liczniki dawały jednemu uczestnikowi dwa limity naraz (niezależny atak, 17 XI 2026).
+    const czyja = przez || kto;
+    const czeka = this.ile({ rodzaj: 'propozycja/1', gdzie: { od: czyja, stan: 'czeka' } }) + this.ile({ rodzaj: 'propozycja/1', gdzie: { przez: czyja, stan: 'czeka' } });
+    if (czeka >= NAJWIECEJ_CZEKAJACYCH) return blad(429, przez
+      ? `z ruchów uczestnika ${przez} i z okien, które otworzył, czeka już ${NAJWIECEJ_CZEKAJACYCH} propozycji; najpierw trzeba je rozstrzygnąć`
+      : `masz już ${NAJWIECEJ_CZEKAJACYCH} czekających propozycji (razem z tymi z okien, które otworzyłeś); wycofaj którąś (co: odrzuc) albo poczekaj, aż zostaną rozstrzygnięte`);
     // propozycja: leży tam, gdzie leży rzecz, której dotyczy (albo tam, gdzie miała powstać nowa)
     const propId = await idZ('propozycja', kto, op);
     const obszarProp = stara ? stara.obszar : obszar;
@@ -1262,13 +1278,13 @@ export class Srodowisko {
   async _rozstrzygnij(kto, c, slad) {
     if (typeof c.propozycja !== 'string' || !ID.test(c.propozycja)) return blad(400, 'propozycja: identyfikator propozycji (26 znaków)');
     if ('powod' in c && typeof c.powod !== 'string') return blad(400, 'powod: napis');
-    const byl = this._powtorzenie(kto, c);
-    if (byl) return byl;
     const rola = this.rola(kto);
     if (rola === 'zwiedzajacy') return blad(401, this.powodBrakuPrawa(kto, 'do rozstrzygnięcia propozycji'));
     // Propozycję z obszaru, którego rozstrzygający nie widzi, zna tylko jej autor (i ten, kto otworzył okno, z którego
     // wyszła): może ją wycofać. Dla każdego innego brzmi jak propozycja, której nie ma.
     const widzi = this._oczy(kto);
+    const byl = this._powtorzenie(kto, c, widzi);
+    if (byl) return byl;
     const surowa = this.rzecz(c.propozycja);
     const swoja = !!surowa && surowa.rodzaj === 'propozycja/1' && (surowa.cechy.od === kto || surowa.cechy.przez === kto);
     const pr = swoja ? surowa : widzi(c.propozycja);

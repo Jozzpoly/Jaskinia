@@ -124,7 +124,7 @@ test('G7. propozycje z okien liczą się też temu, kto je otworzył: drugie nar
   assert.equal(drugie.ok, true, JSON.stringify(drugie));
   const obejscie = await s.ruch('agent-a', { op: 'gosc-test-g7-obejscie', ...slowo(projekt, 'bokiem'), obszar: null }, { gosc: drugie.rzecz });
   assert.equal(obejscie.status, 429, JSON.stringify(obejscie));
-  assert.match(obejscie.blad, /z okien otwartych przez agent-a/);
+  assert.match(obejscie.blad, /z ruchów uczestnika agent-a i z okien, które otworzył/);
   // otwierający może wycofać propozycję swojego okna, ale nie przyjąć
   const jedna = s.spis({ rodzaj: 'propozycja/1', gdzie: { przez: 'agent-a', stan: 'czeka' }, limit: 1 })[0];
   const przyjecie = await s.ruch('agent-a', { op: 'gosc-test-g7-przyjmij', co: 'przyjmij', propozycja: jedna.id });
@@ -187,4 +187,19 @@ test('G11. okno otwarte przez uczestnika z odebranym wstępem nie pisze; po przy
   assert.equal(oddanie.ok, true, JSON.stringify(oddanie));
   const po = await s.ruch('agent-a', { op: 'gosc-test-g11-b', ...slowo(projekt) }, { gosc: slowa.id });
   assert.equal(po.skutek, 'polozone', JSON.stringify(po));
+});
+
+test('G12. limit propozycji jest jeden na uczestnika: okno nie daje drugiego limitu i jeden uczestnik nie zajmuje limitu narzędzia innym', async () => {
+  const { s, slowa, projekt } = await swiat();
+  // dwadzieścia propozycji agenta przez narzędzie: narzędzie zostaje wolne dla właściciela
+  for (let i = 0; i < 20; i++) {
+    const w = await s.ruch('agent-a', { op: 'gosc-test-g12-okno-' + i, ...slowo(projekt, 'z okna ' + i), obszar: null }, { gosc: slowa.id });
+    assert.equal(w.skutek, 'propozycja', i + ': ' + JSON.stringify(w));
+  }
+  const wlasciciel = await s.ruch('jozz', { op: 'gosc-test-g12-wlasciciel', ...slowo(projekt, 'okno właściciela'), obszar: null }, { gosc: slowa.id });
+  assert.equal(wlasciciel.skutek, 'propozycja', 'to samo narzędzie w oknie właściciela dalej pisze: ' + JSON.stringify(wlasciciel));
+  // a agent, który wyczerpał limit oknem, nie dołoży już propozycji wprost
+  const wprost = await s.ruch('agent-a', { op: 'gosc-test-g12-wprost', ...slowo(projekt, 'wprost'), obszar: null });
+  assert.equal(wprost.status, 429, JSON.stringify(wprost));
+  assert.match(wprost.blad, /razem z tymi z okien/);
 });
