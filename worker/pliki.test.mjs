@@ -99,31 +99,38 @@ test('PL3. droga bajtów do strony: te same bajty, typ z rzeczy, nigdy jako stro
   if (widok) assert.equal((await pytanie('/api/srodowisko/bajty?rzecz=' + widok.id)).status, 404);
 });
 
-test('PL4. wersja przypięta odciskiem: po podmianie pliku stary odcisk dalej daje stare bajty, a obcy odcisk niczego nie otwiera', async () => {
+test('PL4. treść pliku jest niezmienna: nowe bajty to nowy plik; plik wskazany z odciskiem oddaje bajty także po odłożeniu, a obcy odcisk niczego nie otwiera', async () => {
   const { s, ok, bajty, plik, pytanie } = await swiat();
   const stare = bajty(2000, 1), nowe = bajty(2500, 2);
-  const p = ok(await plik('jozz', 'pl4-plik', stare));
-  const odciskStary = s.rzecz(p.rzecz).cechy.tresc;
-  const z = ok(await s.bajty('jozz', nowe, { op: 'pl4-nowe-bajty' }));
-  const rz = s.rzecz(p.rzecz);
-  ok(await s.ruch('jozz', { op: 'pl4-podmiana', co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: 'plik/1', cechy: { ...rz.cechy, rozmiar: nowe.length, tresc: z.zapis } }));
-  const dzis = await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz);
-  assert.deepEqual(new Uint8Array(await dzis.arrayBuffer()), nowe);
-  const przypiety = await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz + '&odcisk=' + odciskStary);
+  const p = ok(await plik('agent-a', 'pl4-plik', stare));
+  const odcisk = s.rzecz(p.rzecz).cechy.tresc;
+  const z = ok(await s.bajty('agent-a', nowe, { op: 'pl4-nowe-bajty' }));
+  let rz = s.rzecz(p.rzecz);
+  const podmiana = await s.ruch('agent-a', { op: 'pl4-podmiana', co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: 'plik/1', cechy: { ...rz.cechy, rozmiar: nowe.length, tresc: z.zapis } });
+  assert.equal(podmiana.status, 422, JSON.stringify(podmiana));
+  assert.match(podmiana.blad, /treść pliku jest niezmienna/);
+  assert.equal((await s.ruch('jozz', { op: 'pl4-podmiana-wlasciciela', co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: 'plik/1', cechy: { ...rz.cechy, typ: 'font/woff' } })).status, 422, 'także właścicielowi');
+  // nazwę i opis da się zmienić; mają historię jak każda treść
+  ok(await s.ruch('agent-a', { op: 'pl4-nazwa', co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: 'plik/1', cechy: { ...rz.cechy, nazwa: 'Krój próbny, poprawiona nazwa', opis: 'OFL' } }));
+  assert.equal(s.historia(p.rzecz).length, 2);
+  const przypiety = await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz + '&odcisk=' + odcisk);
   assert.equal(przypiety.status, 200);
-  assert.deepEqual(new Uint8Array(await przypiety.arrayBuffer()), stare, 'przypięta wersja nie zmienia się po podmianie pliku');
+  assert.deepEqual(new Uint8Array(await przypiety.arrayBuffer()), stare);
   assert.equal(przypiety.headers.get('cache-control'), 'private, max-age=31536000, immutable');
-  const nowyPrzypiety = await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz + '&odcisk=' + z.zapis);
-  assert.deepEqual(new Uint8Array(await nowyPrzypiety.arrayBuffer()), nowe);
-  // odcisk zapisu, który nigdy nie był wersją tej rzeczy, niczego nie otwiera (także gdy taki zapis istnieje)
-  const obcy = ok(await s.bajty('jozz', bajty(50, 3), { op: 'pl4-obce-bajty' }));
-  assert.equal((await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz + '&odcisk=' + obcy.zapis)).status, 404);
-  // cofnięcie pliku wraca poprzednie bajty jak każdą inną treść
-  ok(await s.ruch('jozz', { op: 'pl4-cofnij', co: 'cofnij', rzecz: p.rzecz, wersja: 'dowolna' }));
-  assert.deepEqual(new Uint8Array(await (await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz)).arrayBuffer()), stare);
+  // odcisk innego zapisu (nawet istniejącego) niczego nie otwiera
+  assert.equal((await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz + '&odcisk=' + z.zapis)).status, 404);
+  assert.equal((await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz + '&odcisk=' + 'a'.repeat(64))).status, 404);
+  // odłożony plik znika z list i nie oddaje bajtów "po prostu", ale temu, kto wskazał go z odciskiem, dalej je daje:
+  // ten, kto prowadzi tam, gdzie plik leży, nie zabierze kroju, który ktoś przyjął
+  rz = s.rzecz(p.rzecz);
+  ok(await s.ruch('agent-a', { op: 'pl4-odloz', co: 'odloz', rzecz: rz.id, wersja: rz.wersja }));
+  assert.equal((await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz)).status, 404);
+  const poOdlozeniu = await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz + '&odcisk=' + odcisk);
+  assert.equal(poOdlozeniu.status, 200);
+  assert.deepEqual(new Uint8Array(await poOdlozeniu.arrayBuffer()), stare);
 });
 
-test('PL5. krój z pliku: wartość kroju przypina plik odciskiem; plik musi być krojem, a odcisk jego dzisiejszą wersją', async () => {
+test('PL5. krój z pliku: wartość kroju wskazuje plik razem z odciskiem; plik musi być krojem, a odcisk jego odciskiem', async () => {
   const { s, ok, bajty, plik } = await swiat();
   const p = ok(await plik('jozz', 'pl5-kroj', bajty(3000, 21), { nazwa: 'Anybody' }));
   const odcisk = s.rzecz(p.rzecz).cechy.tresc;
@@ -134,7 +141,7 @@ test('PL5. krój z pliku: wartość kroju przypina plik odciskiem; plik musi by�
   assert.deepEqual(policzUstawienia(s.dla('agent-a')).wartosci['wyglad.kroj.imiona'].wartosc, dobra, 'twarz dostaje wskazanie razem z odciskiem');
   for (const [op, w, wzor] of [
     ['pl5-obraz-jako-kroj', { rodzina: 'X', plik: { rzecz: obraz.rzecz, odcisk: s.rzecz(obraz.rzecz).cechy.tresc } }, /ma być krojem/],
-    ['pl5-zly-odcisk', { rodzina: 'X', plik: { rzecz: p.rzecz, odcisk: 'a'.repeat(64) } }, /dzisiejszej wersji/],
+    ['pl5-zly-odcisk', { rodzina: 'X', plik: { rzecz: p.rzecz, odcisk: 'a'.repeat(64) } }, /nie jest odciskiem tego pliku/],
     ['pl5-nie-ma-pliku', { rodzina: 'X', plik: { rzecz: 'zzzzzzzzzzzzzzzzzzzzzzzzzz', odcisk } }, /nie ma pliku/],
     ['pl5-zly-ksztalt', { rodzina: 'X', plik: 'Anybody.woff2' }, /plik kroju to/],
   ]) {
@@ -144,9 +151,8 @@ test('PL5. krój z pliku: wartość kroju przypina plik odciskiem; plik musi by�
   }
   assert.ok(pasuje({ typ: 'kroj' }, dobra), 'twarz przyjmuje krój z plikiem');
   assert.ok(!pasuje({ typ: 'kroj' }, { rodzina: 'X', plik: { rzecz: 'krotkie', odcisk } }));
-  // podmiana pliku nie zmienia tego, co wartość przypięła: twarz dalej dostaje stary odcisk
-  const z = ok(await s.bajty('jozz', bajty(3100, 23), { op: 'pl5-nowe-bajty' }));
-  const rz = s.rzecz(p.rzecz);
-  ok(await s.ruch('jozz', { op: 'pl5-podmiana', co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: 'plik/1', cechy: { ...rz.cechy, rozmiar: 3100, tresc: z.zapis } }));
-  assert.equal(policzUstawienia(s.dla('agent-a')).wartosci['wyglad.kroj.imiona'].wartosc.plik.odcisk, odcisk);
+  // nowe bajty to nowy plik: wartość dalej wskazuje ten, który ktoś przyjął
+  const nowy = ok(await plik('jozz', 'pl5-kroj-drugi', bajty(3100, 23), { nazwa: 'Anybody 2' }));
+  assert.notEqual(nowy.rzecz, p.rzecz);
+  assert.deepEqual(policzUstawienia(s.dla('agent-a')).wartosci['wyglad.kroj.imiona'].wartosc.plik, { rzecz: p.rzecz, odcisk });
 });

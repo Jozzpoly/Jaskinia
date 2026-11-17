@@ -169,12 +169,12 @@ export function sprawdzUstawienie(s, rodzaj, cechy, widzi, obszar = undefined) {
     if (cel === null) {
       const zla = wadaWartosci(d, w, widzi);
       if (zla || d.typ !== 'kroj' || !w.plik) return zla;
-      // Krój z pliku: plik musi istnieć dla piszącego i być krojem, a odcisk ma wskazywać jego dzisiejszą wersję. Wartość
-      // przypina tę wersję: późniejsza podmiana pliku nie zmienia kroju tam, gdzie ktoś go już przyjął.
+      // Krój z pliku: plik musi istnieć dla piszącego i być krojem, a odcisk ma być jego odciskiem. Treść pliku jest
+      // niezmienna, więc krój, który ktoś przyjął, nie zmieni się bez zmiany samej wartości.
       const f = widzi(w.plik.rzecz);
       if (!f || f.rodzaj !== 'plik/1' || f.odlozone) return `plik kroju: nie ma pliku ${w.plik.rzecz}`;
       if (!String(f.cechy.typ).startsWith('font/')) return `plik kroju ma typ ${f.cechy.typ}, a ma być krojem (font/woff2, font/woff, font/ttf albo font/otf)`;
-      if (f.cechy.tresc !== w.plik.odcisk) return 'plik kroju: odcisk nie wskazuje dzisiejszej wersji pliku';
+      if (f.cechy.tresc !== w.plik.odcisk) return 'plik kroju: odcisk nie jest odciskiem tego pliku';
       return null;
     }
     if (!NAZWA.test(cel)) return 'odwołanie to {"z": "<nazwa pokrętła>"}';

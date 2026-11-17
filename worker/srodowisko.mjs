@@ -1097,7 +1097,7 @@ export class Srodowisko {
     const wada = sprawdzUstawienie(this, rodzaj, cechy, widzi, obszar ?? null);
     if (wada) return blad(422, wada.blad, wada.bledy ? { bledy: wada.bledy } : {});
     // Plik: typ z zamkniętej listy, a rozmiar i odcisk muszą się zgadzać z zapisem, który wskazuje (worker/pliki.mjs).
-    const wadaPliku = sprawdzPlik(this, rodzaj, cechy);
+    const wadaPliku = sprawdzPlik(this, rodzaj, cechy, stara);
     if (wadaPliku) return blad(422, wadaPliku.blad);
     return { ok: true, ksztalt, nieznane };
   }
