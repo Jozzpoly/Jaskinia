@@ -43,3 +43,26 @@ się na karcie bez przeładowania, a obejście obserwatora faktów (71 nowych rz
 obecność, która budzi obiekt przy każdym otwarciu okna); gdy właściciel dostanie sesję zamiast klucza i przedstawianie
 się kluczem w pierwszej wiadomości przestanie być potrzebne; albo gdy zdarzenia będą musiały nieść treść zmiany,
 co wymaga prawa czytania liczonego dla każdego połączenia osobno.
+
+## Atak drugiej linii (17 XI 2026, Opus Code)
+
+`proba.mjs` sprawdza, czy kanał **robi, co obiecuje**. `atak.mjs` sprawdza, czy **nie robi nic ponadto** — i pisał
+go ktoś, kto kanału nie budował, bo autor własnego ataku zalicza swoją wyobraźnię, nie swój kod.
+
+```
+node proby/z3-kanal-na-zywo/atak.mjs <adres https> <klucz agenta>
+node proby/z3-kanal-na-zywo/atak-zalew.mjs <adres https>
+```
+
+Siedem prób: połączenie bez klucza, podanie własnego imienia w treści wiadomości, pięć złych kluczy po kolei,
+dwanaście złych kluczy **naraz** (wyścig wokół `await skrot`, gdzie licznik złych prób mógłby się gubić), obecność
+widziana przez zwiedzającego przy śmieciowych wartościach pola `rzecz`, śmieci i wiadomość 100 kB.
+
+`atak-zalew.mjs` istnieje osobno, bo jedna rzecz wyszła inaczej, niż mówi sprawdzian `Z6`: **granica wiadomości na
+minutę nie obejmuje napisu `ping`**, na który odpowiada sama platforma (automatyczna odpowiedź przy hibernacji),
+więc `przyjmijWiadomosc` nigdy się nie uruchamia. 90 × `ping` → połączenie stoi; 90 × `pong`, 90 × JSON, 90 × `"a"`
+→ 4429. Mechanizm jest zdrowy (ping nie budzi obiektu i nie kosztuje wiersza); **fałszywe jest zdanie o nim**,
+bo w Node automatycznej odpowiedzi nie ma i sprawdzian opisuje świat, którego pod adresem nie ma.
+
+**Warunek zburzenia tych skryptów:** gdy kanał zacznie nieść cokolwiek poza numerem aktu i obecnością, ten atak
+przestaje wystarczać i trzeba napisać nowy — ten pyta tylko o to, czy przez kanał nie przechodzi treść i imię.
