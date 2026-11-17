@@ -227,7 +227,15 @@
     $('wejscie-panel').hidden = true;
     zlyKlucz = null;
     przedstawSieKanalowi();
-    return odswiez().then(() => komunikat(klucz ? 'Jesteś jako ' + (opis.czytasz_jako.imie || '?') + ' (' + opis.czytasz_jako.rola + ').' : 'Wyszedłeś. Czytasz jako zwiedzający.'), (blad) => komunikat('Nie udało się wejść: ' + blad.message, true));
+    return odswiez().then(async () => {
+      komunikat(klucz ? 'Jesteś jako ' + (opis.czytasz_jako.imie || '?') + ' (' + opis.czytasz_jako.rola + ').' : 'Wyszedłeś. Czytasz jako zwiedzający.');
+      // Właściciel, który właśnie wszedł, a nie ma jeszcze żadnego urządzenia w drzwiach: zostawiamy panel
+      // OTWARTY z guzikiem „Dodaj to urządzenie". Inaczej panel znika i trzeba go otworzyć drugi raz, żeby
+      // znaleźć krok, o którym nikt jeszcze nie wie, że istnieje - a to jest ten moment, w którym człowiek odpada.
+      if (!klucz || !opis || opis.czytasz_jako.rola !== 'wlasciciel' || !window.Drzwi || !window.Drzwi.umieDotkniecie()) return;
+      await dajStanDrzwi();
+      if (stanDrzwi && stanDrzwi.sekret_sesji_ustawiony && stanDrzwi.poswiadczen === 0) { rysujWejscie(); $('wejscie-panel').hidden = false; }
+    }, (blad) => komunikat('Nie udało się wejść: ' + blad.message, true));
   }
   // Stan drzwi (czy w ogóle jest czym wejść) pytamy RAZ, przy pierwszym otwarciu panelu. Guzik, który po
   // naciśnięciu mówi „tu jeszcze nic nie ma", jest gorszy niż brak guzika: to jest narzędzie do zmniejszania
