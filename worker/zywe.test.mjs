@@ -296,6 +296,12 @@ test('Z12. pamięć numeru aktu i liczb: po każdym ruchu, odłożeniu, wwozie i
   assert.equal(s.ile({ rodzaj: 'slowo/1', odlozone: 'tak' }), 1, 'pytanie o odłożone idzie do bazy, nie do pamiętanych liczb');
   assert.equal(s.ile({ rodzaj: 'slowo' }), przed, 'sama nazwa rodzaju bez pokolenia też idzie do bazy');
   assert.throws(() => s.liczby().push({ rodzaj: 'x/1', ile: 1 }), 'pamiętanych liczb nie da się zmienić w miejscu');
+  // liczby z pamiętanego przekroju zgadzają się z tym, co daje czytanie spisu, dla każdego prostego pytania
+  const obszarNowe = r.meta('obszar_nowe');
+  for (const f of [{}, { odlozone: 'tak' }, { odlozone: 'razem' }, { obszar: null }, { obszar: obszarNowe }, { obszar: obszarNowe, odlozone: 'razem' }, { rodzaj: 'zdolnosc/1' }, { rodzaj: 'slowo/1', odlozone: 'razem' }, { rodzaj: 'slowo/1', obszar: null, odlozone: 'tak' }, { rodzaj: 'nie-ma/1' }]) {
+    assert.equal(s.ile(f), s.wszystkie(f).length, 'pytanie ' + JSON.stringify(f));
+  }
+  assert.deepEqual(s.liczby(), r.q(`SELECT rodzaj, COUNT(*) AS ile FROM rzeczy WHERE odlozone = 0 GROUP BY rodzaj ORDER BY rodzaj`).map((w) => ({ rodzaj: w.rodzaj, ile: w.ile })));
   // zapis starymi drzwiami jądra też kasuje pamięć numeru aktu
   const stare = await r.wykonaj('jozz', { op: 'zywe-test-z12-stare', co: 'zapisz', rodzaj: 'notatka/1', tresc: '{"a":1}' });
   assert.equal(stare.ok, true, JSON.stringify(stare));
