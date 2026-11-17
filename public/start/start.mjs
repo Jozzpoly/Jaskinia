@@ -8,6 +8,7 @@
 // rzeczy z ręki, przy puszczeniu, jako rzecz rodzaju miejsce w widoku Start (więc ma autora, historię i prawa z obszaru).
 import { Drzwi } from './drzwi.mjs';
 import { NAZWY_POKRETEL, Pokretla, KOLORY, RODZAJE_USTAWIEN, krojNaCss, polaczPodglad } from '../pokretla.mjs';
+import { rodzinaKroju } from '../kroje.mjs';
 import { zbudujSwiat, ukladStaly, poleCieklego, ukladCiekly, miedzy, lagodnie, krotkieImie, zywosc, galezieWPolu, trafienie,
   kolejnoscRysowania, naEkran, naSwiat, kameraNa, przybliz, KARTA, SKALA } from './swiat.mjs';
 
@@ -77,11 +78,14 @@ function zastosujWyglad() {
   for (const n of KOLORY) st.setProperty('--' + n, String(P.kolor(n, system)));
   st.setProperty('color-scheme', P.ciemna(system) ? 'dark' : 'light');
   const tekst = P.kroj('tekst'), imiona = P.kroj('imiona'), css = krojNaCss(tekst);
-  KROJ = tekst.rodzina;
-  KROJ_IMION = imiona.rodzina;
+  // Krój z pliku w Miejscu: bajty przychodzą drzwiami i stają się krojem o własnej nazwie, który działa też na płótnie,
+  // z osiami i grubością; dopóki się ładuje albo gdy pliku nie widać, zostaje rodzina zapasowa z wartości.
+  const zBajtow = (k) => rodzinaKroju(k, { czytajBajty: (plik) => drzwi.bajty(plik), naGotowe: zastosujWyglad });
+  KROJ = zBajtow(tekst);
+  KROJ_IMION = zBajtow(imiona);
   GRUBOSC_IMION = imiona.grubosc === undefined ? 650 : Math.round(imiona.grubosc);
-  // strona bierze rodzinę, grubość i osie; płótno na razie rodzinę i grubość imion (osie na płótnie przyjdą z bajtami kroju)
-  document.body.style.fontFamily = css.rodzina;
+  // strona bierze rodzinę, grubość i osie; płótno rodzinę i grubość imion, a osie wtedy, gdy krój przyszedł z pliku
+  document.body.style.fontFamily = KROJ;
   document.body.style.fontWeight = css.grubosc;
   document.body.style.fontVariationSettings = css.osie;
   wczytajKolory();

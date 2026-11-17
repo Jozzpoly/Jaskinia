@@ -6,6 +6,7 @@ import { odpowiedz, wCronie } from './fakty.mjs';
 import { ktoTo, wczytajKlucze } from './klucze.mjs';
 import { skrot } from './miejsce.mjs';
 import { cialoTekstem, ZLE_KODOWANIE } from './srodowisko-http.mjs';
+import { NAJWIEKSZY_PLIK } from './pliki.mjs';
 import { ADRES_ZYWEGO } from './zywe.mjs';
 export { Miejsce } from './miejsce-do.mjs';
 
@@ -77,8 +78,18 @@ async function srodowisko(request, env, url) {
   if (request.method !== 'GET') {
     // Ścisłe dekodowanie tutaj, zanim treść pójdzie dalej jako tekst: po zwykłym dekodowaniu zły zapis znaków
     // byłby już nie do odróżnienia od poprawnej treści.
-    cialoZadania = await cialoTekstem(request);
-    if (cialoZadania === null) return json({ blad: ZLE_KODOWANIE.blad }, 400);
+    if (url.pathname === '/api/srodowisko/bajty') {
+      // Bajty pliku idą dalej tak, jak przyszły: to jedyne drzwi, których ciało nie jest tekstem. Granicę wielkości
+      // sprawdzamy już tutaj, zanim cokolwiek trafi do obiektu Miejsca.
+      const zaDuzy = (ile) => json({ blad: `plik ma ${ile} bajtów, a jeden plik może mieć najwyżej ${NAJWIEKSZY_PLIK}; magazynu na większe rzeczy jeszcze nie ma` }, 413);
+      const dlugosc = Number(request.headers.get('content-length'));
+      if (Number.isFinite(dlugosc) && dlugosc > NAJWIEKSZY_PLIK) return zaDuzy(dlugosc);
+      cialoZadania = await request.arrayBuffer();
+      if (cialoZadania.byteLength > NAJWIEKSZY_PLIK) return zaDuzy(cialoZadania.byteLength);
+    } else {
+      cialoZadania = await cialoTekstem(request);
+      if (cialoZadania === null) return json({ blad: ZLE_KODOWANIE.blad }, 400);
+    }
   }
   const dalej = new Request(request.url, { method: request.method, headers: naglowki, body: cialoZadania });
   return obiektMiejsca(env).fetch(dalej);

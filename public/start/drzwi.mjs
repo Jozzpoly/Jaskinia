@@ -29,6 +29,12 @@ export class Drzwi {
   get imie() { return this.opis ? this.opis.czytasz_jako.imie : null; }
   get rola() { return this.opis ? this.opis.czytasz_jako.rola : 'zwiedzajacy'; }
   naglowki(dod = {}) { return { accept: 'application/json', ...(this.klucz ? { authorization: 'Bearer ' + this.klucz } : {}), ...dod }; }
+  // Bajty pliku (np. kroju) w wersji przypiętej odciskiem: ta wersja się nie zmienia, więc przeglądarka może ją trzymać.
+  async bajty(plik) {
+    const o = await fetch('/api/srodowisko/bajty?rzecz=' + plik.rzecz + '&odcisk=' + plik.odcisk, { headers: this.naglowki({ accept: '*/*' }) });
+    if (!o.ok) throw new Error('nie ma pliku ' + plik.rzecz);
+    return o.arrayBuffer();
+  }
 
   async czytaj(sciezka) {
     let o = await fetch(sciezka, { headers: this.naglowki(), cache: 'no-store' });

@@ -695,7 +695,8 @@
   // zmianie, w biegu) i daje ręce panel: każde zadeklarowane pokrętło z polem według typu. W trakcie kręcenia zmiana
   // jest podglądem (bez zapisu; widzą ją też inne karty tego adresu), zapis idzie przy puszczeniu. Adres z ?bezpiecznie
   // zostawia wygląd domyślny.
-  let P = null, modulPokretel = null, podglad = null, ust = null, odciskUstawien = null, pytamOUstawienia = false;
+  let P = null, modulPokretel = null, modulKrojow = null, podglad = null, ust = null, odciskUstawien = null, pytamOUstawienia = false;
+  const bajtyPliku = async (plik) => { const o = await fetch('/api/srodowisko/bajty?rzecz=' + plik.rzecz + '&odcisk=' + plik.odcisk, { headers: naglowki({ accept: '*/*' }) }); if (!o.ok) throw new Error('nie ma pliku ' + plik.rzecz); return o.arrayBuffer(); };
   let pelneKiedy = 0, pelneZegar = null, pelneOdRazu = false;
   const PANEL_NAJCZESCIEJ_MS = 15000;
   const bezpiecznie = new URLSearchParams(location.search).has('bezpiecznie');
@@ -715,7 +716,8 @@
     for (const rola of P.role()) { const k = P.kolor(rola, systemCiemny()); if (typeof k === 'string') st.setProperty('--' + rola, k); }
     st.setProperty('color-scheme', P.ciemna(systemCiemny()) ? 'dark' : 'light');
     const css = modulPokretel.krojNaCss(P.kroj('tekst'));
-    document.body.style.fontFamily = css.rodzina;
+    // krój z pliku w Miejscu ładuje się z bajtów (public/kroje.mjs); do tego czasu zostaje rodzina zapasowa
+    document.body.style.fontFamily = modulKrojow ? modulKrojow.rodzinaKroju(P.kroj('tekst'), { czytajBajty: bajtyPliku, naGotowe: zastosujWyglad }) : css.rodzina;
     document.body.style.fontWeight = css.grubosc;
     document.body.style.fontVariationSettings = css.osie;
     for (const o of okna.values()) powiedzWyglad(o);
@@ -803,9 +805,27 @@
       // krój: rodzina jak w CSS i grubość; osie kroju zmiennego zostają, jakie były (zmiana osi ruchem, opis pod /ustawienia)
       const rodzina = el('input', { type: 'text', value: typeof obiekt.rodzina === 'string' ? obiekt.rodzina : '', 'aria-label': d.nazwa + ' (rodzina)', disabled: nieczynne });
       const grubosc = el('input', { type: 'number', min: '1', max: '1000', step: '10', value: obiekt.grubosc === undefined ? '' : String(obiekt.grubosc), placeholder: 'grubość', 'aria-label': d.nazwa + ' (grubość)', disabled: nieczynne });
-      const zloz = () => ({ rodzina: rodzina.value, ...(grubosc.value !== '' && Number.isFinite(Number(grubosc.value)) ? { grubosc: Number(grubosc.value) } : {}), ...(obiekt.osie ? { osie: obiekt.osie } : {}) });
+      const zloz = () => ({ rodzina: rodzina.value, ...(grubosc.value !== '' && Number.isFinite(Number(grubosc.value)) ? { grubosc: Number(grubosc.value) } : {}), ...(obiekt.osie ? { osie: obiekt.osie } : {}), ...(obiekt.plik ? { plik: obiekt.plik } : {}) });
       for (const p of [rodzina, grubosc]) p.addEventListener('change', () => { if (rodzina.value.trim()) ustaw(zloz()); });
-      pole = el('span', { klasa: 'ust-para' }, rodzina, grubosc);
+      // Krój z pliku: bajty wchodzą do Miejsca jako plik (rzecz plik/1), a wartość kroju przypina jego wersję odciskiem.
+      const wgraj = el('input', { type: 'file', accept: '.woff2,.woff,.ttf,.otf', 'aria-label': d.nazwa + ' (plik kroju)', disabled: nieczynne });
+      wgraj.addEventListener('change', async () => {
+        const f = wgraj.files && wgraj.files[0];
+        const typ = f && modulKrojow ? modulKrojow.typKroju(f.name) : null;
+        if (!f || !typ) { komunikat('Plik kroju ma mieć rozszerzenie woff2, woff, ttf albo otf.', true); return; }
+        try {
+          const o = await fetch('/api/srodowisko/bajty?op=' + nowyOp(), { method: 'POST', headers: naglowki({ 'content-type': typ, 'x-cialo': 'strona gospodarza' }), body: await f.arrayBuffer() });
+          const z = await o.json().catch(() => null);
+          if (!o.ok || !z || z.ok === false) { komunikat((z && z.blad) || 'Drzwi odpowiedziały: ' + o.status, true); return; }
+          const nazwa = f.name.replace(/\.[^.]+$/, '');
+          const rz = await ruch({ co: 'poloz', rodzaj: 'plik/1', cechy: { nazwa, typ, rozmiar: z.rozmiar, tresc: z.zapis } }, 'Plik kroju zapisany: ' + nazwa + '.');
+          if (!rz || rz.skutek === 'propozycja' || !rz.rzecz) return;
+          const stara = zloz();
+          await ustaw({ ...stara, rodzina: '"' + nazwa.replace(/["\\]/g, '') + '", ' + (stara.rodzina || 'sans-serif'), plik: { rzecz: rz.rzecz, odcisk: z.zapis } });
+        } catch (blad) { komunikat('Nie udało się wgrać pliku: ' + blad.message, true); }
+      });
+      const bezPliku = obiekt.plik && klucz ? el('button', { tekst: 'bez pliku', title: 'Zostaw rodzinę i grubość, przestań brać krój z pliku', klik: () => { const w = zloz(); return ustaw({ rodzina: w.rodzina, ...(w.grubosc !== undefined ? { grubosc: w.grubosc } : {}), ...(w.osie ? { osie: w.osie } : {}) }); } }) : null;
+      pole = el('span', { klasa: 'ust-para' }, rodzina, grubosc, obiekt.plik ? pod(d.nazwa, 'z pliku ' + String(obiekt.plik.odcisk).slice(0, 8)) : pod(d.nazwa, 'plik:'), wgraj, bezPliku);
     } else if (d.typ === 'sprezyna') {
       const czas = el('input', { type: 'range', min: '0', max: '2000', step: '10', value: String(Number(obiekt.czas) || 0), 'aria-label': d.nazwa + ' (czas)', disabled: nieczynne });
       const odbicie = el('input', { type: 'range', min: '0', max: '1', step: '0.01', value: String(Number(obiekt.odbicie) || 0), 'aria-label': d.nazwa + ' (odbicie)', disabled: nieczynne });
@@ -837,6 +857,7 @@
       ...[...grupy].map(([g, lista]) => { const det = el('details', { open: otwarte.has(g) ? true : null }, el('summary', {}, g + ' ', el('span', { klasa: 'ile', tekst: String(lista.length) })), el('ul', { klasa: 'lista ust' }, lista.map(wiersz))); det.dataset.grupa = g; return det; }));
     pudlo.hidden = false;
   }
+  import('/kroje.mjs').then((m) => { modulKrojow = m; zastosujWyglad(); }).catch(() => { /* bez tego modułu kroje zostają przy rodzinach, które urządzenie już ma */ });
   import('/pokretla.mjs').then((m) => {
     modulPokretel = m;
     P = new m.Pokretla({ bezpiecznie, naZmiane: zastosujWyglad });
