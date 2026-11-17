@@ -98,6 +98,17 @@ function obszary(s) {
   return wynik;
 }
 
+// Licznik przeczytanych wierszy stał w tym opisie od początku i nikt na niego nie spojrzał, dopóki 17 XI 2026
+// o 17:53 UTC całe konto nie stanęło na dobowym limicie ODCZYTÓW. Wiedza bez wyzwalacza nie jest wiedzą:
+// odtąd Miejsce, które samo zjadło znaczną część puli CAŁEGO konta, mówi to z siebie i dużym głosem, zamiast
+// czekać, aż ktoś porówna dwie liczby w jednym zdaniu.
+export const udzialKonta = (b) => (b && b.limit_konta && b.limit_konta.czytane ? (b.czytane || 0) / b.limit_konta.czytane : 0);
+export function ostrzezenieBudzetu(b) {
+  const u = udzialKonta(b);
+  if (u < 0.2) return '';
+  return ` UWAGA: samo to Miejsce przeczytało dziś ${Math.round(u * 100)}% dobowej puli CAŁEGO konta (wspólnej dla wszystkich podglądów). Gdy się wyczerpie, KAŻDA trasa dotykająca bazy oddaje 500 we wszystkich Miejscach naraz, aż do północy UTC.`;
+}
+
 function zmiany(s, od, limit = 40) {
   const akty = s.aktyRzeczy(od, limit + 1);
   const wiecej = akty.length > limit;
@@ -184,7 +195,7 @@ export function coTuJest(s, opcje = {}) {
     `Adres: ${o}   Stan na: ${dzien(d.miejsce.stan_na)}   Ostatni akt: ${d.miejsce.akt}`,
     `Czytasz jako: ${d.czytasz_jako.imie || 'zwiedzający'} (rola: ${R}; ${d.czytasz_jako.pewnosc})`,
     d.miejsce.podglad && 'TO JEST PODGLĄD: wszystko tutaj jest publiczne do czytania, a klucze próbne są jawne. Niczego prywatnego tu nie ma i nie wolno wkładać.',
-    d.budzet && `Budżet tego Miejsca dziś (doba UTC, ${d.budzet.dzien}): zapisane ${d.budzet.zapisane} wierszy bazy${d.budzet.limit_miejsca ? ` z ${d.budzet.limit_miejsca}, na które to Miejsce ma dziś zgodę` : ''}, przeczytane ${d.budzet.czytane}. Darmowy plan daje na dobę ${d.budzet.limit_konta.zapisane} zapisanych i ${d.budzet.limit_konta.czytane} czytanych wierszy wspólnie dla wszystkich Miejsc i podglądów; ten licznik zna tylko siebie. Koszt każdego żądania stoi w nagłówku odpowiedzi x-koszt.${d.budzet.przekroczony ? ' LIMIT TEGO MIEJSCA JEST WYCZERPANY: do północy UTC działa tylko czytanie.' : ''}`,
+    d.budzet && `Budżet tego Miejsca dziś (doba UTC, ${d.budzet.dzien}): zapisane ${d.budzet.zapisane} wierszy bazy${d.budzet.limit_miejsca ? ` z ${d.budzet.limit_miejsca}, na które to Miejsce ma dziś zgodę` : ''}, przeczytane ${d.budzet.czytane}. Darmowy plan daje na dobę ${d.budzet.limit_konta.zapisane} zapisanych i ${d.budzet.limit_konta.czytane} czytanych wierszy wspólnie dla wszystkich Miejsc i podglądów; ten licznik zna tylko siebie. Koszt każdego żądania stoi w nagłówku odpowiedzi x-koszt.${ostrzezenieBudzetu(d.budzet)}${d.budzet.przekroczony ? ' LIMIT TEGO MIEJSCA JEST WYCZERPANY: do północy UTC działa tylko czytanie.' : ''}`,
     'Ten tekst powstaje z danych w chwili, gdy o niego pytasz. Każdy adres zaczynający się od / dopisz do adresu wyżej.',
     '',
     '1. CO TO ZA MIEJSCE',

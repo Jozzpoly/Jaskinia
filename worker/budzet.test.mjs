@@ -143,3 +143,19 @@ test('B5. obserwator chodzi tylko pod adresami z listy: gdzie indziej nie ustawi
   await zad(bezListy, 'cokolwiek.przyklad.test', '/api/srodowisko/puls');
   assert.ok(st.alarm > 0);
 });
+
+test('B5. Miejsce, które zjadło znaczną część puli CAŁEGO konta, mówi to samo z siebie', async () => {
+  // Licznik przeczytanych wierszy stał w opisie od początku i nikt na niego nie spojrzał, dopóki 17 XI 2026
+  // o 17:53 UTC konto nie stanęło na limicie ODCZYTÓW: pięć podglądów naraz zaczęło oddawać 500. Liczba bez
+  // wyzwalacza nie jest ostrzeżeniem. Pytamy z dwóch stron: że milczy, gdy jest spokojnie, i krzyczy, gdy nie.
+  const { ostrzezenieBudzetu, udzialKonta } = await import('./opis.mjs');
+  const limit_konta = { czytane: 5000000, zapisane: 100000 };
+  assert.equal(ostrzezenieBudzetu({ czytane: 10000, limit_konta }), '', 'przy zwykłym ruchu nie straszy');
+  assert.equal(ostrzezenieBudzetu({ czytane: 999999, limit_konta }), '', 'tuż pod progiem też nie');
+  const duzo = ostrzezenieBudzetu({ czytane: 2500000, limit_konta });
+  assert.match(duzo, /50% dobowej puli CAŁEGO konta/);
+  assert.match(duzo, /wszystkich Miejscach naraz/, 'i mówi, co się stanie innym, bo to jest cała rzecz');
+  assert.equal(Math.round(udzialKonta({ czytane: 1250000, limit_konta }) * 100), 25);
+  assert.equal(udzialKonta(null), 0);
+  assert.equal(ostrzezenieBudzetu(null), '');
+});
