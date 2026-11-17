@@ -28,7 +28,8 @@
     if (!o.ok || !d || d.ok === false) throw new Error((d && (d.blad || d.error)) || 'odpowiedź ' + o.status);
     return d;
   };
-  // Zdanie o tym, co się właśnie stało (albo dlaczego się nie stało): zawsze widoczne, znika samo.
+  // Zdanie o tym, co się właśnie stało (albo dlaczego się nie stało): nakładka nad dokiem, więc nie przesuwa
+  // układu strony i palec nie trafia w pustkę. Dotknięcie ją zamyka; sama znika po kilku sekundach.
   function komunikat(tekst, zly = false) {
     const k = $('komunikat');
     if (!k) return;
@@ -38,19 +39,30 @@
     clearTimeout(komunikat.zegar);
     if (tekst) komunikat.zegar = setTimeout(() => { k.hidden = true; }, zly ? 12000 : 5000);
   }
+  $('komunikat').addEventListener('click', () => { clearTimeout(komunikat.zegar); $('komunikat').hidden = true; });
   let licznikOp = 0;
   const nowyOp = () => 'reka-' + Date.now().toString(36) + '-' + (++licznikOp).toString(36) + Math.random().toString(36).slice(2, 8);
   // Jeden ruch ręki przez te same drzwi, którymi chodzą agenci. Odpowiedź drzwi mówi po polsku, co się stało.
-  async function ruch(cialo, dobrze) {
+  // opcje.zrodlo: guzik, który wysłał ruch; on i jego sąsiedzi w grupie są nieczynni do końca ruchu (bez drugiego
+  // wysłania i bez dotknięcia starego stanu). opcje.sukces: co zrobić po przyjęciu ruchu, ZANIM strona się odświeży
+  // (np. wyczyścić szkic pola, żeby przerysowanie nie pokazało starego tekstu).
+  async function ruch(cialo, dobrze, opcje = {}) {
     if (!klucz) { komunikat('Żeby coś zmienić, najpierw wejdź: guzik "Wejdź" na górze strony.', true); return null; }
+    const grupa = opcje.zrodlo && opcje.zrodlo.parentElement ? [...opcje.zrodlo.parentElement.querySelectorAll('button, textarea')] : [];
+    const bylo = grupa.map((x) => x.disabled);
+    grupa.forEach((x) => { x.disabled = true; });
     try {
       const o = await fetch('/api/srodowisko/ruch', { method: 'POST', headers: naglowki({ 'content-type': 'application/json', 'x-cialo': 'strona gospodarza' }), body: JSON.stringify({ op: nowyOp(), ...cialo }) });
       const d = await o.json().catch(() => null);
       if (!o.ok || !d || d.ok === false) { komunikat((d && d.blad) || 'Drzwi odpowiedziały: ' + o.status, true); return null; }
-      komunikat(d.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (d.powod || 'czeka na rozstrzygnięcie') + ').' : (dobrze || 'Zrobione.'));
-      await odswiez();
+      if (opcje.sukces) opcje.sukces();
+      let zdanie = d.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (d.powod || 'czeka na rozstrzygnięcie') + ').' : (dobrze || 'Zrobione.');
+      // Najpierw ekran, potem zdanie o skutku: inaczej przez chwilę strona mówi dwie różne rzeczy.
+      try { await odswiez(); if (kr.id) await odswiezKarte(); } catch (blad) { zdanie += ' (Strony nie udało się odświeżyć: ' + blad.message + ')'; }
+      komunikat(zdanie);
       return d;
     } catch (blad) { komunikat('Nie udało się połączyć: ' + blad.message, true); return null; }
+    finally { grupa.forEach((x, i) => { x.disabled = bylo[i]; }); }
   }
   const kiedy = (iso) => {
     const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
@@ -225,17 +237,57 @@
   }
   const jestemWlascicielem = () => Boolean(opis && klucz && opis.czytasz_jako.rola === 'wlasciciel');
   const rzeczO = (id) => rzeczy.find((r) => r.id === id) || null;
-  // Małe pole z jednym guzikiem: rozwija się pod wierszem albo kartą, wysyła i zwija się samo.
-  function pole(napis, podpowiedz, wyslij) {
-    const tekst = el('textarea', { rows: '2', placeholder: podpowiedz, 'aria-label': podpowiedz });
-    const pudlo = el('div', { klasa: 'pole', hidden: true }, tekst, el('button', { klasa: 'glowny', tekst: napis, klik: async () => { const w = tekst.value.trim(); if (!w) return; if (await wyslij(w)) { tekst.value = ''; pudlo.hidden = true; } } }));
-    return { pudlo, pokaz: () => { pudlo.hidden = !pudlo.hidden; if (!pudlo.hidden) tekst.focus(); } };
+
+  // --- to, co ręka właśnie robi, przeżywa przerysowanie ------------------------------------------------------------
+  // Strona przerysowuje całą treść przy każdej zmianie w Miejscu (niedługo często). Wpisany tekst, otwarte pola,
+  // rozwinięte <details>, fokus i przewinięcie nie mogą przez to znikać. Szkice trzymamy poza elementami.
+  const szkice = new Map();          // klucz pola -> { tekst, otwarte }
+  const rozwiniete = new Set();      // rodzaje rozwiniętych <details>
+  let pokazWszystkieNowe = false;
+  function zachowaj(przewijany, buduj) {
+    const a = document.activeElement;
+    const fk = a && a.dataset ? a.dataset.pole : null;
+    const zaznaczenie = fk && 'selectionStart' in a ? [a.selectionStart, a.selectionEnd] : null;
+    const y = window.scrollY, gora = przewijany ? przewijany.scrollTop : 0;
+    buduj();
+    if (przewijany) przewijany.scrollTop = gora;
+    if (window.scrollY !== y) window.scrollTo(0, y);
+    if (fk) {
+      const n = document.querySelector('[data-pole="' + CSS.escape(fk) + '"]');
+      if (n && n.offsetParent !== null) { n.focus({ preventScroll: true }); if (zaznaczenie) { try { n.setSelectionRange(zaznaczenie[0], zaznaczenie[1]); } catch { /* pole bez zaznaczenia */ } } }
+    }
+  }
+  // Małe pole z jednym guzikiem: rozwija się pod wierszem albo kartą, wysyła i zwija się samo. Szkic (tekst i to, czy
+  // pole jest otwarte) żyje pod kluczem, więc nowy egzemplarz pola po przerysowaniu wraca do tego, co ręka zostawiła.
+  // wyslij(tekst, opcje) ma oddać ruch(…, opcje): wtedy guzik jest nieczynny w trakcie, a po sukcesie szkic znika.
+  function pole(klucz, napis, podpowiedz, wyslij) {
+    const sz = szkice.get(klucz) || { tekst: '', otwarte: false };
+    const tekst = el('textarea', { rows: '2', placeholder: podpowiedz, 'aria-label': podpowiedz, 'data-pole': klucz });
+    tekst.value = sz.tekst;
+    const zapisz = () => { if (tekst.value || !pudlo.hidden) szkice.set(klucz, { tekst: tekst.value, otwarte: !pudlo.hidden }); else szkice.delete(klucz); };
+    tekst.addEventListener('input', zapisz);
+    const pudlo = el('div', { klasa: 'pole', hidden: !sz.otwarte }, tekst, el('button', { klasa: 'glowny', tekst: napis, klik: async (e) => {
+      const w = tekst.value.trim(); if (!w) return;
+      if (await wyslij(w, { zrodlo: e.currentTarget, sukces: () => szkice.delete(klucz) })) { tekst.value = ''; pudlo.hidden = true; szkice.delete(klucz); }
+    } }));
+    return { pudlo, pokaz: () => { pudlo.hidden = !pudlo.hidden; zapisz(); if (!pudlo.hidden) tekst.focus(); } };
+  }
+  // Ruch, którego nie cofa się jednym dotknięciem bez namysłu: pierwsze dotknięcie zmienia napis na pytanie na kilka
+  // sekund, drugie wykonuje. Zamiast okna confirm(), które na telefonie łatwo zatwierdzić odruchem.
+  function dwaDotkniecia(napis, pytanie, etykieta, akcja) {
+    let zegar = null;
+    const g = el('button', { tekst: napis, 'aria-label': napis + ' ' + etykieta, klik: (e) => {
+      if (zegar) { clearTimeout(zegar); zegar = null; g.textContent = napis; g.classList.remove('pytanie'); g.setAttribute('aria-label', napis + ' ' + etykieta); akcja(e.currentTarget); return; }
+      g.textContent = pytanie; g.classList.add('pytanie'); g.setAttribute('aria-label', pytanie + ' ' + napis + ' ' + etykieta);
+      zegar = setTimeout(() => { zegar = null; g.textContent = napis; g.classList.remove('pytanie'); g.setAttribute('aria-label', napis + ' ' + etykieta); }, 5000);
+    } });
+    return g;
   }
   const slowaPrzy = (id) => rzeczy.filter((r) => r.rodzaj.startsWith('slowo/') && Array.isArray(r.cechy.dotyczy) && r.cechy.dotyczy.includes(id)).sort((a, b) => String(b.utworzono).localeCompare(String(a.utworzono)));
   // Słowo przy rzeczy: uwaga albo pomysł zostawiony dokładnie tam, gdzie dotyczy, a nie w rozmowie.
   function slowoPrzy(r) {
     const sa = slowaPrzy(r.id);
-    const p = pole('Zostaw słowo', 'Twoje słowo przy tej rzeczy', (w) => ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [r.id] } }, 'Słowo zostawione przy: ' + r.tytul));
+    const p = pole('slowo:' + r.id, 'Zostaw słowo', 'Twoje słowo przy tej rzeczy', (w, o) => ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [r.id] } }, 'Słowo zostawione przy: ' + r.tytul, o));
     return [el('div', { klasa: 'ruchy' }, el('button', { tekst: sa.length ? 'słowo (' + sa.length + ')' : 'słowo', title: 'Zostaw słowo przy tej rzeczy', klik: p.pokaz })),
       p.pudlo,
       sa.length ? el('ul', { klasa: 'slowa' }, sa.slice(0, 3).map((s) => el('li', {}, el('span', { tekst: s.cechy.tresc }), el('span', { klasa: 'bok', tekst: s.utworzyl + ' · ' + kiedy(s.utworzono) })))) : null];
@@ -249,60 +301,76 @@
     return el('li', { klasa: 'obszar' },
       el('div', {}, el('b', { tekst: x.nazwa }), el('span', { klasa: 'bok', tekst: ' · ' + lp(x.ile, 'rzecz', 'rzeczy', 'rzeczy') + ' · agentom wolno: ' + teraz + ' (' + CO_ZNACZY[teraz] + ')' })),
       rz ? el('div', { klasa: 'wybor', role: 'group', 'aria-label': 'Ile wolno agentom w obszarze ' + x.nazwa }, STOPNIE.map(([w, napis]) => el('button', { klasa: w === teraz ? 'wybrany' : null, 'aria-pressed': w === teraz ? 'true' : 'false', tekst: napis, title: CO_ZNACZY[w],
-        klik: () => { if (w !== teraz) ruch({ co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: rz.rodzaj, cechy: { ...rz.cechy, ile_wolno: w } }, 'W obszarze ' + x.nazwa + ' agentom wolno teraz: ' + napis + '.'); } }))) : null);
+        klik: (e) => { if (w !== teraz) ruch({ co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: rz.rodzaj, cechy: { ...rz.cechy, ile_wolno: w } }, 'W obszarze ' + x.nazwa + ' agentom wolno teraz: ' + napis + '.', { zrodlo: e.currentTarget }); } }))) : null);
+  }
+  // Co propozycja chce zrobić, jednym zdaniem: nazwa rzeczy, której dotyczy, a przy nowej jej przyszła nazwa.
+  // p: {id, rzecz, co, rodzaj}; pr: rzecz-propozycja (na karcie bierzemy ją z drzwi, nie ze spisu).
+  function coProponuje(p, pr = rzeczO(p.id)) {
+    const stara = p.rzecz ? rzeczO(p.rzecz) : null;
+    const tresc = pr && pr.cechy.tresc && pr.cechy.tresc.cechy ? pr.cechy.tresc.cechy : {};
+    const nazwa = tresc.nazwa || tresc.imie || tresc.tresc || tresc.dla || '';
+    const czyn = { odloz: 'odłożyć', przywroc: 'przywrócić', cofnij: 'cofnąć do wcześniejszej wersji' }[p.co];
+    if (stara) return (czyn ? czyn + ': ' : 'zmienić: ') + stara.tytul + (!czyn && nazwa && nazwa !== stara.tytul ? ' → ' + String(nazwa).slice(0, 80) : '');
+    return 'dołożyć (' + p.rodzaj + ')' + (nazwa ? ': ' + String(nazwa).slice(0, 80) : '');
+  }
+  // Ruchy właściciela na czekającej propozycji; te same w liście i na karcie. Guzik mówi, co przyjmuje (aria-label).
+  function ruchyPropozycji(id, co, kluczPola) {
+    const odm = pole(kluczPola, 'Odrzuć z powodem', 'Dlaczego nie (zostanie przy propozycji)', (w, o) => ruch({ co: 'odrzuc', propozycja: id, powod: w }, 'Propozycja odrzucona.', o));
+    const ruchy = el('div', { klasa: 'ruchy' },
+      el('button', { klasa: 'glowny', tekst: 'Przyjmij', 'aria-label': 'Przyjmij: ' + co, klik: (e) => ruch({ co: 'przyjmij', propozycja: id }, 'Propozycja przyjęta.', { zrodlo: e.currentTarget }) }),
+      el('button', { tekst: 'Odrzuć', 'aria-label': 'Odrzuć: ' + co, klik: (e) => ruch({ co: 'odrzuc', propozycja: id }, 'Propozycja odrzucona.', { zrodlo: e.currentTarget }) }),
+      el('button', { tekst: 'z powodem', 'aria-label': 'Odrzuć z powodem: ' + co, klik: odm.pokaz }));
+    return { ruchy, pudlo: odm.pudlo };
   }
 
   function rysuj() {
     const t = $('tresc');
-    t.textContent = '';
     const d = opis;
     rysujWejscie();
     $('stan').textContent = `${lp(d.razem, 'rzecz', 'rzeczy', 'rzeczy')} · akt ${d.miejsce.akt} · ${d.czytasz_jako.imie || 'zwiedzający'}`;
-    if (d.miejsce.podglad) t.append(el('p', { klasa: 'uwaga', tekst: 'Podgląd: wszystko tutaj jest publiczne do czytania i niczego prywatnego tu nie ma. To jest środowisko, w którym Jaskinia ma rosnąć; Start jeszcze nie istnieje.' }));
-
     const czekaIle = d.czeka.propozycje.length + d.czeka.prosby.length;
     const ileRzeczy = Number(d.razem) || 0;
     ostatniStan = { rzeczy: ileRzeczy, czeka: czekaIle, akt: (d.miejsce && d.miejsce.akt) || 0,
       tekst: ileRzeczy + ' rzeczy' + (czekaIle ? ', ' + czekaIle + ' czeka na Ciebie' : '') };
     powiedzStan();
+    zachowaj(null, () => { t.textContent = ''; rysujTresc(t, d, czekaIle); });
+    // Otwarta karta czyta swoją rzecz od nowa tylko wtedy, gdy Miejsce poszło dalej: inaczej niczego jej nie ruszamy.
+    if (kr.id && kr.akt !== akt) odswiezKarte();
+  }
+  function rysujTresc(t, d, czekaIle) {
+    if (d.miejsce.podglad) t.append(el('p', { klasa: 'uwaga', tekst: 'Podgląd: wszystko tutaj jest publiczne do czytania i niczego prywatnego tu nie ma. To jest środowisko, w którym Jaskinia ma rosnąć; Start jeszcze nie istnieje.' }));
     const ja = jestemWlascicielem();
-    // Co propozycja chce zrobić, jednym zdaniem: nazwa rzeczy, której dotyczy, a przy nowej jej przyszła nazwa.
-    const coProponuje = (p) => {
-      const pr = rzeczO(p.id), stara = p.rzecz ? rzeczO(p.rzecz) : null;
-      const tresc = pr && pr.cechy.tresc && pr.cechy.tresc.cechy ? pr.cechy.tresc.cechy : {};
-      const nazwa = tresc.nazwa || tresc.imie || tresc.tresc || tresc.dla || '';
-      const czyn = { odloz: 'odłożyć', przywroc: 'przywrócić', cofnij: 'cofnąć do wcześniejszej wersji' }[p.co];
-      if (stara) return (czyn ? czyn + ': ' : 'zmienić: ') + stara.tytul + (!czyn && nazwa && nazwa !== stara.tytul ? ' → ' + String(nazwa).slice(0, 80) : '');
-      return 'dołożyć (' + p.rodzaj + ')' + (nazwa ? ': ' + String(nazwa).slice(0, 80) : '');
-    };
+    // 1. Czeka na właściciela: to, na co ręka ma odpowiedzieć, jest pierwsze.
     if (czekaIle) t.append(el('section', {}, el('h2', {}, 'Czeka na właściciela ', el('span', { klasa: 'ile', tekst: String(czekaIle) })),
       el('ul', { klasa: 'lista czeka' },
         d.czeka.prosby.map((p) => {
           const rz = rzeczO(p.id);
-          const odp = pole('Odpowiedz', 'Twoja odpowiedź', (w) => rz && ruch({ co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: rz.rodzaj, cechy: { ...rz.cechy, odpowiedz: w, stan: 'zalatwiona' } }, 'Odpowiedź zapisana przy prośbie.'));
+          const odp = pole('odp:' + p.id, 'Odpowiedz', 'Twoja odpowiedź', (w, o) => rz && ruch({ co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: rz.rodzaj, cechy: { ...rz.cechy, odpowiedz: w, stan: 'zalatwiona' } }, 'Odpowiedź zapisana przy prośbie.', o));
           return el('li', {}, el('div', {}, el('a', { href: '/rzecz/' + p.id, tekst: p.tresc }), el('span', { klasa: 'bok', tekst: ` prośba od ${p.od} · ${kiedy(p.kiedy)}` }), odp.pudlo),
-            ja && rz ? el('div', { klasa: 'ruchy' }, el('button', { klasa: 'glowny', tekst: 'Odpowiedz', klik: odp.pokaz })) : null);
+            ja && rz ? el('div', { klasa: 'ruchy' }, el('button', { klasa: 'glowny', tekst: 'Odpowiedz', 'aria-label': 'Odpowiedz na prośbę: ' + String(p.tresc).slice(0, 80), klik: odp.pokaz })) : null);
         }),
         d.czeka.propozycje.map((p) => {
-          const odm = pole('Odrzuć z powodem', 'Dlaczego nie (zostanie przy propozycji)', (w) => ruch({ co: 'odrzuc', propozycja: p.id, powod: w }, 'Propozycja odrzucona.'));
-          return el('li', {}, el('div', {}, el('a', { href: '/rzecz/' + p.id, tekst: coProponuje(p) }),
+          const co = coProponuje(p);
+          const r = ja ? ruchyPropozycji(p.id, co, 'odm:' + p.id) : null;
+          return el('li', {}, el('div', {}, el('a', { href: '/rzecz/' + p.id, tekst: co }),
             // propozycja, która zmienia prawa albo uczestników, ma inną wagę niż zmiana nazwy: mówi to od razu
             p.wymaga === 'wlasciciel' ? el('span', { klasa: 'nowe', tekst: ' zmienia prawa albo uczestników' }) : null,
-            el('span', { klasa: 'bok', tekst: ` propozycja od ${p.od} · ${kiedy(p.kiedy)}` }), odm.pudlo),
-            ja ? el('div', { klasa: 'ruchy' }, el('button', { klasa: 'glowny', tekst: 'Przyjmij', klik: () => ruch({ co: 'przyjmij', propozycja: p.id }, 'Propozycja przyjęta.') }),
-              el('button', { tekst: 'Odrzuć', klik: () => ruch({ co: 'odrzuc', propozycja: p.id }, 'Propozycja odrzucona.') }), el('button', { tekst: 'z powodem', klik: odm.pokaz })) : null);
+            el('span', { klasa: 'bok', tekst: ` propozycja od ${p.od} · ${kiedy(p.kiedy)}` }), r ? r.pudlo : null),
+            r ? r.ruchy : null);
         })),
       ja ? null : el('p', { klasa: 'ciche', tekst: 'Rozstrzyga właściciel. Jeśli to Ty: wejdź guzikiem na górze strony.' })));
 
-    t.append(el('section', {}, el('h2', {}, 'Obszary: ile wolno agentom'),
-      el('ul', { klasa: 'lista obszary' }, d.obszary.map(wierszObszaru)),
-      ja ? null : el('p', { klasa: 'ciche', tekst: 'Ustawienie zmienia właściciel; ruch kogoś innego staje się propozycją do niego.' })));
+    // 2. Nowe od ostatniej wizyty: najnowsze pierwsze, pięć na start.
+    const swieze = rzeczy.filter((r) => r.wersja > widziany && widziany > 0).sort((a, b) => b.wersja - a.wersja);
+    if (swieze.length) {
+      const widac = pokazWszystkieNowe ? swieze : swieze.slice(0, 5);
+      t.append(el('section', {}, el('h2', {}, 'Nowe od Twojej ostatniej wizyty ', el('span', { klasa: 'ile', tekst: String(swieze.length) }),
+        el('button', { tekst: 'widziałem', klik: () => { widziany = akt; localStorage.setItem(PAMIEC, String(akt)); rysuj(); } })),
+        el('ul', { klasa: 'lista' }, widac.map((r) => el('li', {}, el('a', { href: '/rzecz/' + r.id, tekst: r.tytul }), el('span', { klasa: 'bok', tekst: `${r.rodzaj} · ${r.zmienil} · ${kiedy(r.zmieniono)}` })))),
+        swieze.length > 5 ? el('div', { klasa: 'ruchy' }, el('button', { tekst: pokazWszystkieNowe ? 'pokaż mniej' : 'pokaż pozostałe (' + (swieze.length - 5) + ')', 'aria-expanded': pokazWszystkieNowe ? 'true' : 'false', klik: () => { pokazWszystkieNowe = !pokazWszystkieNowe; rysuj(); } })) : null));
+    }
 
-    const swieze = rzeczy.filter((r) => r.wersja > widziany && widziany > 0);
-    if (swieze.length) t.append(el('section', {}, el('h2', {}, 'Nowe od Twojej ostatniej wizyty ', el('span', { klasa: 'ile', tekst: String(swieze.length) }),
-      el('button', { tekst: 'widziałem', klik: () => { widziany = akt; localStorage.setItem(PAMIEC, String(akt)); rysuj(); } })),
-      el('ul', { klasa: 'lista' }, swieze.slice(0, 30).map((r) => el('li', {}, el('a', { href: '/rzecz/' + r.id, tekst: r.tytul }), el('span', { klasa: 'bok', tekst: `${r.rodzaj} · ${r.zmienil} · ${kiedy(r.zmieniono)}` }))))));
-
+    // 3. Projekty, 4. Organy i narzędzia
     const projekty = rzeczy.filter((r) => r.rodzaj.startsWith('projekt/')).sort((a, b) => String(b.cechy.zycie || '').localeCompare(String(a.cechy.zycie || '')));
     const pr = d.przeniesienie;
     t.append(el('section', {}, el('h2', {}, 'Projekty ', el('span', { klasa: 'ile', tekst: pr.publiczne_repozytoria ? `${projekty.length} w środku na ${pr.publiczne_repozytoria.ile} publicznych repozytoriów` : `${projekty.length} w środku` })),
@@ -312,12 +380,23 @@
     t.append(el('section', {}, el('h2', {}, 'Organy i narzędzia ', el('span', { klasa: 'ile', tekst: String(goscie.length) })),
       goscie.length ? el('div', { klasa: 'siatka' }, goscie.map(kartaGoscia)) : el('p', { klasa: 'ciche', tekst: 'Jeszcze żadnego.' })));
 
+    // 5. Obszary: ile wolno agentom
+    t.append(el('section', {}, el('h2', {}, 'Obszary: ile wolno agentom'),
+      el('ul', { klasa: 'lista obszary' }, d.obszary.map(wierszObszaru)),
+      ja ? null : el('p', { klasa: 'ciche', tekst: 'Ustawienie zmienia właściciel; ruch kogoś innego staje się propozycją do niego.' })));
+
+    // 6. Pozostałe rzeczy: rozwinięte <details> zostają rozwinięte po przerysowaniu
     const reszta = new Map();
     for (const r of rzeczy) { if (r.rodzaj.startsWith('projekt/') || r.rodzaj.startsWith('gosc/') || r.rodzaj.startsWith('zdolnosc/')) continue; if (!reszta.has(r.rodzaj)) reszta.set(r.rodzaj, []); reszta.get(r.rodzaj).push(r); }
     t.append(el('section', {}, el('h2', {}, 'Pozostałe rzeczy'),
-      [...reszta].sort((a, b) => a[0].localeCompare(b[0])).map(([rodzaj, lista]) => el('details', {}, el('summary', {}, rodzaj + ' ', el('span', { klasa: 'ile', tekst: String(lista.length) })),
-        el('div', {}, el('ul', { klasa: 'lista' }, lista.map((r) => el('li', {}, el('a', { href: '/rzecz/' + r.id, tekst: r.tytul }), el('span', { klasa: 'bok', tekst: `${r.zmienil} · ${kiedy(r.zmieniono)}` })))))))));
+      [...reszta].sort((a, b) => a[0].localeCompare(b[0])).map(([rodzaj, lista]) => {
+        const det = el('details', { open: rozwiniete.has(rodzaj) }, el('summary', {}, rodzaj + ' ', el('span', { klasa: 'ile', tekst: String(lista.length) })),
+          el('div', {}, el('ul', { klasa: 'lista' }, lista.map((r) => el('li', {}, el('a', { href: '/rzecz/' + r.id, tekst: r.tytul }), el('span', { klasa: 'bok', tekst: `${r.zmienil} · ${kiedy(r.zmieniono)}` }))))));
+        det.addEventListener('toggle', () => { if (det.open) rozwiniete.add(rodzaj); else rozwiniete.delete(rodzaj); });
+        return det;
+      })));
 
+    // 7. Stan budowy
     const stany = [['stoi', 'Stoi'], ['cienko', 'Cienko'], ['brak', 'Jeszcze nie ma']];
     t.append(el('section', {}, el('h2', {}, 'Stan budowy środowiska'),
       el('div', { klasa: 'trzy' }, stany.map(([s, napis]) => el('div', { klasa: 'kolumna ' + s }, el('h3', { tekst: napis.toUpperCase() }),
@@ -356,6 +435,177 @@
     k.append(...slowoPrzy(r).filter(Boolean));
     return k;
   }
+
+  // --- karta rzeczy: odnośnik do rzeczy otwiera ją tu, na stronie, a nie jako goły tekst dla agentów ---------------
+  // href zostaje (agent i "otwórz w nowej karcie" działają jak dotąd); dla ręki łapiemy zwykłe dotknięcie jedną
+  // wspólną obsługą. Karta żyje poza #tresc, więc przerysowanie strony jej nie rusza; sama czyta rzecz od nowa tylko
+  // wtedy, gdy rzecz (albo to, co ją otacza) naprawdę się zmieniła.
+  const ID_RZECZY = /^[0-9a-z]{26}$/;
+  const kr = { id: null, pierwszy: null, pierwszyId: null, nr: 0, podpis: '', akt: -1, sekcja: null, tresc: null, tyt: null, rodz: null };
+  function szkieletKarty() {
+    if (kr.sekcja) return;
+    kr.tyt = el('span', { klasa: 'tytul' });
+    kr.rodz = el('span', { klasa: 'mowi' });
+    kr.tresc = el('div', { klasa: 'kr-tresc', tabindex: '-1' });
+    kr.sekcja = el('section', { klasa: 'okno karta-rzeczy', role: 'dialog', 'aria-label': 'Karta rzeczy', hidden: true },
+      el('div', { klasa: 'pasek' }, kr.tyt, kr.rodz, el('button', { tekst: '×', title: 'Zamknij kartę', 'aria-label': 'Zamknij kartę', klik: zamknijKarte })),
+      kr.tresc);
+    $('okna').append(kr.sekcja);
+  }
+  function otworzKarte(id, opener) {
+    szkieletKarty();
+    // fokus wróci do odnośnika, z którego karta została otwarta po raz pierwszy, nawet gdy potem chodzimy po odnośnikach w karcie
+    if (!kr.id) { kr.pierwszy = opener || null; kr.pierwszyId = id; }
+    kr.id = id; kr.podpis = ''; kr.akt = -1;
+    kr.sekcja.hidden = false;
+    kr.tyt.textContent = 'Czytam…'; kr.rodz.textContent = '';
+    kr.tresc.replaceChildren(el('p', { klasa: 'ciche', tekst: 'Czytam rzecz…' }));
+    kr.tresc.scrollTop = 0;
+    return odswiezKarte().then(() => { const h = kr.tresc.querySelector('.kr-tytul'); if (h && kr.id === id) h.focus({ preventScroll: true }); });
+  }
+  function zamknijKarte() {
+    if (!kr.id) return;
+    const wracam = kr.pierwszy, idPierwszej = kr.pierwszyId;
+    kr.id = null; kr.nr++; kr.podpis = ''; kr.pierwszy = null;
+    kr.sekcja.hidden = true;
+    // odnośnik, z którego otwarto, mógł zniknąć przy przerysowaniu: szukamy go po adresie
+    const cel = wracam && wracam.isConnected ? wracam : [...document.querySelectorAll('#tresc a[href^="/rzecz/"]')].find((a) => a.getAttribute('href') === '/rzecz/' + idPierwszej);
+    if (cel) cel.focus({ preventScroll: true });
+  }
+  // Czyta rzecz z drzwi i przerysowuje kartę. Kolejne wywołania wyprzedzają poprzednie (numer nr), a niezmieniony
+  // odczyt nie rusza niczego: ani wpisanego tekstu, ani zapytania "Na pewno?" w połowie.
+  async function odswiezKarte() {
+    const id = kr.id;
+    if (!id) return;
+    const nr = ++kr.nr;
+    try {
+      const d = await czytaj('/api/srodowisko/rzecz?id=' + encodeURIComponent(id));
+      if (kr.nr !== nr || kr.id !== id) return;
+      kr.akt = akt;
+      const wokol = [slowaPrzy(id).map((s) => [s.id, s.wersja]), (d.wskazuja || []).map((w) => [w.od, rzeczO(w.od) && rzeczO(w.od).tytul]),
+        Object.values(d.rzecz.cechy).filter((w) => typeof w === 'string' && ID_RZECZY.test(w)).map((w) => rzeczO(w) && rzeczO(w).tytul),
+        jestemWlascicielem(), opis.obszary.map((o) => [o.id, o.nazwa])];
+      const podpis = JSON.stringify([d, wokol]);
+      if (podpis === kr.podpis) return;
+      kr.podpis = podpis;
+      zachowaj(kr.tresc, () => rysujKarte(d));
+    } catch (blad) {
+      if (kr.nr !== nr || kr.id !== id) return;
+      // gdy karta już coś pokazuje, błąd odczytu w tle jej nie psuje; pusta dostaje zdanie, dlaczego
+      if (!kr.podpis) { kr.tyt.textContent = 'Nie ma tej rzeczy'; kr.tresc.replaceChildren(el('p', { klasa: 'uwaga', tekst: 'Nie udało się przeczytać tej rzeczy: ' + blad.message }), el('p', {}, el('a', { href: '/rzecz/' + id, target: '_blank', rel: 'noopener', tekst: 'tekstem' }))); }
+    }
+  }
+  // Czytelny tekst z wartości cechy: lista w jednej linii, obiekt jako "nazwa: wartość" z wcięciami.
+  function tekstWartosci(w, wc = '') {
+    if (w === null || w === undefined) return '—';
+    if (typeof w === 'boolean') return w ? 'tak' : 'nie';
+    if (typeof w !== 'object') return String(w);
+    if (Array.isArray(w) && w.every((x) => x === null || typeof x !== 'object')) return w.length ? w.map((x) => tekstWartosci(x)).join(', ') : '(pusta lista)';
+    const pozycje = Array.isArray(w) ? w.map((x) => [null, x]) : Object.entries(w);
+    if (!pozycje.length) return '(pusty)';
+    return pozycje.map(([k, v]) => {
+      const zlozona = v !== null && typeof v === 'object' && (Array.isArray(v) ? v.length > 0 && v.some((x) => x !== null && typeof x === 'object') : Object.keys(v).length > 0);
+      return wc + (k === null ? '- ' : k + ': ') + (zlozona ? '\n' : '') + tekstWartosci(v, wc + '  ');
+    }).join('\n');
+  }
+  // Tytułem propozycji jest jej rodzaj, co nic nie mówi: w odnośniku nazywamy ją tym, co proponuje.
+  const nazwaRzeczy = (r) => r.rodzaj === 'propozycja/1' ? 'Propozycja: ' + coProponuje({ id: r.id, rzecz: r.cechy.rzecz || null, co: r.cechy.co || 'poloz', rodzaj: r.cechy.rodzaj }, r) : r.tytul;
+  const odnosnikRzeczy = (id) => el('a', { href: '/rzecz/' + id, tekst: rzeczO(id) ? nazwaRzeczy(rzeczO(id)) : id });
+  // Wartość cechy jako węzły: identyfikator innej rzeczy (obecnej w spisie) jest odnośnikiem z jej tytułem.
+  function wartoscWezel(w) {
+    const jestId = (x) => typeof x === 'string' && ID_RZECZY.test(x) && rzeczO(x);
+    if (jestId(w)) return odnosnikRzeczy(w);
+    if (Array.isArray(w) && w.length && w.some(jestId) && w.every((x) => x === null || typeof x !== 'object')) {
+      const wynik = [];
+      w.forEach((x, i) => { if (i) wynik.push(', '); wynik.push(jestId(x) ? odnosnikRzeczy(x) : String(x)); });
+      return el('span', { klasa: 'kr-tekst' }, wynik);
+    }
+    return el('span', { klasa: 'kr-tekst', tekst: tekstWartosci(w) });
+  }
+  const listaCech = (cechy, pomin = []) => {
+    const wpisy = Object.entries(cechy || {}).filter(([k]) => !pomin.includes(k));
+    return wpisy.length ? el('dl', { klasa: 'kr-cechy' }, wpisy.flatMap(([k, w]) => [el('dt', { tekst: k }), el('dd', {}, wartoscWezel(w))])) : el('p', { klasa: 'ciche', tekst: 'Bez cech.' });
+  };
+  function rysujKarte(d) {
+    const r = d.rzecz, ja = jestemWlascicielem(), c = r.cechy || {};
+    const ob = opis.obszary.find((o) => (r.obszar ? o.id === r.obszar : o.glowny));
+    // propozycja nie ma własnej nazwy (jej tytułem jest rodzaj), więc karta nazywa ją tym, co proponuje
+    const prop = r.rodzaj === 'propozycja/1' ? { id: r.id, rzecz: c.rzecz || null, co: c.co || 'poloz', rodzaj: c.rodzaj } : null;
+    const co = prop ? coProponuje(prop, r) : '';
+    const tytulKarty = prop ? 'Propozycja: ' + co : r.tytul;
+    kr.tyt.textContent = tytulKarty; kr.rodz.textContent = r.rodzaj;
+    kr.sekcja.setAttribute('aria-label', 'Karta rzeczy: ' + tytulKarty);
+    const k = [];
+    k.push(el('h3', { klasa: 'kr-tytul', tabindex: '-1', tekst: tytulKarty }));
+    k.push(el('p', { klasa: 'kr-meta' }, el('b', { tekst: r.rodzaj }), ' · obszar: ' + (ob ? ob.nazwa : (r.obszar || 'główny'))));
+    if (r.odlozone) k.push(el('p', { klasa: 'kr-odlozona' }, el('b', { tekst: 'ODŁOŻONA' }), r.powod ? ' z powodu: ' + r.powod : ' (bez podanego powodu)', el('span', { klasa: 'bok', tekst: ' Zniknęła z list, ale zostaje tu i w historii.' })));
+    k.push(el('p', { klasa: 'kr-meta' }, 'Dołożył ' + r.utworzyl + ' ', el('span', { title: r.utworzono, tekst: kiedy(r.utworzono) }),
+      '. Ostatnio zmienił ' + r.zmienil + ' ', el('span', { title: r.zmieniono, tekst: kiedy(r.zmieniono) }), '. Wersja ' + r.numer + '.'));
+
+    if (prop) {
+      const p = prop;
+      k.push(el('p', { klasa: 'kr-zdanie' }, el('b', { tekst: 'Proponuje: ' }), co));
+      const nowe = c.tresc && c.tresc.cechy ? c.tresc.cechy : null;
+      if (nowe) {
+        const stara = p.rzecz ? rzeczO(p.rzecz) : null;
+        k.push(el('h4', { tekst: 'Co dokładnie się zmieni' }));
+        k.push(el('dl', { klasa: 'kr-cechy' }, Object.entries(nowe).flatMap(([n, w]) => {
+          const bylo = stara && Object.prototype.hasOwnProperty.call(stara.cechy, n) ? stara.cechy[n] : undefined;
+          const zmiana = stara && JSON.stringify(bylo) !== JSON.stringify(w);
+          return [el('dt', { tekst: n }), el('dd', {}, wartoscWezel(w), zmiana ? el('span', { klasa: 'ciche kr-bylo', tekst: bylo === undefined ? 'nowa cecha' : 'teraz: ' + tekstWartosci(bylo).slice(0, 200) }) : null)];
+        })));
+      }
+      if (c.stan === 'czeka') {
+        if (ja) { const rp = ruchyPropozycji(r.id, co, 'k:odm:' + r.id); k.push(rp.ruchy, rp.pudlo); }
+        else k.push(el('p', { klasa: 'ciche', tekst: 'Czeka na właściciela. Jeśli to Ty: wejdź guzikiem na górze strony.' }));
+      } else k.push(el('p', { klasa: 'kr-meta' }, el('b', { tekst: 'Stan: ' + (c.stan || '?') }), c.rozstrzygnal ? ' · rozstrzygnął ' + c.rozstrzygnal : ''));
+    }
+    if (r.rodzaj === 'prosba/1' && c.stan === 'czeka') {
+      if (ja) {
+        const odp = pole('k:odp:' + r.id, 'Odpowiedz', 'Twoja odpowiedź', (w, o) => ruch({ co: 'poloz', rzecz: r.id, wersja: r.wersja, rodzaj: r.rodzaj, cechy: { ...c, odpowiedz: w, stan: 'zalatwiona' } }, 'Odpowiedź zapisana przy prośbie.', o));
+        k.push(el('div', { klasa: 'ruchy' }, el('button', { klasa: 'glowny', tekst: 'Odpowiedz', 'aria-label': 'Odpowiedz na prośbę: ' + String(c.tresc || r.tytul).slice(0, 80), klik: odp.pokaz })), odp.pudlo);
+      } else k.push(el('p', { klasa: 'ciche', tekst: 'Czeka na odpowiedź właściciela.' }));
+    }
+
+    k.push(el('h4', { tekst: 'Cechy' }), listaCech(c, r.rodzaj === 'propozycja/1' ? ['tresc'] : []));
+
+    // ruchy na samej rzeczy; odłożenie jest dwudotykowe, przywrócenie nie (nic nie niszczy)
+    if (ja && r.rodzaj !== 'propozycja/1') {
+      k.push(el('div', { klasa: 'ruchy' }, r.odlozone
+        ? el('button', { tekst: 'Przywróć', 'aria-label': 'Przywróć rzecz: ' + r.tytul, klik: (e) => ruch({ co: 'przywroc', rzecz: r.id, wersja: r.wersja }, 'Przywrócone: ' + r.tytul + '.', { zrodlo: e.currentTarget }) })
+        : dwaDotkniecia('Odłóż', 'Na pewno odłożyć?', 'rzecz: ' + r.tytul, (g) => ruch({ co: 'odloz', rzecz: r.id, wersja: r.wersja }, 'Odłożone: ' + r.tytul + '. Da się je przywrócić z tej karty.', { zrodlo: g }))));
+    }
+
+    const sa = slowaPrzy(r.id);
+    const sl = pole('k:slowo:' + r.id, 'Zostaw słowo', 'Twoje słowo przy tej rzeczy', (w, o) => ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [r.id] } }, 'Słowo zostawione przy: ' + r.tytul, o));
+    k.push(el('h4', { tekst: sa.length ? 'Słowa przy tej rzeczy (' + sa.length + ')' : 'Słowa przy tej rzeczy' }),
+      sa.length ? el('ul', { klasa: 'slowa kr-slowa' }, sa.map((s) => el('li', {}, el('span', { klasa: 'kr-tekst', tekst: s.cechy.tresc }), el('span', { klasa: 'bok', tekst: s.utworzyl + ' · ' + kiedy(s.utworzono) })))) : el('p', { klasa: 'ciche', tekst: 'Jeszcze żadnych.' }),
+      el('div', { klasa: 'ruchy' }, el('button', { tekst: 'Zostaw słowo', klik: sl.pokaz })), sl.pudlo);
+
+    if ((d.wskazuja || []).length) k.push(el('h4', { tekst: 'Wskazują na tę rzecz' }),
+      el('ul', { klasa: 'lista kr-wskazuja' }, d.wskazuja.map((w) => el('li', {}, odnosnikRzeczy(w.od), el('span', { klasa: 'bok', tekst: 'przez cechę: ' + w.cecha })))));
+
+    // historia: ostatnie pięć wersji od najnowszej; powrót do starszej tylko dla właściciela i dwudotykowo
+    k.push(el('h4', { tekst: 'Historia' }),
+      el('ul', { klasa: 'lista kr-historia' }, d.historia.slice(-5).reverse().map((h) => el('li', {},
+        el('span', {}, 'wersja ' + h.numer + ' · ' + h.kto + ' · ', el('span', { title: h.kiedy, tekst: kiedy(h.kiedy) }), h.numer === r.numer ? el('b', { tekst: ' (teraz)' }) : null),
+        ja && h.numer !== r.numer && !prop ? dwaDotkniecia('wróć do tej wersji', 'Na pewno wrócić?', 'do wersji ' + h.numer, (g) => ruch({ co: 'cofnij', rzecz: r.id, wersja: r.wersja, do: h.akt }, 'Wróciło do wersji ' + h.numer + ' (jako nowa wersja).', { zrodlo: g })) : null))));
+
+    k.push(el('p', { klasa: 'kr-stopka' }, el('a', { href: '/rzecz/' + r.id, target: '_blank', rel: 'noopener', tekst: 'tekstem', title: 'Ta sama rzecz jako goły tekst, w nowej karcie przeglądarki' })));
+    kr.tresc.replaceChildren(...k.flat());
+  }
+  // Jedna obsługa dla każdego odnośnika do rzeczy na stronie i w karcie. Klawisze modyfikujące, środkowy przycisk
+  // i target=_blank zostają przeglądarce.
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target instanceof Element ? e.target.closest('a[href^="/rzecz/"]') : null;
+    if (!a || (a.target && a.target !== '_self')) return;
+    const id = a.getAttribute('href').slice('/rzecz/'.length);
+    if (!/^[0-9a-z]+$/.test(id)) return;
+    e.preventDefault();
+    otworzKarte(id, kr.id ? null : a);
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && kr.id && !e.defaultPrevented) zamknijKarte(); });
 
   async function odswiez() {
     const [o, s] = await Promise.all([czytaj('/api/srodowisko/opis'), czytaj('/api/srodowisko/spis')]);

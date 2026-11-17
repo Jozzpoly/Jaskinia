@@ -72,7 +72,11 @@ details > div { padding: 0 .65rem .5rem; }
 .wejscie p { margin: 0; flex-basis: 100%; color: var(--ciche); font-size: .86rem; }
 .rzad { display: flex; gap: .4rem; flex-wrap: wrap; flex: 1; min-width: 14rem; }
 input, textarea { font: inherit; color: var(--tekst); background: var(--tlo); border: 1px solid var(--linia); border-radius: .4rem; padding: .5rem .6rem; min-height: 44px; flex: 1; min-width: 10rem; }
-.komunikat { position: sticky; top: 3rem; z-index: 6; max-width: 76rem; margin: .4rem auto 0; padding: .5rem .9rem; border-radius: .4rem; background: var(--zywe); color: var(--tlo); font-weight: 600; }
+/* Zdanie o skutku to nakładka: nie zajmuje miejsca w układzie (wcześniej pasek przesuwał stronę o ok. 45 px i palec trafiał
+   w pustkę), siedzi nad dokiem okien i nad oknami; dotknięcie ją zamyka. */
+.komunikat { position: fixed; z-index: 40; left: .7rem; right: .7rem; bottom: calc(.7rem + env(safe-area-inset-bottom, 0px)); max-width: 40rem; margin: 0 auto; min-height: 44px; display: flex; align-items: center; padding: .55rem .9rem; border-radius: .5rem; background: var(--zywe); color: var(--tlo); font-weight: 600; cursor: pointer; box-shadow: 0 6px 24px rgba(0, 0, 0, .3); }
+.komunikat::after { content: "×"; margin-left: auto; padding-left: .9rem; font-size: 1.3rem; line-height: 1; opacity: .85; }
+body:has(#dok:not(:empty)) .komunikat { bottom: calc(3.7rem + env(safe-area-inset-bottom, 0px)); }
 .komunikat.zly { background: var(--znak); }
 .komunikat[hidden] { display: none; }
 .pole { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .35rem; }
@@ -95,3 +99,32 @@ ul.lista .bok { white-space: normal; }
   .karta .meta { gap: 0 .8rem; }
   .dol { gap: 0 1.1rem; }
 }
+
+/* Karta rzeczy: wygląda jak okno gościa (pasek, dok, telefon: cały ekran nad dokiem), ale treść ma własną, przewijaną. */
+#okna .okno.karta-rzeczy { z-index: 25; margin: 0; }
+.kr-tresc { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: .7rem .9rem 1.2rem; outline: none; }
+.kr-tresc h3.kr-tytul { font-size: 1.15rem; margin: 0 0 .3rem; overflow-wrap: anywhere; outline: none; }
+.kr-tresc h4 { font-size: .78rem; letter-spacing: .07em; text-transform: uppercase; color: var(--ciche); margin: 1.1rem 0 .35rem; }
+.kr-meta { margin: .2rem 0; color: var(--ciche); font-size: .86rem; }
+.kr-zdanie { margin: .5rem 0; padding: .45rem .7rem; border-left: 3px solid var(--akcent); background: var(--tlo); border-radius: .3rem; overflow-wrap: anywhere; }
+.kr-odlozona { margin: .4rem 0; padding: .45rem .7rem; border: 1px solid var(--znak); border-radius: .4rem; color: var(--znak); overflow-wrap: anywhere; }
+.kr-odlozona b { letter-spacing: .05em; }
+.kr-odlozona .bok { color: var(--ciche); font-size: .8rem; }
+dl.kr-cechy { margin: 0; display: grid; grid-template-columns: minmax(5.5rem, 30%) 1fr; gap: .1rem .7rem; border-top: 1px solid var(--linia); }
+.kr-cechy dt { color: var(--ciche); font-size: .82rem; padding: .35rem 0; border-bottom: 1px solid var(--linia); overflow-wrap: anywhere; }
+.kr-cechy dd { margin: 0; padding: .35rem 0; border-bottom: 1px solid var(--linia); min-width: 0; }
+.kr-tekst { white-space: pre-wrap; overflow-wrap: anywhere; }
+.kr-bylo { display: block; font-size: .78rem; }
+.kr-tresc .ruchy { display: flex; gap: .4rem; flex-wrap: wrap; margin: .5rem 0; }
+.kr-tresc ul.lista li { flex-wrap: wrap; align-items: center; }
+.kr-tresc ul.lista .bok { white-space: normal; }
+ul.kr-slowa li { flex-direction: column; gap: .1rem; align-items: stretch; padding: .45rem 0; }
+.kr-stopka { margin: 1.2rem 0 0; }
+button.pytanie { background: var(--znak); border-color: var(--znak); color: var(--tlo); font-weight: 600; }
+button.pytanie:hover { color: var(--tlo); }
+button:disabled, textarea:disabled { opacity: .55; cursor: progress; }
+@media (pointer: coarse), (max-width: 40rem) {
+  .kr-tresc a { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; }
+  .kr-tresc .kr-tekst a { margin: 0 .1rem; }
+}
+@media (max-width: 40rem) { body:has(#dok:empty) #okna .okno.karta-rzeczy { bottom: 0; } }
