@@ -80,12 +80,21 @@ function obszary(s) {
 }
 
 function zmiany(s, od, limit = 40) {
-  const akty = s.q(`SELECT a.nr, a.kto, a.kiedy, a.glowa, a.z_zapisu, a.cialo FROM akty a WHERE a.co = 'przesun' AND a.glowa LIKE 'rzecz:%' AND a.nr > ? ORDER BY a.nr DESC LIMIT ?`, od | 0, limit + 1);
+  const akty = s.aktyRzeczy(od, limit + 1);
   const wiecej = akty.length > limit;
-  return { wiecej, lista: akty.slice(0, limit).map((a) => {
+  // Dziennik jest drugą drogą do tych samych faktów i nie przechodzi przez okulary czytającego: zapytanie idzie
+  // wprost do aktów, nie do spisu. Zmiana rzeczy, której ten ktoś nie widzi, wychodziła tędy z identyfikatorem
+  // (nazwa była już '?', ale identyfikator jest uchwytem). Takie wiersze znikają, a zostaje po nich LICZBA:
+  // sam fakt, że coś się dzieje, i tak słychać po numerze aktu, więc ukrywanie go byłoby udawaniem.
+  // (Znalezione atakiem na własną granicę pod żywym adresem, 17 XI; trzecia dziura, inna w rodzaju niż dwie pierwsze.)
+  let ukryte = 0;
+  const lista = [];
+  for (const a of akty.slice(0, limit)) {
     const rz = s.rzecz(a.glowa.slice(6));
-    return { akt: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), co: a.z_zapisu ? 'zmienił' : 'dołożył', id: a.glowa.slice(6), rodzaj: rz ? rz.rodzaj : '?', tytul: rz ? s.tytul(rz) : '?' };
-  }) };
+    if (!rz) { ukryte++; continue; }
+    lista.push({ akt: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), co: a.z_zapisu ? 'zmienił' : 'dołożył', id: a.glowa.slice(6), rodzaj: rz.rodzaj, tytul: s.tytul(rz) });
+  }
+  return { wiecej, lista, ukryte };
 }
 
 // Dane, z których powstaje i tekst, i odpowiedź JSON (jedno źródło dla człowieka i agenta).
@@ -117,7 +126,7 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
     obszary: s.pamietaj('opis:obszary', () => obszary(s)),
     goscie: s.pamietaj('opis:goscie', () => s.spis({ rodzaj: 'gosc/1', limit: 500 }).map((g) => ({ id: g.id, nazwa: s.tytul(g), opis: g.cechy.opis || '', kod: g.cechy.kod || null, adres: g.cechy.adres || null, umowa: g.cechy.umowa || null, dolozyl: g.utworzyl }))),
     uczestnicy: s.pamietaj('opis:uczestnicy', () => s.spis({ rodzaj: 'uczestnik/1', limit: 500 }).map((u) => ({ imie: u.cechy.imie, rola: u.cechy.rola, cialo: u.cechy.cialo || null }))),
-    zmiany: { od: odAktu, skad, pierwszy_raz: odAktu === null, lista: zm.lista, wiecej: zm.wiecej, wizyta_zapisana: wizyta && !wizyta.pierwszy_raz ? { akt: wizyta.widziane_do, kiedy: wizyta.widziane_kiedy } : null },
+    zmiany: { od: odAktu, skad, pierwszy_raz: odAktu === null, lista: zm.lista, wiecej: zm.wiecej, ukryte: zm.ukryte, wizyta_zapisana: wizyta && !wizyta.pierwszy_raz ? { akt: wizyta.widziane_do, kiedy: wizyta.widziane_kiedy } : null },
     czeka: { propozycje: cz.propozycje.map((p) => ({ id: p.id, od: p.cechy.od, co: p.cechy.co || 'poloz', rodzaj: p.cechy.rodzaj, obszar: p.obszar, rzecz: p.cechy.rzecz || null, kiedy: p.utworzono, wymaga: p.cechy.wymaga || null })), prosby: cz.prosby.map((p) => ({ id: p.id, tresc: p.cechy.tresc, tryb: p.cechy.tryb || 'czeka', od: p.utworzyl, kiedy: p.utworzono })) },
     zdolnosci: s.pamietaj('opis:zdolnosci', () => s.spis({ rodzaj: 'zdolnosc/1', limit: 500 }).map((z) => ({ id: z.id, nazwa: z.cechy.nazwa, stan: z.cechy.stan, opis: z.cechy.opis, jak: z.cechy.jak || null }))),
     wyrownanie: s.wyrownano(),
@@ -197,6 +206,7 @@ export function coTuJest(s, opcje = {}) {
       : [`Od aktu ${d.zmiany.od} (${d.zmiany.skad}): ${d.zmiany.lista.length ? ile(d.zmiany.lista.length, 'zmiana', 'zmiany', 'zmian') + (d.zmiany.wiecej ? ' albo więcej (pokazuję najnowsze)' : '') : 'nic się nie zmieniło'}.`,
         `Następnym razem: /co-tu-jest?od=${d.miejsce.akt}`],
     d.zmiany.lista.map((z) => `  akt ${z.akt}, ${dzien(z.kiedy)}, ${z.kto} ${z.co}: ${obetnij(z.tytul, 70)} [${z.rodzaj}] -> /rzecz/${z.id}`),
+    d.zmiany.ukryte ? `  (oraz ${ile(d.zmiany.ukryte, 'zmiana', 'zmiany', 'zmian')} w obszarach, których nie widzisz - bez nazwy i bez adresu)` : null,
     '',
     '4. CO CI WOLNO I GDZIE',
     R === 'wlasciciel' && 'Jesteś właścicielem: każdy Twój ruch ma skutek, w każdym obszarze. Tylko Ty zmieniasz ustawienia obszarów, uczestników i kształty rdzenia.',

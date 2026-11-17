@@ -62,43 +62,52 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
   const jako = poprawneImie(p.get('jako')) ? p.get('jako') : null;
   const opcje = { kto, jako, od: liczba(p.get('od')), origin, podglad, kluczProbny, kluczProbnyWlasciciela, probnyImie: request.headers.get('x-probny-imie') || null, budzet };
 
+  // Okulary czytającego: od tego miejsca wszystkie trasy czytające pracują na widoku, w którym rzeczy z obszarów
+  // niewidocznych dla niego po prostu nie ma. Jedno miejsce zamiast parametru przy każdej trasie.
+  // Kto czyta. Bez klucza to zwiedzający, a zwiedzający widzi tylko obszary z `widzi: wszyscy` — czyli czytanie
+  // jest domyślnie zamknięte, jak ma być w prawdziwym Miejscu.
+  // WYJĄTEK PODGLĄDU, świadomy: na podglądzie klucz uczestnika stoi jawnym napisem na stronie i w `/co-tu-jest`,
+  // więc "bez klucza" nie znaczy tam "obcy" — znaczy "nie chciało mu się go skopiować". Udawanie, że podgląd
+  // czegoś pilnuje, byłoby zabezpieczeniem na niby. Dlatego na podglądzie czytający bez klucza jest uczestnikiem.
+  const czytelnik = opcje.kto || (podglad ? (opcje.jako || opcje.probnyImie || 'podglad') : null);
+  const w = s.dla(czytelnik);
   if (request.method === 'GET') {
     if (sciezka.startsWith('/gosc/')) {
-      const kod = s.kodGoscia(sciezka.slice(6));
+      const kod = w.kodGoscia(sciezka.slice(6));
       if (kod === null) return tekst('Nie ma takiego kodu gościa (kod wychodzi pod adresem dopiero wtedy, gdy wskazuje go rzecz rodzaju gosc).\n', 404);
       return new Response(kod, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': CSP_GOSCIA, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'cache-control': 'public, max-age=600' } });
     }
-    if (sciezka === '/co-tu-jest') return tekst(coTuJest(s, opcje));
+    if (sciezka === '/co-tu-jest') return tekst(coTuJest(w, opcje));
     if (sciezka === '/umowa-okna') return tekst(umowaOkna());
-    if (sciezka === '/rodzaje') return tekst(listaRodzajow(s));
+    if (sciezka === '/rodzaje') return tekst(listaRodzajow(w));
     if (sciezka.startsWith('/rodzaj/')) {
       let rodzaj = null;
       try { rodzaj = decodeURIComponent(sciezka.slice(8)); } catch { /* zły zapis adresu */ }
-      return rodzaj === null ? tekst('Zły zapis adresu rodzaju. Wszystkie rodzaje: /rodzaje\n', 400) : tekst(stronaRodzaju(s, rodzaj));
+      return rodzaj === null ? tekst('Zły zapis adresu rodzaju. Wszystkie rodzaje: /rodzaje\n', 400) : tekst(stronaRodzaju(w, rodzaj));
     }
-    if (sciezka === '/rzeczy') return tekst(listaRzeczy(s, { ...filtrZAdresu(s, p), pomin: liczba(p.get('pomin')) || 0, ile: liczba(p.get('ile')) || 300 }));
-    if (sciezka.startsWith('/rzecz/')) { const t = stronaRzeczy(s, sciezka.slice(7), { kto: opcje.kto || (podglad ? opcje.jako : null) }); return t === null ? tekst('Nie ma takiej rzeczy. Lista wszystkich: /rzeczy\n', 404) : tekst(t); }
-    if (sciezka === '/api/srodowisko/opis') return json({ ok: true, ...opisDane(s, opcje) });
-    if (sciezka === '/api/srodowisko/puls') return json({ ok: true, akt: s.ostatniNr() });
+    if (sciezka === '/rzeczy') return tekst(listaRzeczy(w, { ...filtrZAdresu(w, p), pomin: liczba(p.get('pomin')) || 0, ile: liczba(p.get('ile')) || 300 }));
+    if (sciezka.startsWith('/rzecz/')) { const t = stronaRzeczy(w, sciezka.slice(7), { kto: opcje.kto || (podglad ? opcje.jako : null) }); return t === null ? tekst('Nie ma takiej rzeczy. Lista wszystkich: /rzeczy\n', 404) : tekst(t); }
+    if (sciezka === '/api/srodowisko/opis') return json({ ok: true, ...opisDane(w, opcje) });
+    if (sciezka === '/api/srodowisko/puls') return json({ ok: true, akt: w.ostatniNr() });
     if (sciezka === '/api/srodowisko/spis') {
-      const filtr = filtrZAdresu(s, p);
+      const filtr = filtrZAdresu(w, p);
       const pomin = liczba(p.get('pomin')) || 0;
-      const rz = s.spis({ ...filtr, limit: liczba(p.get('ile')) || 1000, pomin });
-      const razem = s.ile(filtr);
-      return json({ ok: true, rzeczy: rz.map((x) => ({ ...x, tytul: s.tytul(x) })), razem, pokazane: rz.length, pominiete: pomin, wszystko: pomin + rz.length >= razem, akt: s.ostatniNr() });
+      const rz = w.spis({ ...filtr, limit: liczba(p.get('ile')) || 1000, pomin });
+      const razem = w.ile(filtr);
+      return json({ ok: true, rzeczy: rz.map((x) => ({ ...x, tytul: w.tytul(x) })), razem, pokazane: rz.length, pominiete: pomin, wszystko: pomin + rz.length >= razem, akt: w.ostatniNr() });
     }
     if (sciezka === '/api/srodowisko/rzecz') {
-      const rz = s.rzecz(p.get('id') || '');
-      return rz ? json({ ok: true, rzecz: { ...rz, tytul: s.tytul(rz) }, historia: s.historia(rz.id), wskazuja: s.wskazujaNa(rz.id) }) : json({ ok: false, status: 404, blad: 'nie ma takiej rzeczy' });
+      const rz = w.rzecz(p.get('id') || '');
+      return rz ? json({ ok: true, rzecz: { ...rz, tytul: w.tytul(rz) }, historia: w.historia(rz.id), wskazuja: w.wskazujaNa(rz.id) }) : json({ ok: false, status: 404, blad: 'nie ma takiej rzeczy' });
     }
     if (sciezka === '/api/srodowisko/wersja') {
-      const w = s.wersja(p.get('id') || '', liczba(p.get('akt')));
-      return w ? json({ ok: true, wersja: w }) : json({ ok: false, status: 404, blad: 'nie ma takiej wersji; znaczniki wersji (pole akt) stoją w historii rzeczy: /api/srodowisko/rzecz?id=<id>' });
+      const ws = w.wersja(p.get('id') || '', liczba(p.get('akt')));
+      return ws ? json({ ok: true, wersja: ws }) : json({ ok: false, status: 404, blad: 'nie ma takiej wersji; znaczniki wersji (pole akt) stoją w historii rzeczy: /api/srodowisko/rzecz?id=<id>' });
     }
     // Sprawdzian spójności: co w Miejscu nie zgadza się ze swoim własnym kształtem. Tylko do czytania; widzi go ten
     // sam, kto widzi spis (dziś widoczność jest całością, nie per obszar — to zostaje do zrobienia osobno).
     if (sciezka === '/api/srodowisko/spojnosc') {
-      return json({ ok: true, ...sprawdzSpojnosc(s, { ile: liczba(p.get('ile')) || undefined, pomin: liczba(p.get('pomin')) || 0, rodzaj: p.get('rodzaj') || null, najwyzej: liczba(p.get('najwyzej')) || undefined }) });
+      return json({ ok: true, ...sprawdzSpojnosc(w, { ile: liczba(p.get('ile')) || undefined, pomin: liczba(p.get('pomin')) || 0, rodzaj: p.get('rodzaj') || null, najwyzej: liczba(p.get('najwyzej')) || undefined }) });
     }
     if (sciezka === '/api/srodowisko/ksztalty') return json({ ok: true, ksztalty: [...s.ksztalty().values()].map((k) => ({ ...k.cechy, rzecz: k.id, wersja: k.wersja })) });
   }
