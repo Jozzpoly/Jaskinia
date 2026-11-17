@@ -122,6 +122,36 @@
 
   // --- strona --------------------------------------------------------------------------------------------------
   const lp = (n, a, b, c) => `${n} ${n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c)}`;
+  // Most do starej Jaskini (Opus Code, 17 XI 2026). Ta strona jest gospodarzem dla swoich gosci, ale sama
+  // bywa gosciem: stara Jaskinia umie otworzyc dowolny adres w oknie i rozmawia ta sama umowa (hello, state,
+  // signals, event, flag). Bez tych kilku linii nowe srodowisko otwarte w jej oknie dzialaloby "po cichu":
+  // bez nazwy, bez stanu i bez liczb. Dzieki nim jedno miejsce jest prawda od pierwszego dnia, a stara
+  // Jaskinia nie wymaga ani jednej zmiany.
+  const gospodarzOnad = window.parent && window.parent !== window ? window.parent : null;
+  let ostatniStan = null;
+  const doGospodarza = (w) => { if (gospodarzOnad) try { gospodarzOnad.postMessage({ jaskinia: 1, ...w }, '*'); } catch { /* okno moglo zniknac */ } };
+  function przedstawSie() {
+    doGospodarza({ type: 'hello', name: 'Jaskinia: srodowisko', version: '1', wants: [] });
+    if (ostatniStan) powiedzStan();
+  }
+  function powiedzStan() {
+    if (!ostatniStan) return;
+    doGospodarza({ type: 'state', text: ostatniStan.tekst });
+    doGospodarza({ type: 'signals', values: { rzeczy: ostatniStan.rzeczy, czeka: ostatniStan.czeka, akt: ostatniStan.akt } });
+  }
+  if (gospodarzOnad) {
+    // Umowa mowi, ze gospodarz odzywa sie pierwszy, ale nie wiadomo, czy zdazymy go uslyszec: mowimy od razu
+    // i jeszcze raz po jego "hi" (ten sam wzor, ktory zastosowal gosc z dowodu D1).
+    addEventListener('message', (e) => {
+      const m = e.data;
+      if (e.source !== gospodarzOnad || !m || m.jaskinia !== 1) return;
+      if (m.type === 'hi') przedstawSie();
+      else if (m.type === 'state?') powiedzStan();
+      else if (m.type === 'remark' && typeof m.text === 'string') doGospodarza({ type: 'event', text: 'uwaga wlasciciela trafila do srodowiska: ' + m.text.slice(0, 120), level: 'info' });
+    });
+    przedstawSie();
+  }
+
   function rysuj() {
     const t = $('tresc');
     t.textContent = '';
@@ -130,6 +160,10 @@
     if (d.miejsce.podglad) t.append(el('p', { klasa: 'uwaga', tekst: 'Podgląd: wszystko tutaj jest publiczne do czytania i niczego prywatnego tu nie ma. To jest środowisko, w którym Jaskinia ma rosnąć; Start jeszcze nie istnieje.' }));
 
     const czekaIle = d.czeka.propozycje.length + d.czeka.prosby.length;
+    const ileRzeczy = Number(d.razem) || 0;
+    ostatniStan = { rzeczy: ileRzeczy, czeka: czekaIle, akt: (d.miejsce && d.miejsce.akt) || 0,
+      tekst: ileRzeczy + ' rzeczy' + (czekaIle ? ', ' + czekaIle + ' czeka na Ciebie' : '') };
+    powiedzStan();
     if (czekaIle) t.append(el('section', {}, el('h2', {}, 'Czeka na właściciela ', el('span', { klasa: 'ile', tekst: String(czekaIle) })),
       el('ul', { klasa: 'lista' },
         d.czeka.prosby.map((p) => el('li', {}, el('a', { href: '/rzecz/' + p.id, tekst: p.tresc }), el('span', { klasa: 'bok', tekst: `prośba od ${p.od} · ${kiedy(p.kiedy)}` }))),
