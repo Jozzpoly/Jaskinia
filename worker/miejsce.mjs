@@ -13,17 +13,27 @@
 // Ten plik nie zna Cloudflare: dostaje obiekt sql z metodą exec(zapytanie, ...parametry), jak ctx.storage.sql
 // w Durable Object. Testy podają mu node:sqlite.
 
-export const WERSJA = 'miejsce-1';
+// Wersja formatu wywozu. miejsce-2 (17 XI 2026): akt niesie ślad ciała (`cialo`), rodzaj może mieć pokolenie
+// (`rzecz/2`), a obok starych przestrzeni głów jest `rzecz:<id>` (tożsamość rzeczy, rusza ją tylko warstwa środowiska).
+// Wwóz przyjmuje obie wersje: miejsce-1 to ten sam układ bez tych trzech rzeczy.
+export const WERSJA = 'miejsce-2';
+export const WERSJE_WWOZU = ['miejsce-1', 'miejsce-2'];
 export const LIMIT_TRESCI = 2 * 1024 * 1024; // bajty; wiersz SQLite w Durable Object ma limit 8 MB
 export const LIMIT_DZIENNIKA = 200;
 export const WLASCICIEL = 'jozz';
 
 const IMIE = /^[a-z][a-z0-9_-]{0,39}$/;
 export const PRYWATNE_GLOWY = 'jozz:prywatne/';
-const RODZAJ = /^[a-z][a-z0-9_-]{0,39}$/;
+// Rodzaj z opcjonalnym pokoleniem: `uwaga`, `rzecz/2`, `gosc.edytor-potworow/1`. Jądro nie wie, co rodzaj znaczy.
+const RODZAJ = /^[a-z][a-z0-9_.-]{0,79}(\/[1-9][0-9]{0,5})?$/;
+export const poprawnyRodzaj = (s) => typeof s === 'string' && RODZAJ.test(s);
+const CIALO = /^[\x20-\x7e]{1,80}$/;
 const OP = /^[A-Za-z0-9_.:-]{8,120}$/;
 // jozz:<ścieżka> przesuwa tylko właściciel; agent:<imię>:<ścieżka> ten agent i właściciel; wspolne:<ścieżka> każdy z kluczem
-const GLOWA = /^(jozz|wspolne|agent:[a-z][a-z0-9_-]{0,39}):[a-z0-9_./-]{1,120}$/;
+// rzecz:<26 znaków> to tożsamość rzeczy w środowisku; prawo do jej ruszenia liczy warstwa środowiska z danych
+// (worker/srodowisko.mjs), więc starymi drzwiami /api/miejsce nie da się jej przesunąć.
+const GLOWA = /^((jozz|wspolne|agent:[a-z][a-z0-9_-]{0,39}):[a-z0-9_./-]{1,120}|rzecz:[0-9a-z]{26})$/;
+export const poprawnaGlowa = (s) => typeof s === 'string' && GLOWA.test(s);
 
 const enc = new TextEncoder();
 export async function skrot(tekst) {
@@ -33,9 +43,10 @@ export async function skrot(tekst) {
 
 export const poprawneImie = (s) => typeof s === 'string' && IMIE.test(s);
 
-function mozePrzesunac(kto, glowa) {
-  if (kto === WLASCICIEL) return true;
+function mozePrzesunac(kto, glowa, wlasciciel = WLASCICIEL, warstwa = false) {
   const [przestrzen, kogo] = glowa.split(':');
+  if (przestrzen === 'rzecz') return warstwa === true;
+  if (kto === wlasciciel) return true;
   if (przestrzen === 'wspolne') return true;
   if (przestrzen === 'agent') return kogo === kto;
   return false;
@@ -48,17 +59,26 @@ const SCHEMAT = [
   `CREATE TABLE IF NOT EXISTS glowy (nazwa TEXT PRIMARY KEY, zapis TEXT NOT NULL, akt INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS odczyty (kto TEXT PRIMARY KEY, nr INTEGER NOT NULL, kiedy INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS meta (klucz TEXT PRIMARY KEY, wartosc TEXT NOT NULL)`,
+  // Indeksy dołożone 17 XI 2026, zanim są dane: po danych byłaby to zmiana istniejącej kości (uwaga Opusa Code).
+  `CREATE INDEX IF NOT EXISTS akty_zapis ON akty (zapis)`,
+  `CREATE INDEX IF NOT EXISTS akty_glowa ON akty (glowa)`,
+  `CREATE INDEX IF NOT EXISTS zapisy_rodzaj ON zapisy (rodzaj)`,
 ];
 
 const blad = (status, tekst, extra = {}) => ({ ok: false, status, blad: tekst, ...extra });
 
 export class Rdzen {
-  constructor(sql, { teraz = () => Date.now() } = {}) {
+  constructor(sql, { teraz = () => Date.now(), wlasciciel = WLASCICIEL } = {}) {
     this.sql = sql;
     this.teraz = teraz;
+    // Kto jest właścicielem, przychodzi z ustawienia Workera, a nie z kodu; `jozz` jest tylko wartością domyślną.
+    this.wlasciciel = poprawneImie(wlasciciel) ? wlasciciel : WLASCICIEL;
     for (const s of SCHEMAT) sql.exec(s);
+    const kolumny = () => sql.exec(`PRAGMA table_info(akty)`).toArray().map((k) => k.name);
     // migracja 11 XI: prywatność aktu (kolumna dopisana do istniejących baz, bez ruszania danych)
-    if (!sql.exec(`PRAGMA table_info(akty)`).toArray().some((k) => k.name === 'prywatne')) sql.exec(`ALTER TABLE akty ADD COLUMN prywatne INTEGER NOT NULL DEFAULT 0`);
+    if (!kolumny().includes('prywatne')) sql.exec(`ALTER TABLE akty ADD COLUMN prywatne INTEGER NOT NULL DEFAULT 0`);
+    // migracja 17 XI: ślad ciała przy akcie (czym uczestnik to zrobił; jego własna deklaracja, nie dowód)
+    if (!kolumny().includes('cialo')) sql.exec(`ALTER TABLE akty ADD COLUMN cialo TEXT`);
     const w = sql.exec(`SELECT wartosc FROM meta WHERE klucz = 'schemat'`).toArray()[0];
     if (!w) sql.exec(`INSERT INTO meta (klucz, wartosc) VALUES ('schemat', ?)`, WERSJA);
   }
@@ -66,8 +86,10 @@ export class Rdzen {
   q(zapytanie, ...p) { return this.sql.exec(zapytanie, ...p).toArray(); }
 
   // Jedna czynność. Najpierw wszystko, co asynchroniczne (skróty), potem sprawdzenie i zapis bez przerwy.
-  async wykonaj(kto, cialo) {
+  async wykonaj(kto, cialo, { warstwa = false, slad = null } = {}) {
     if (!poprawneImie(kto)) return blad(401, 'nieznany wykonawca');
+    this._slad = typeof slad === 'string' && CIALO.test(slad) ? slad : null;
+    this._warstwa = warstwa === true;
     if (!cialo || typeof cialo !== 'object') return blad(400, 'ciało żądania musi być obiektem JSON');
     const { op, co } = cialo;
     if (typeof op !== 'string' || !OP.test(op)) return blad(400, 'op: 8 do 120 znaków z [A-Za-z0-9_.:-], nadaje go wołający, ten sam przy ponowieniu');
@@ -88,7 +110,7 @@ export class Rdzen {
 
   async przygotujZapis({ rodzaj, tresc, prywatne = false }) {
     if (typeof prywatne !== 'boolean') return blad(400, 'prywatne: true albo false');
-    if (typeof rodzaj !== 'string' || !RODZAJ.test(rodzaj)) return blad(400, 'rodzaj: małe litery, cyfry, - i _, do 40 znaków');
+    if (typeof rodzaj !== 'string' || !RODZAJ.test(rodzaj)) return blad(400, 'rodzaj: małe litery, cyfry, kropka, - i _, do 80 znaków, opcjonalnie /pokolenie (np. rzecz/2)');
     if (typeof tresc !== 'string') return blad(400, 'tresc musi być tekstem (JSON zapisz jako tekst)');
     const rozmiar = enc.encode(tresc).length;
     if (rozmiar > LIMIT_TRESCI) return blad(413, `treść ma ${rozmiar} B, limit to ${LIMIT_TRESCI} B`);
@@ -98,7 +120,7 @@ export class Rdzen {
 
   przygotujPrzesuniecie(kto, { glowa, wersja = null, na }) {
     if (typeof glowa !== 'string' || !GLOWA.test(glowa)) return blad(400, 'glowa: jozz:…, wspolne:… albo agent:<imię>:…');
-    if (!mozePrzesunac(kto, glowa)) return blad(403, `${kto} nie może przesuwać głowy ${glowa}`);
+    if (!mozePrzesunac(kto, glowa, this.wlasciciel, this._warstwa)) return blad(403, glowa.startsWith('rzecz:') ? 'rzeczy środowiska rusza się przez /api/srodowisko/ruch, nie tędy' : `${kto} nie może przesuwać głowy ${glowa}`);
     if (wersja !== null && !Number.isInteger(wersja)) return blad(400, 'wersja: numer aktu, który ostatnio przesunął głowę (z odczytu), albo null dla nowej głowy');
     if (typeof na !== 'string') return blad(400, 'na: identyfikator zapisu');
     return { ok: true, glowa, wersja, na, odcisk: [glowa, wersja, na].join('|') };
@@ -107,7 +129,7 @@ export class Rdzen {
   zapisz(kto, op, odcisk, { rodzaj, tresc, rozmiar, id, prywatne }) {
     const nowy = !this.q(`SELECT 1 AS j FROM zapisy WHERE id = ?`, id).length;
     if (nowy) this.sql.exec(`INSERT INTO zapisy (id, rodzaj, tresc, rozmiar) VALUES (?, ?, ?, ?)`, id, rodzaj, tresc, rozmiar);
-    this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, nowy, prywatne) VALUES (?, ?, ?, ?, 'zapisz', ?, ?, ?)`, op, odcisk, kto, this.teraz(), id, nowy ? 1 : 0, prywatne ? 1 : 0);
+    this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, nowy, prywatne, cialo) VALUES (?, ?, ?, ?, 'zapisz', ?, ?, ?, ?)`, op, odcisk, kto, this.teraz(), id, nowy ? 1 : 0, prywatne ? 1 : 0, this._slad ?? null);
     return { ok: true, powtorzone: false, zapis: id, nowy, akt: this.opisAktu(this.ostatniAkt()) };
   }
 
@@ -116,7 +138,7 @@ export class Rdzen {
     const teraz = this.q(`SELECT zapis, akt FROM glowy WHERE nazwa = ?`, glowa)[0];
     const aktualna = teraz ? teraz.akt : null;
     if (aktualna !== wersja) return blad(409, 'głowa przesunęła się po Twoim odczycie; przeczytaj ją znowu', { glowa, wersja: aktualna, zapis: teraz ? teraz.zapis : null });
-    this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu) VALUES (?, ?, ?, ?, 'przesun', ?, ?, ?)`, op, odcisk, kto, this.teraz(), na, glowa, teraz ? teraz.zapis : null);
+    this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, cialo) VALUES (?, ?, ?, ?, 'przesun', ?, ?, ?, ?)`, op, odcisk, kto, this.teraz(), na, glowa, teraz ? teraz.zapis : null, this._slad ?? null);
     const akt = this.ostatniAkt();
     this.sql.exec(`INSERT INTO glowy (nazwa, zapis, akt) VALUES (?, ?, ?) ON CONFLICT(nazwa) DO UPDATE SET zapis = excluded.zapis, akt = excluded.akt`, glowa, na, akt.nr);
     return { ok: true, powtorzone: false, glowa, zapis: na, wersja: akt.nr, akt: this.opisAktu(akt) };
@@ -124,9 +146,56 @@ export class Rdzen {
 
   ostatniAkt() { return this.q(`SELECT * FROM akty ORDER BY nr DESC LIMIT 1`)[0]; }
 
+  // Położenie: zapis treści i przesunięcie głowy jako jedna czynność. Używa go warstwa środowiska, która sama
+  // policzyła prawo do ruchu z danych. Dwa kroki, bo skróty są asynchroniczne, a sprawdzenie i zapis muszą iść
+  // bez przerwy: `przygotujPolozenie` liczy skróty, `zatwierdzPolozenia` robi resztę synchronicznie dla całej
+  // listy, wszystko albo nic (gest zmieniający dwie rzeczy jest jedną czynnością).
+  async przygotujPolozenie({ op, rodzaj, tresc, glowa, wersja = null }) {
+    if (typeof op !== 'string' || !OP.test(op)) return blad(400, 'op: 8 do 120 znaków z [A-Za-z0-9_.:-]');
+    const z = await this.przygotujZapis({ rodzaj, tresc });
+    if (!z.ok) return z;
+    if (!poprawnaGlowa(glowa)) return blad(400, 'glowa: zła nazwa');
+    if (wersja !== null && !Number.isInteger(wersja)) return blad(400, 'wersja: numer aktu, który ostatnio przesunął głowę, albo null dla nowej');
+    const odciskZ = await skrot(JSON.stringify(['zapisz', z.odcisk]));
+    const odciskP = await skrot(JSON.stringify(['przesun', [glowa, wersja, z.id].join('|')]));
+    return { ok: true, op, rodzaj, tresc, rozmiar: z.rozmiar, id: z.id, glowa, wersja, odciskZ, odciskP };
+  }
+
+  zatwierdzPolozenia(kto, lista, { slad = null } = {}) {
+    if (!poprawneImie(kto)) return blad(401, 'nieznany wykonawca');
+    const cialo = typeof slad === 'string' && CIALO.test(slad) ? slad : null;
+    // 1. powtórzenie tej samej czynności: wszystkie akty już są, z tym samym odciskiem
+    const byle = lista.map((p) => ({ z: this.q(`SELECT * FROM akty WHERE op = ?`, p.op + '.z')[0], p: this.q(`SELECT * FROM akty WHERE op = ?`, p.op + '.p')[0] }));
+    if (byle.length && byle.every((b) => b.z && b.p)) {
+      const te = byle.every((b, i) => b.z.kto === kto && b.z.odcisk === lista[i].odciskZ && b.p.odcisk === lista[i].odciskP);
+      if (te) return { ok: true, powtorzone: true, wyniki: byle.map((b, i) => ({ glowa: lista[i].glowa, zapis: lista[i].id, wersja: b.p.nr })) };
+      return blad(409, 'ten op należy już do innej czynności; nowa czynność potrzebuje nowego op');
+    }
+    if (byle.some((b) => b.z || b.p)) return blad(409, 'ten op należy już do innej czynności; nowa czynność potrzebuje nowego op');
+    // 2. porównanie wszystkich głów, zanim cokolwiek zostanie zapisane
+    for (const p of lista) {
+      const g = this.q(`SELECT zapis, akt FROM glowy WHERE nazwa = ?`, p.glowa)[0];
+      const aktualna = g ? g.akt : null;
+      if (aktualna !== p.wersja) return blad(409, 'rzecz zmieniła się po Twoim odczycie; przeczytaj ją znowu', { glowa: p.glowa, wersja: aktualna });
+    }
+    // 3. zapis: nic tu nie zależy już od danych
+    const wyniki = [];
+    for (const p of lista) {
+      const nowy = !this.q(`SELECT 1 AS j FROM zapisy WHERE id = ?`, p.id).length;
+      if (nowy) this.sql.exec(`INSERT INTO zapisy (id, rodzaj, tresc, rozmiar) VALUES (?, ?, ?, ?)`, p.id, p.rodzaj, p.tresc, p.rozmiar);
+      const g = this.q(`SELECT zapis FROM glowy WHERE nazwa = ?`, p.glowa)[0];
+      this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, nowy, prywatne, cialo) VALUES (?, ?, ?, ?, 'zapisz', ?, ?, 0, ?)`, p.op + '.z', p.odciskZ, kto, this.teraz(), p.id, nowy ? 1 : 0, cialo);
+      this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, cialo) VALUES (?, ?, ?, ?, 'przesun', ?, ?, ?, ?)`, p.op + '.p', p.odciskP, kto, this.teraz(), p.id, p.glowa, g ? g.zapis : null, cialo);
+      const akt = this.ostatniAkt();
+      this.sql.exec(`INSERT INTO glowy (nazwa, zapis, akt) VALUES (?, ?, ?) ON CONFLICT(nazwa) DO UPDATE SET zapis = excluded.zapis, akt = excluded.akt`, p.glowa, p.id, akt.nr);
+      wyniki.push({ glowa: p.glowa, zapis: p.id, wersja: akt.nr, z: g ? g.zapis : null });
+    }
+    return { ok: true, powtorzone: false, wyniki };
+  }
+
   opisAktu(a) {
     return { nr: a.nr, op: a.op, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), co: a.co, zapis: a.zapis,
-      ...(a.co === 'przesun' ? { glowa: a.glowa, z: a.z_zapisu } : { nowy: !!a.nowy }), ...(a.prywatne ? { prywatne: true } : {}) };
+      ...(a.co === 'przesun' ? { glowa: a.glowa, z: a.z_zapisu } : { nowy: !!a.nowy }), ...(a.prywatne ? { prywatne: true } : {}), ...(a.cialo ? { cialo: a.cialo } : {}) };
   }
 
   // Kto co widzi (uwaga Menadżera do #10, 11 XI): domyślnie wszystko widzą wszyscy uczestnicy z kluczem, i UI mówi to
@@ -135,7 +204,7 @@ export class Rdzen {
   // dostaje tylko ten, kto widzi jakiś akt z tym zapisem, więc odgadnięty skrót niczego nie otwiera. Prywatność
   // siedzi na akcie, nie na treści: ta sama treść zapisana jawnie przez kogoś innego jest jawna.
   widoczny(kto, w) {
-    if (kto === WLASCICIEL || w.kto === kto) return true;
+    if (kto === this.wlasciciel || w.kto === kto) return true;
     if (w.co === 'przesun' && String(w.glowa || '').startsWith(PRYWATNE_GLOWY)) return false;
     if (!w.prywatne) return true;
     // prywatny akt: poza właścicielem i autorem tylko adresaci wiadomości
@@ -143,22 +212,22 @@ export class Rdzen {
     return false;
   }
 
-  glowa(nazwa, kto = WLASCICIEL) {
-    if (String(nazwa).startsWith(PRYWATNE_GLOWY) && kto !== WLASCICIEL) return blad(403, 'prywatne głowy widzi tylko właściciel');
+  glowa(nazwa, kto = this.wlasciciel) {
+    if (String(nazwa).startsWith(PRYWATNE_GLOWY) && kto !== this.wlasciciel) return blad(403, 'prywatne głowy widzi tylko właściciel');
     const g = this.q(`SELECT g.nazwa, g.zapis, g.akt, z.rodzaj, z.tresc FROM glowy g JOIN zapisy z ON z.id = g.zapis WHERE g.nazwa = ?`, nazwa)[0];
     return g ? { ok: true, glowa: g.nazwa, zapis: g.zapis, wersja: g.akt, rodzaj: g.rodzaj, tresc: g.tresc } : blad(404, 'nie ma takiej głowy', { wersja: null });
   }
 
-  zapisTresc(id, kto = WLASCICIEL) {
+  zapisTresc(id, kto = this.wlasciciel) {
     const z = this.q(`SELECT * FROM zapisy WHERE id = ?`, id)[0];
     if (!z) return blad(404, 'nie ma takiego zapisu');
-    if (kto !== WLASCICIEL && !this.q(`SELECT * FROM akty WHERE zapis = ?`, id).some((a) => this.widoczny(kto, { ...a, rodzaj: z.rodzaj, tresc: z.tresc })))
+    if (kto !== this.wlasciciel && !this.q(`SELECT * FROM akty WHERE zapis = ?`, id).some((a) => this.widoczny(kto, { ...a, rodzaj: z.rodzaj, tresc: z.tresc })))
       return blad(404, 'nie ma takiego zapisu');
     return { ok: true, ...z };
   }
 
   // Co się działo po akcie nr `od`. Treści dołączone do aktów zapisu; najwyżej LIMIT_DZIENNIKA na raz, z kursorem.
-  dziennik(od = 0, limit = LIMIT_DZIENNIKA, kto = WLASCICIEL) {
+  dziennik(od = 0, limit = LIMIT_DZIENNIKA, kto = this.wlasciciel) {
     const n = Math.max(1, Math.min(LIMIT_DZIENNIKA, limit | 0 || LIMIT_DZIENNIKA));
     const wiersze = this.q(`SELECT a.*, z.rodzaj, z.tresc, z.rozmiar FROM akty a LEFT JOIN zapisy z ON z.id = a.zapis WHERE a.nr > ? ORDER BY a.nr LIMIT ?`, od | 0, n + 1);
     const wiecej = wiersze.length > n;
@@ -173,7 +242,9 @@ export class Rdzen {
   nowe(kto) {
     const o = this.q(`SELECT nr, kiedy FROM odczyty WHERE kto = ?`, kto)[0];
     const d = this.dziennik(o ? o.nr : 0, LIMIT_DZIENNIKA, kto);
-    return { ...d, widziane_do: o ? o.nr : 0, widziane_kiedy: o ? new Date(o.kiedy).toISOString() : null, cudze: d.akty.filter((a) => a.kto !== kto).length };
+    // pierwszy_raz: czytelnik nie ma jeszcze zapisanej wizyty. To najczęstszy przypadek (każda nowa sesja agenta),
+    // więc ma własną, jawną odpowiedź zamiast pustej listy udającej "nic się nie zmieniło".
+    return { ...d, pierwszy_raz: !o, widziane_do: o ? o.nr : 0, widziane_kiedy: o ? new Date(o.kiedy).toISOString() : null, cudze: d.akty.filter((a) => a.kto !== kto).length };
   }
 
   widzialem(kto, nr) {
@@ -227,7 +298,7 @@ export class Rdzen {
   // Uwaga na zasięg: to łapie niespójną podmianę, a nie dowodzi pochodzenia (Astra, obs. 2; umowa rdzenia, U7).
   async importuj(e) {
     if (!e || e.format !== 'jaskinia-miejsce') return blad(400, 'to nie jest eksport Miejsca (format jaskinia-miejsce)');
-    if (e.wersja !== WERSJA) return blad(400, `eksport w wersji ${e.wersja}, a to Miejsce zna ${WERSJA}; potrzebna migracja`);
+    if (!WERSJE_WWOZU.includes(e.wersja)) return blad(400, `eksport w wersji ${e.wersja}, a to Miejsce zna ${WERSJE_WWOZU.join(' i ')}; potrzebna migracja`);
     for (const t of ['zapisy', 'akty', 'glowy', 'odczyty']) if (!Array.isArray(e[t])) return blad(400, `brak listy ${t}`);
     const s = this.stan();
     if (s.zapisy || s.akty || s.glowy) return blad(409, 'import tylko do pustego Miejsca; to ma już historię, której nie łączę po cichu');
@@ -246,8 +317,8 @@ export class Rdzen {
     for (const g of e.glowy) if (!GLOWA.test(g.nazwa) || !ids.has(g.zapis) || !nry.has(g.akt)) return blad(422, `głowa ${g.nazwa} wskazuje coś, czego nie ma`);
     // od tej linii nic nie może się nie udać z powodu danych: wszystko sprawdzone
     for (const z of e.zapisy) this.sql.exec(`INSERT INTO zapisy (id, rodzaj, tresc, rozmiar) VALUES (?, ?, ?, ?)`, z.id, z.rodzaj, z.tresc, enc.encode(z.tresc).length);
-    for (const a of e.akty) this.sql.exec(`INSERT INTO akty (nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy, prywatne) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      a.nr, a.op, String(a.odcisk || ''), a.kto, Number(a.kiedy), a.co, a.zapis, a.glowa ?? null, a.z_zapisu ?? null, a.nowy ?? null, a.prywatne ? 1 : 0);
+    for (const a of e.akty) this.sql.exec(`INSERT INTO akty (nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy, prywatne, cialo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      a.nr, a.op, String(a.odcisk || ''), a.kto, Number(a.kiedy), a.co, a.zapis, a.glowa ?? null, a.z_zapisu ?? null, a.nowy ?? null, a.prywatne ? 1 : 0, typeof a.cialo === 'string' && CIALO.test(a.cialo) ? a.cialo : null);
     for (const g of e.glowy) this.sql.exec(`INSERT INTO glowy (nazwa, zapis, akt) VALUES (?, ?, ?)`, g.nazwa, g.zapis, g.akt);
     for (const o of e.odczyty) if (poprawneImie(o.kto) && Number.isInteger(o.nr)) this.sql.exec(`INSERT INTO odczyty (kto, nr, kiedy) VALUES (?, ?, ?)`, o.kto, o.nr, Number(o.kiedy) || this.teraz());
     return { ok: true, zapisy: e.zapisy.length, akty: e.akty.length, glowy: e.glowy.length };
@@ -266,12 +337,12 @@ export async function obsluzMiejsce(rdzen, request) {
   });
   const ciało = async () => { try { return await request.json(); } catch { return null; } };
   if (request.method === 'GET') {
-    if (sciezka === '') { let most = null; try { most = JSON.parse(rdzen.meta('most_ostatni')); } catch { /* brak */ } return odp({ ...rdzen.stan(), ja: kto, wlasciciel: kto === WLASCICIEL, most }); }
+    if (sciezka === '') { let most = null; try { most = JSON.parse(rdzen.meta('most_ostatni')); } catch { /* brak */ } return odp({ ...rdzen.stan(), ja: kto, wlasciciel: kto === rdzen.wlasciciel, most }); }
     if (sciezka === 'dziennik') return odp(rdzen.dziennik(Number(url.searchParams.get('od') || 0), Number(url.searchParams.get('ile') || LIMIT_DZIENNIKA), kto));
     if (sciezka === 'nowe') return odp(rdzen.nowe(kto));
     if (sciezka === 'glowa') return odp(rdzen.glowa(url.searchParams.get('nazwa') || '', kto));
     if (sciezka === 'zapis') return odp(rdzen.zapisTresc(url.searchParams.get('id') || '', kto));
-    if (sciezka === 'eksport') return odp(kto === WLASCICIEL ? rdzen.eksport() : blad(403, 'eksport całości tylko dla właściciela'));
+    if (sciezka === 'eksport') return odp(kto === rdzen.wlasciciel ? rdzen.eksport() : blad(403, 'eksport całości tylko dla właściciela'));
   }
   // Tylko dla mostu wołanego przez Workera z crona. Worker przekazuje żądania z zewnątrz z nagłówkami budowanymi od
   // zera, więc x-wewnetrzne nie przejdzie z przeglądarki ani od agenta.
@@ -284,9 +355,9 @@ export async function obsluzMiejsce(rdzen, request) {
     if (sciezka === 'most/przyjmij') return odp(await rdzen.wykonaj(c.kto, { op: c.op, co: 'zapisz', rodzaj: 'wiadomosc', tresc: c.tresc }));
   }
   if (request.method === 'POST') {
-    if (sciezka === 'akt') return odp(await rdzen.wykonaj(kto, await ciało()));
+    if (sciezka === 'akt') return odp(await rdzen.wykonaj(kto, await ciało(), { slad: request.headers.get('x-cialo') }));
     if (sciezka === 'widzialem') { const c = await ciało(); return odp(rdzen.widzialem(kto, c && c.nr)); }
-    if (sciezka === 'import') return odp(kto === WLASCICIEL ? await rdzen.importuj(await ciało()) : blad(403, 'import całości tylko dla właściciela'));
+    if (sciezka === 'import') return odp(kto === rdzen.wlasciciel ? await rdzen.importuj(await ciało()) : blad(403, 'import całości tylko dla właściciela'));
   }
   return odp(blad(404, 'nie ma takiej ścieżki w Miejscu'));
 }
