@@ -48,7 +48,7 @@ export const TYPY_POKRETEL = {
   krzywa: `krzywa ruchu: jedna z nazw (${KRZYWE.join(', ')}) albo cztery liczby krzywej Béziera [x1, y1, x2, y2], x od 0 do 1`,
   sprezyna: 'sprężyna w parametrach, które czuje ręka: {czas >= 0 (milisekundy: jak szybko dochodzi), odbicie od 0 (bez odbicia) do 1 (nie gaśnie)}',
   rampa: `rampa barw: {przystanki: lista od 2 do 16 przystanków {w: 0..1, kolor} w kolejności rosnącego w, przestrzen: ${PRZESTRZENIE.join(' albo ')} (niewymagana; bez niej srgb)}`,
-  kroj: 'krój pisma: {rodzina (napis jak w CSS), grubosc 1..1000 (niewymagana), osie {wght: 600, …} (niewymagane)}',
+  kroj: 'krój pisma: {rodzina (napis jak w CSS), grubosc 1..1000 (niewymagana), osie {wght: 600, …} (niewymagane), plik {rzecz: <id rzeczy plik/1>, odcisk: <odcisk jej dzisiejszej wersji>} (niewymagany: krój z bajtów w Miejscu)}',
   cien: 'cień: {x, y, rozmycie >= 0, kolor}; krycie to kanał alfa koloru (#rrggbbaa)',
   zestawy: 'lista identyfikatorów rzeczy rodzaju zestaw/1 (najwyżej 8); późniejszy na liście wygrywa',
   dowolne: 'dowolna wartość JSON; środowisko jej nie sprawdza (wyjście dla narzędzi z własną strukturą)',
@@ -97,6 +97,7 @@ export function wadaWartosci(d, w, maRzecz = () => null) {
       if (!obiekt(w) || typeof w.rodzina !== 'string' || !w.rodzina.trim() || w.rodzina.length > 300) return 'krój to {rodzina: napis jak w CSS, do 300 znaków, …}';
       if (w.grubosc !== undefined && !(liczba(w.grubosc) && w.grubosc >= 1 && w.grubosc <= 1000)) return 'grubość kroju to liczba od 1 do 1000';
       if (w.osie !== undefined && !(obiekt(w.osie) && Object.keys(w.osie).length <= 8 && Object.entries(w.osie).every(([n, x]) => /^[A-Za-z]{4}$/.test(n) && liczba(x)))) return 'osie kroju to obiekt {czteroliterowa nazwa osi: liczba}, najwyżej 8 osi';
+      if (w.plik !== undefined && !(obiekt(w.plik) && typeof w.plik.rzecz === 'string' && ID.test(w.plik.rzecz) && typeof w.plik.odcisk === 'string' && /^[0-9a-f]{64}$/.test(w.plik.odcisk))) return 'plik kroju to {rzecz: <id rzeczy plik/1>, odcisk: <64 znaki szesnastkowe>}';
       return null;
     case 'cien': return obiekt(w) && liczba(w.x) && liczba(w.y) && liczba(w.rozmycie) && w.rozmycie >= 0 && typeof w.kolor === 'string' && KOLOR.test(w.kolor) ? null : 'cień to {x, y, rozmycie >= 0, kolor: #rrggbb albo #rrggbbaa}';
     case 'zestawy': {
@@ -165,7 +166,17 @@ export function sprawdzUstawienie(s, rodzaj, cechy, widzi, obszar = undefined) {
   // wartość zwykła albo odwołanie do zadeklarowanego pokrętła tego samego typu
   const wada = (d, w, zrodlo = undefined) => {
     const cel = odwolanie(d, w);
-    if (cel === null) return wadaWartosci(d, w, widzi);
+    if (cel === null) {
+      const zla = wadaWartosci(d, w, widzi);
+      if (zla || d.typ !== 'kroj' || !w.plik) return zla;
+      // Krój z pliku: plik musi istnieć dla piszącego i być krojem, a odcisk ma wskazywać jego dzisiejszą wersję. Wartość
+      // przypina tę wersję: późniejsza podmiana pliku nie zmienia kroju tam, gdzie ktoś go już przyjął.
+      const f = widzi(w.plik.rzecz);
+      if (!f || f.rodzaj !== 'plik/1' || f.odlozone) return `plik kroju: nie ma pliku ${w.plik.rzecz}`;
+      if (!String(f.cechy.typ).startsWith('font/')) return `plik kroju ma typ ${f.cechy.typ}, a ma być krojem (font/woff2, font/woff, font/ttf albo font/otf)`;
+      if (f.cechy.tresc !== w.plik.odcisk) return 'plik kroju: odcisk nie wskazuje dzisiejszej wersji pliku';
+      return null;
+    }
     if (!NAZWA.test(cel)) return 'odwołanie to {"z": "<nazwa pokrętła>"}';
     if (cel === d.nazwa) return 'odwołuje się do samego siebie';
     const c = dekl(cel);

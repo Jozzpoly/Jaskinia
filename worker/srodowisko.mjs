@@ -20,6 +20,7 @@ import { poprawneImie, skrot } from './miejsce.mjs';
 import { PRZEDROSTEK_GOSCIA } from './klucze.mjs';
 import { opKlienta } from './ksztalty.mjs';
 import { sprawdzUstawienie, POKRETLO_ZESTAWOW } from './ustawienia.mjs';
+import { sprawdzPlik, naBase64, NAJWIEKSZY_PLIK, NAJWIECEJ_BAJTOW_NA_DOBE } from './pliki.mjs';
 
 export const SRODOWISKO = 'srodowisko-1';
 export const CZYTELNIK_PODGLADU = 'podglad'; // imię czytającego bez klucza na podglądzie; uczestnikiem jest tylko tam
@@ -1095,6 +1096,9 @@ export class Srodowisko {
     // umie sprawdzić tylko środowisko (worker/ustawienia.mjs).
     const wada = sprawdzUstawienie(this, rodzaj, cechy, widzi, obszar ?? null);
     if (wada) return blad(422, wada.blad, wada.bledy ? { bledy: wada.bledy } : {});
+    // Plik: typ z zamkniętej listy, a rozmiar i odcisk muszą się zgadzać z zapisem, który wskazuje (worker/pliki.mjs).
+    const wadaPliku = sprawdzPlik(this, rodzaj, cechy);
+    if (wadaPliku) return blad(422, wadaPliku.blad);
     return { ok: true, ksztalt, nieznane };
   }
 
@@ -1606,6 +1610,33 @@ export class Srodowisko {
       if (!w.ok) return w;
       return { ok: true, powtorzone: w.powtorzone, zapis: w.zapis ?? w.akt.zapis, adres: '/gosc/' + (w.zapis ?? w.akt.zapis), rozmiar: new TextEncoder().encode(tekst).length };
     });
+  }
+
+  // Bajty pliku: niezmienny zapis rodzaju bajty/1 (treść w base64). Wskazuje go cecha `tresc` rzeczy rodzaju plik/1.
+  // Sam zapis niczego nie otwiera: bajty wychodzą drzwiami tylko przez rzecz, którą czytający widzi (worker/pliki.mjs).
+  async bajty(kto, u8, { op, slad = null } = {}) {
+    const rola = this.rola(kto);
+    if (rola === 'zwiedzajacy') return blad(401, this.powodBrakuPrawa(kto, 'do zapisania pliku'));
+    if (kto === AUTOMAT) return blad(403, `imię ${AUTOMAT} jest zastrzeżone dla samego środowiska`);
+    if (!(u8 instanceof Uint8Array) || u8.length === 0) return blad(400, 'ciało żądania: bajty pliku');
+    if (u8.length > NAJWIEKSZY_PLIK) return blad(413, `plik ma ${u8.length} bajtów, a jeden plik może mieć najwyżej ${NAJWIEKSZY_PLIK}; magazynu na większe rzeczy jeszcze nie ma`);
+    if (!opKlienta(op)) return blad(400, 'op: w adresie, ?op=<8 do 100 znaków z [A-Za-z0-9_-]>');
+    return this._wKolejce(async () => {
+      // Dobowa granica bajtów: bezpiecznik zapisów liczy wiersze, a jeden wiersz z plikiem waży tyle, co tysiące zwykłych.
+      const klucz = 'bajty:' + new Date(this.r.teraz()).toISOString().slice(0, 10);
+      const dzis = Number(this.r.meta(klucz)) || 0;
+      if (dzis + u8.length > NAJWIECEJ_BAJTOW_NA_DOBE) return blad(429, `to Miejsce przyjęło dziś ${dzis} bajtów plików; dobowa granica to ${NAJWIECEJ_BAJTOW_NA_DOBE} i chroni magazyn, wraca o północy czasu UTC`);
+      const w = await this.r.wykonaj(kto, { op: op + '.bajty', co: 'zapisz', rodzaj: 'bajty/1', tresc: naBase64(u8) }, { slad });
+      if (!w.ok) return w;
+      if (!w.powtorzone) this.r.ustawMeta(klucz, String(dzis + u8.length));
+      return { ok: true, powtorzone: w.powtorzone, zapis: w.zapis ?? w.akt.zapis, rozmiar: u8.length };
+    });
+  }
+
+  _bajtyZapisu(zapis) {
+    if (typeof zapis !== 'string' || !ZAPIS.test(zapis)) return null;
+    const z = this.q(`SELECT rodzaj, tresc FROM zapisy WHERE id = ?`, zapis)[0];
+    return z && z.rodzaj === 'bajty/1' ? z : null;
   }
 
   // Kod wychodzi pod adresem dopiero wtedy, gdy wskazuje go jakiś gość (rzecz rodzaju gosc): sam zapis, którego nikt

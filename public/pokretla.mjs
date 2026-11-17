@@ -57,7 +57,8 @@ export const pasuje = (d, w) => {
     case 'tekst': return typeof w === 'string' && w.length <= 2000;
     case 'kroj': return obiekt(w) && typeof w.rodzina === 'string' && !!w.rodzina.trim() && w.rodzina.length <= 300
       && (w.grubosc === undefined || (liczba(w.grubosc) && w.grubosc >= 1 && w.grubosc <= 1000))
-      && (w.osie === undefined || (obiekt(w.osie) && Object.keys(w.osie).length <= 8 && Object.entries(w.osie).every(([n, x]) => /^[A-Za-z]{4}$/.test(n) && liczba(x))));
+      && (w.osie === undefined || (obiekt(w.osie) && Object.keys(w.osie).length <= 8 && Object.entries(w.osie).every(([n, x]) => /^[A-Za-z]{4}$/.test(n) && liczba(x))))
+      && (w.plik === undefined || (obiekt(w.plik) && typeof w.plik.rzecz === 'string' && /^[0-9a-z]{26}$/.test(w.plik.rzecz) && typeof w.plik.odcisk === 'string' && /^[0-9a-f]{64}$/.test(w.plik.odcisk)));
     case 'cien': return obiekt(w) && liczba(w.x) && liczba(w.y) && liczba(w.rozmycie) && w.rozmycie >= 0 && typeof w.kolor === 'string' && KOLOR.test(w.kolor);
     case 'sprezyna': return obiekt(w) && liczba(w.czas) && w.czas >= 0 && liczba(w.odbicie) && w.odbicie >= 0 && w.odbicie <= 1;
     default: return false;

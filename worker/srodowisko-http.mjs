@@ -5,6 +5,7 @@
 import { coTuJest, opisDane, listaRzeczy, listaRodzajow, stronaRodzaju, stronaRzeczy, umowaOkna } from './opis.mjs';
 import { sprawdzSpojnosc } from './spojnosc.mjs';
 import { policzUstawienia, policzUstawieniaDlaNazw, stronaUstawien } from './ustawienia.mjs';
+import { bajtyDlaCzytajacego, NAJWIEKSZY_PLIK } from './pliki.mjs';
 import { poprawneImie } from './miejsce.mjs';
 import { CZYTELNIK_PODGLADU } from './srodowisko.mjs';
 
@@ -79,6 +80,13 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
       if (kod === null) return tekst('Nie ma takiego kodu gościa (kod wychodzi pod adresem dopiero wtedy, gdy wskazuje go rzecz rodzaju gosc).\n', 404);
       return new Response(kod, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': CSP_GOSCIA, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'cache-control': 'public, max-age=600' } });
     }
+    if (sciezka === '/api/srodowisko/bajty') {
+      const o = bajtyDlaCzytajacego(w, p.get('rzecz'), p.get('odcisk'));
+      if (!o.ok) return json(o);
+      // Bajty wychodzą jako to, czym rzecz mówi, że są, i nigdy jako strona: typ z zamkniętej listy, bez zgadywania typu,
+      // w piaskownicy. Wersja przypięta odciskiem nie zmienia się nigdy, więc przeglądarka może ją trzymać.
+      return new Response(o.bajty, { status: 200, headers: { 'content-type': o.typ, 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; sandbox", 'referrer-policy': 'no-referrer', etag: '"' + o.odcisk + '"', 'cache-control': o.przypiety ? 'private, max-age=31536000, immutable' : 'private, no-cache' } });
+    }
     if (sciezka === '/co-tu-jest') return tekst(coTuJest(w, opcje));
     if (sciezka === '/umowa-okna') return tekst(umowaOkna());
     if (sciezka === '/ustawienia') return tekst(stronaUstawien(w, { dla: p.get('dla') || null, origin }));
@@ -139,6 +147,11 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
       // ruchu jest wtedy gość, a uczestnik z klucza zostaje przy akcie jako ten, kto okno otworzył.
       const gosc = request.headers.get('x-gosc');
       return json(await s.ruch(kto, c, { slad, ...(gosc !== null ? { gosc } : {}) }));
+    }
+    if (sciezka === '/api/srodowisko/bajty') {
+      const dlugosc = Number(request.headers.get('content-length'));
+      if (Number.isFinite(dlugosc) && dlugosc > NAJWIEKSZY_PLIK) return json({ ok: false, status: 413, blad: `plik ma ${dlugosc} bajtów, a jeden plik może mieć najwyżej ${NAJWIEKSZY_PLIK}; magazynu na większe rzeczy jeszcze nie ma` });
+      return json(await s.bajty(kto, new Uint8Array(await request.arrayBuffer()), { op: p.get('op'), slad }));
     }
     if (sciezka === '/api/srodowisko/kod') {
       const kod = await cialoTekstem(request);

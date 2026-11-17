@@ -3,6 +3,7 @@
 // Kolejność ma znaczenie: najpierw kształt kształtu, potem kształty, potem rzeczy tych rodzajów.
 import { STOPNIE, UWAGI, WIDZI, UKLADA, szybkiOdcisk } from './srodowisko.mjs';
 import { TYPY_POKRETEL, POKRETLO_ZESTAWOW } from './ustawienia.mjs';
+import { TYPY_PLIKOW } from './pliki.mjs';
 import { POKRETLA } from '../public/pokretla.mjs';
 
 const k = (nazwa, cechy) => ({ nazwa: 'ksztalt-' + nazwa, rodzaj: 'ksztalt/1', cechy });
@@ -327,6 +328,14 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
         y: { typ: 'liczba', wymagana: true },
         skala: { typ: 'liczba', opis: 'mnożnik wielkości z ręki, od 0.4 do 4; bez niej 1' },
       } }),
+    k('plik', { dla: 'plik/1', tytul: 'nazwa', opis: 'Plik: duża treść (krój pisma, obraz, dźwięk), której bajty leżą poza rzeczą jako niezmienny zapis. Rzecz niesie wskazanie: odcisk zapisu (cecha tresc), typ i rozmiar. Nowa wersja pliku to nowa wersja tej rzeczy; kto wskazuje plik razem z odciskiem, dostaje zawsze te same bajty. Bajty: GET /api/srodowisko/bajty?rzecz=<id>.',
+      cechy: {
+        nazwa: { typ: 'tekst', wymagana: true },
+        typ: { typ: 'wybor', wymagana: true, wartosci: Object.keys(TYPY_PLIKOW), opis: 'typ treści; strony i obrazy ze skryptem nie są plikami (kod wchodzi jako gość)' },
+        rozmiar: { typ: 'liczba', wymagana: true, opis: 'rozmiar w bajtach; musi się zgadzać z zapisem' },
+        tresc: { typ: 'zapis', rodzaj: 'bajty/1', wymagana: true, opis: 'odcisk zapisu z bajtami; zapis powstaje przez POST /api/srodowisko/bajty?op=<identyfikator czynności> z bajtami w ciele żądania' },
+        opis: { typ: 'tekst', opis: 'skąd plik jest i na jakiej licencji' },
+      } }),
     k('pokretlo', { dla: 'pokretlo/1', tytul: 'nazwa', klucz: ['nazwa'], opis: 'Pokrętło: deklaracja jednej rzeczy, którą da się stroić (kolor, czas ruchu, próg gestu). Mówi, jak się nazywa, jakiego jest typu, jaką ma wartość domyślną i co zmienia. Dokłada je każdy: twarz, narzędzie w oknie, agent. Wartości i wszystkie pokrętła naraz: /ustawienia.',
       cechy: {
         nazwa: { typ: 'tekst', wymagana: true, opis: 'od dwóch do sześciu członów rozdzielonych kropką, np. wyglad.paleta.jasna.tlo; pierwszy człon mówi, czym to jest dla człowieka (wyglad, odczucie, nazwa narzędzia); nazwa jest tożsamością pokrętła' },
@@ -467,7 +476,7 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
     zd('doreczenie-slowa', 'brak', 'Słowo dociera do agenta: słowo zostawione przy rzeczy trafia do agentów, którzy się nią zajmują, od razu albo po ich obudzeniu, a odpowiedź wraca w to samo miejsce.', 'Dziś słowo jest rzeczą przy rzeczy i widać je na stronie, ale żaden agent się o nim nie dowie, dopóki sam nie zajrzy.'),
     zd('wygasanie', 'brak', 'Wygasanie: prośba albo propozycja, na którą nikt nie musi odpowiadać, przedawnia się sama i zostawia ślad.', 'Dziś wszystko, co czeka, czeka bez końca; propozycja do rzeczy zmienionej w międzyczasie stoi na liście, choć nie da się jej już przyjąć.'),
     zd('pokolenia', 'cienko', 'Pokolenia obok siebie: rodzaj, gość i umowa okna mają pokolenie w nazwie, a nowe staje obok starego, bez przepisywania zapisów.', 'Kształt pod rzeczami wolno tylko poszerzać; ostrzejszy opis to następne pokolenie. Nie ma pomiaru, ile rzeczy i gości stoi jeszcze na starym, ani przełączenia jednym ruchem (dowód D4 niezrobiony).'),
-    zd('duze-tresci', 'brak', 'Duże treści poza zapisem: build, model albo asset leży w magazynie, a rzecz trzyma wskazanie z odciskiem i rozmiarem.', 'Dziś rzecz może nosić tylko adres w sieci. Nie ma ani formatu wskazania, ani magazynu.'),
+    zd('duze-tresci', 'cienko', 'Duże treści poza zapisem: build, model albo asset leży w magazynie, a rzecz trzyma wskazanie z odciskiem i rozmiarem.', 'Plik (plik/1) jest rzeczą ze wskazaniem: odcisk, typ z zamkniętej listy i rozmiar. Bajty leżą w niezmiennym zapisie (do 1,5 MB na plik), wchodzą drzwiami POST /api/srodowisko/bajty, a wychodzą GET /api/srodowisko/bajty?rzecz=<id> oczami czytającego, nigdy jako strona. Wersja przypięta odciskiem nie zmienia się po podmianie pliku; wartość kroju przypina tak plik kroju. Czego nie ma: magazynu na rzeczy większe niż 1,5 MB (build, model), obrazu i dźwięku w żadnej twarzy, bajtów kroju podawanych oknom narzędzi.'),
     zd('czas-wstecz', 'cienko', 'Czas wstecz: każda rzecz ma historię wersji z autorem i da się ją cofnąć do dowolnej z nich.', 'Nie da się obejrzeć całego Miejsca w stanie z wybranej chwili.'),
     zd('spojnosc', 'cienko', 'Spójność: środowisko mówi, co w nim samym jest krzywe (rzeczy niezgodne z własnym kształtem).', 'Przebieg na żądanie: GET /api/srodowisko/spojnosc. Dwie reguły w kodzie; docelowo sprawdzian wyprowadzony z kształtów. Zbudowała i sprawdziła druga linia.'),
     zd('okna-w-przestrzeni', 'brak', 'Okna gości w przestrzeni: narzędzie albo gra leży na Starcie obok rzeczy, przesuwa się i skaluje razem z przestrzenią, zasypia poza ekranem; okno jest rzeczą, a widok da się położyć w widoku.', 'Dziś Start otwiera jedno okno gry nad płótnem, bez umowy okna.', 'sciany-i-kable'),
