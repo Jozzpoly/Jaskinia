@@ -103,6 +103,9 @@ export async function przyjmijWiadomosc(ws, surowe, { env = {}, gniazda = () => 
   s.n = (s.n || 0) + 1;
   zapamietaj(ws, s);
   if (s.n > NAJWIECEJ_NA_MINUTE) { zamknij(ws, KOD_ZA_DUZO, 'za dużo wiadomości'); return; }
+  // Zwykle na "ping" odpowiada samo połączenie, bez budzenia obiektu; gdyby tej wygody zabrakło, odpowiadamy tutaj,
+  // żeby strona nie uznała żywego połączenia za martwe.
+  if (surowe === 'ping') { try { ws.send('pong'); } catch { /* gniazdo zniknęło */ } return; }
   if (typeof surowe !== 'string' || surowe.length > 2000) return;
   let m = null;
   try { m = JSON.parse(surowe); } catch { return; }

@@ -290,7 +290,16 @@ export class Srodowisko {
 
   q(z, ...p) { return this.r.q(z, ...p); }
   get wlasciciel() { return this.r.wlasciciel; }
-  ostatniNr() { return this.q(`SELECT COALESCE(MAX(nr), 0) AS nr FROM akty`)[0].nr; }
+  ostatniNr() { return this.r.ostatniNr(); }
+
+  // Wynik policzony z danych, pamiętany do następnego aktu: ten sam numer ostatniego aktu znaczy te same rzeczy.
+  // To, co stąd wraca, dostają wszyscy pytający aż do następnej zmiany, więc nie wolno tego zmieniać w miejscu.
+  pamietaj(klucz, licz) {
+    const nr = this.ostatniNr();
+    if (!this._pam || this._pam.nr !== nr) this._pam = { nr, mapa: new Map() };
+    if (!this._pam.mapa.has(klucz)) this._pam.mapa.set(klucz, licz());
+    return this._pam.mapa.get(klucz);
+  }
 
   // Wszystkie zmiany idą jedna po drugiej. Skróty liczą się asynchronicznie, więc bez kolejki dwa ruchy mogłyby
   // przeczytać ten sam stan; z kolejką ruch widzi zawsze skutek poprzedniego.
@@ -366,11 +375,17 @@ export class Srodowisko {
   }
 
   ile(filtr = {}) {
+    // Proste pytania (wszystko albo jeden rodzaj z pokoleniem, bez odłożonych) mają odpowiedź w pamiętanych liczbach.
+    const { rodzaj = null, obszar, gdzie: cechy = null, szukaj = null, odlozone = 'nie', po = null } = filtr;
+    if (obszar === undefined && !cechy && !szukaj && odlozone === 'nie' && po === null && (rodzaj === null || (typeof rodzaj === 'string' && rodzaj.includes('/') && RODZAJ_LUB_NAZWA.test(rodzaj)))) {
+      const l = this.liczby();
+      return rodzaj === null ? l.reduce((a, x) => a + x.ile, 0) : (l.find((x) => x.rodzaj === rodzaj) || { ile: 0 }).ile;
+    }
     const { gdzie, par, trzebaTresci } = this._warunek(filtr);
     return this.q(`SELECT COUNT(*) AS n FROM rzeczy r ${trzebaTresci ? 'JOIN zapisy z ON z.id = r.zapis' : ''} ${gdzie}`, ...par)[0].n;
   }
 
-  liczby() { return this.q(`SELECT rodzaj, COUNT(*) AS ile FROM rzeczy WHERE odlozone = 0 GROUP BY rodzaj ORDER BY rodzaj`); }
+  liczby() { return this.pamietaj('liczby', () => Object.freeze(this.q(`SELECT rodzaj, COUNT(*) AS ile FROM rzeczy WHERE odlozone = 0 GROUP BY rodzaj ORDER BY rodzaj`))); }
 
   // Historia rzeczy: każda wersja ma kolejny numer (1, 2, 3…) i znacznik `akt`, czyli numer aktu, który ją ustawił.
   historia(id) {
@@ -858,6 +873,7 @@ export class Srodowisko {
         id, g.rodzaj, t.obszar ?? null, g.zapis, g.akt, przesuniecia.length, t.odlozone === true ? 1 : 0, doSzukania(cechy), pierwszy.kto, pierwszy.kiedy, ostatni.kto, ostatni.kiedy);
     }
     this._k = null;
+    this._pam = null;
     this._role = { nr: -1, mapa: new Map() };
     for (const rz of this.wszystkie({ odlozone: 'razem' })) this._odniesienia(rz.id, rz.rodzaj, rz.cechy, this.ksztaltDla(rz.rodzaj));
     return { ok: true, rzeczy: glowy.length };

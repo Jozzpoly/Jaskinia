@@ -33,7 +33,7 @@
       // Where the observer may run: beginnings of host names, comma separated. Every branch Preview has its own database, and
       // the first round of facts costs over ten thousand written rows out of the account-wide daily limit (100,000 on
       // the free plan), so it runs only on the trunk Preview and on the branch that builds it.
-      "OBSERWATOR_ADRESY": "fable-srodowisko-,fable-automat-faktow-",
+      "OBSERWATOR_ADRESY": "fable-srodowisko-,fable-automat-faktow-,fable-zywe-",
       // Daily cap of written database rows for one Preview Miejsce. Preview keys are public, so without a cap one looping
       // agent (or a vandal) could spend the whole account's daily write budget through a single Preview.
       "BUDZET_ZAPISOW_NA_DOBE": "25000",

@@ -58,7 +58,7 @@
       if (opcje.sukces) opcje.sukces();
       let zdanie = d.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (d.powod || 'czeka na rozstrzygnięcie') + ').' : (dobrze || 'Zrobione.');
       // Najpierw ekran, potem zdanie o skutku: inaczej przez chwilę strona mówi dwie różne rzeczy.
-      try { await odswiez(); if (kr.id) await odswiezKarte(); } catch (blad) { zdanie += ' (Strony nie udało się odświeżyć: ' + blad.message + ')'; }
+      try { await dogon(); if (kr.id) await odswiezKarte(); } catch (blad) { zdanie += ' (Strony nie udało się odświeżyć: ' + blad.message + ')'; }
       komunikat(zdanie);
       return d;
     } catch (blad) { komunikat('Nie udało się połączyć: ' + blad.message, true); return null; }
@@ -121,11 +121,13 @@
     }
     const o = okna.get(id);
     if (o) o.guzik.classList.toggle('widoczne', !o.sekcja.hidden);
+    powiedzPrzy();
   }
   function zamknij(id) {
     const o = okna.get(id);
     if (!o) return;
     o.sekcja.remove(); o.guzik.remove(); okna.delete(id);
+    powiedzPrzy();
   }
   // Rozmowa z gośćmi. Przyjmujemy wiadomości tylko od ramek, które sami otworzyliśmy.
   addEventListener('message', async (e) => {
@@ -147,8 +149,11 @@
           if (typeof m.rodzaj === 'string') p.set('rodzaj', m.rodzaj);
           if (typeof m.obszar === 'string' || m.obszar === null) p.set('obszar', m.obszar || '');
           if (Number.isInteger(m.pomin) && m.pomin > 0) p.set('pomin', String(m.pomin));
+          // po: tylko to, co zmieniło się po akcie o tym numerze; gość, który dostał "changed", nie musi czytać wszystkiego
+          if (Number.isInteger(m.po) && m.po >= 0) p.set('po', String(m.po));
+          if (m.odlozone === 'razem' || m.odlozone === 'tak') p.set('odlozone', m.odlozone);
           const d = await czytaj('/api/srodowisko/spis?' + p);
-          dane = { rzeczy: d.rzeczy, razem: d.razem, pokazane: d.pokazane, pominiete: d.pominiete, wszystko: d.wszystko };
+          dane = { rzeczy: d.rzeczy, razem: d.razem, pokazane: d.pokazane, pominiete: d.pominiete, wszystko: d.wszystko, akt: d.akt };
         } else if (m.what === 'rzecz') {
           const d = await czytaj('/api/srodowisko/rzecz?id=' + encodeURIComponent(String(m.rzecz || '')));
           dane = { rzecz: d.rzecz, historia: d.historia, wskazuja: d.wskazuja };
@@ -220,12 +225,15 @@
     klucz = String(nowy || '').trim();
     if (klucz) localStorage.setItem(KLUCZ, klucz); else localStorage.removeItem(KLUCZ);
     $('wejscie-panel').hidden = true;
+    zlyKlucz = null;
+    przedstawSieKanalowi();
     return odswiez().then(() => komunikat(klucz ? 'Jesteś jako ' + (opis.czytasz_jako.imie || '?') + ' (' + opis.czytasz_jako.rola + ').' : 'Wyszedłeś. Czytasz jako zwiedzający.'), (blad) => komunikat('Nie udało się wejść: ' + blad.message, true));
   }
   function rysujWejscie() {
     const d = opis, p = $('wejscie-panel'), g = $('wejscie');
     const imie = d.czytasz_jako.imie;
     g.textContent = klucz && imie ? imie + ' · wyjdź' : 'Wejdź';
+    rysujWidac(Boolean(klucz && imie));
     p.textContent = '';
     if (klucz && imie) { g.onclick = () => wejdz(''); return; }
     g.onclick = () => { p.hidden = !p.hidden; };
@@ -327,7 +335,7 @@
     const t = $('tresc');
     const d = opis;
     rysujWejscie();
-    $('stan').textContent = `${lp(d.razem, 'rzecz', 'rzeczy', 'rzeczy')} · akt ${d.miejsce.akt} · ${d.czytasz_jako.imie || 'zwiedzający'}`;
+    rysujStan();
     const czekaIle = d.czeka.propozycje.length + d.czeka.prosby.length;
     const ileRzeczy = Number(d.razem) || 0;
     ostatniStan = { rzeczy: ileRzeczy, czeka: czekaIle, akt: (d.miejsce && d.miejsce.akt) || 0,
@@ -469,6 +477,7 @@
     // fokus wróci do odnośnika, z którego karta została otwarta po raz pierwszy, nawet gdy potem chodzimy po odnośnikach w karcie
     if (!kr.id) { kr.pierwszy = opener || null; kr.pierwszyId = id; }
     kr.id = id; kr.podpis = ''; kr.akt = -1;
+    powiedzPrzy();
     kr.sekcja.hidden = false;
     kr.tyt.textContent = 'Czytam…'; kr.rodz.textContent = '';
     kr.tresc.replaceChildren(el('p', { klasa: 'ciche', tekst: 'Czytam rzecz…' }));
@@ -479,6 +488,7 @@
     if (!kr.id) return;
     const wracam = kr.pierwszy, idPierwszej = kr.pierwszyId;
     kr.id = null; kr.nr++; kr.podpis = ''; kr.pierwszy = null;
+    powiedzPrzy();
     kr.sekcja.hidden = true;
     // odnośnik, z którego otwarto, mógł zniknąć przy przerysowaniu: szukamy go po adresie
     const cel = wracam && wracam.isConnected ? wracam : [...document.querySelectorAll('#tresc a[href^="/rzecz/"]')].find((a) => a.getAttribute('href') === '/rzecz/' + idPierwszej);
@@ -619,30 +629,185 @@
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && kr.id && !e.defaultPrevented) zamknijKarte(); });
 
+  // --- czytanie: całość raz, potem tylko zmiany -------------------------------------------------------------------
+  const powiedzGosciom = () => { for (const o of okna.values()) if (o.chce.includes('rzeczy') && o.ramka.contentWindow) o.ramka.contentWindow.postMessage({ jaskinia: 1, type: 'changed', akt }, '*'); };
   async function odswiez() {
     const [o, s] = await Promise.all([czytaj('/api/srodowisko/opis'), czytaj('/api/srodowisko/spis')]);
     // spis przychodzi kawałkami po 1000; czytamy do końca, żeby strona nie udawała, że pierwszy kawałek to wszystko
     const wszystkie = s.rzeczy;
     for (let kawalek = s; !kawalek.wszystko && wszystkie.length < 20000;) { kawalek = await czytaj('/api/srodowisko/spis?pomin=' + wszystkie.length); wszystkie.push(...kawalek.rzeczy); if (!kawalek.rzeczy.length) break; }
-    opis = o; rzeczy = wszystkie; akt = o.miejsce.akt;
+    const byl = akt;
+    // Akt strony to starszy z dwóch odczytów: jeśli między nimi coś się zmieniło, następne doganianie to doczyta.
+    opis = o; rzeczy = wszystkie; akt = Math.min(o.miejsce.akt, Number.isInteger(s.akt) ? s.akt : o.miejsce.akt);
     if (!widziany) { widziany = akt; localStorage.setItem(PAMIEC, String(akt)); }
     rysuj();
+    if (byl && byl !== akt) powiedzGosciom();
   }
-  // Zmiany na żywo, cienko: gdy karta jest widoczna, co kilka sekund pytamy o numer ostatniego aktu.
+  // Doganianie: strona czyta opis i tylko te rzeczy, które zmieniły się po jej akcie (razem z odłożonymi, żeby je
+  // zdjąć). Zmierzone 17 XI: czytanie całego spisu po każdej zmianie kosztowało przy 636 rzeczach tysiące wierszy bazy.
+  async function dogon() {
+    if (!opis) return odswiez();
+    const od = akt;
+    const [o, s] = await Promise.all([czytaj('/api/srodowisko/opis'), czytaj('/api/srodowisko/spis?odlozone=razem&po=' + od)]);
+    // Miejsce cofnęło się (wwóz całości) albo zmian jest więcej niż jeden kawałek: wtedy uczciwiej przeczytać wszystko.
+    if (o.miejsce.akt < od || !s.wszystko || !Number.isInteger(s.akt)) return odswiez();
+    if (s.rzeczy.length) {
+      const zmienione = new Set(s.rzeczy.map((r) => r.id));
+      rzeczy = [...s.rzeczy.filter((r) => !r.odlozone), ...rzeczy.filter((r) => !zmienione.has(r.id))];
+    }
+    opis = o; akt = Math.min(o.miejsce.akt, s.akt);
+    rysuj();
+    if (akt !== od) powiedzGosciom();
+  }
+  // Sygnały o zmianie przychodzą seriami (agent robi dziesiątki ruchów): jedno doganianie naraz, a to, co przyszło
+  // w trakcie, załatwia jedno następne. Niewidoczna karta nie czyta wcale; dogoni, gdy wróci na wierzch.
+  let goni = false, znowu = false, zalegle = false, zegarGonienia = null;
+  function zaplanujDogonienie(ms = 250) {
+    if (document.visibilityState !== 'visible') { zalegle = true; return; }
+    if (goni) { znowu = true; return; }
+    clearTimeout(zegarGonienia);
+    zegarGonienia = setTimeout(async () => {
+      goni = true;
+      try { await dogon(); } catch { /* następny sygnał albo puls spróbuje jeszcze raz */ }
+      goni = false;
+      if (znowu) { znowu = false; zaplanujDogonienie(400); }
+    }, ms);
+  }
+
+  // --- kanał na żywo: Miejsce samo mówi, że coś się zmieniło i kto tu jest ----------------------------------------
+  // Połączenie niesie sam numer ostatniego aktu i obecność; treść strona doczytuje zwykłymi drzwiami. Gdy połączenie
+  // nie stoi, strona wraca do pytania o puls co kilka sekund i próbuje połączyć się ponownie, coraz rzadziej.
+  const CICHO = 'jaskinia:srodowisko:cicho';
+  let cicho = localStorage.getItem(CICHO) === 'tak';
+  let gniazdo = null, zywe = false, proba = 0, zegarPolaczenia = null, zegarPing = null, czekaNaPong = null, zlyKlucz = null;
+  const stanObecnych = { lista: [], ilu: null };
+  const doKanalu = (w) => {
+    if (!gniazdo || gniazdo.readyState !== 1) return false;
+    try { gniazdo.send(typeof w === 'string' ? w : JSON.stringify(w)); return true; } catch { return false; }
+  };
+  function rysujStan() {
+    if (!opis) return;
+    const d = opis, ja = d.czytasz_jako.imie;
+    const inni = stanObecnych.lista.filter((x) => x && x.kto !== ja);
+    let tu = '';
+    if (inni.length) tu = ' · są też: ' + inni.map((x) => x.kto + (x.przy && rzeczO(x.przy) ? ' (przy: ' + rzeczO(x.przy).tytul.slice(0, 30) + ')' : '')).join(', ');
+    else if (stanObecnych.ilu) tu = ' · z kluczem jest tu: ' + stanObecnych.ilu;
+    const s = $('stan');
+    s.textContent = `${lp(d.razem, 'rzecz', 'rzeczy', 'rzeczy')} · akt ${d.miejsce.akt} · ${ja || 'zwiedzający'} · ${zywe ? 'na żywo' : 'bez połączenia na żywo'}${tu}`;
+    s.title = zywe ? 'Połączenie stoi: zmiany przychodzą same, strona o nic nie pyta.' : 'Połączenie na żywo nie stoi: strona pyta o zmiany co kilka sekund i próbuje połączyć się ponownie.';
+  }
+  // Przy której rzeczy jestem: otwarta karta rzeczy albo widoczne okno projektu czy gościa. Idzie do kanału tylko
+  // wtedy, gdy się zmienia i gdy mnie widać.
+  let ostatniePrzy;
+  const ID_Z_KLUCZA = /^[pg]:([0-9a-z]{26})/;
+  function terazPrzy() {
+    if (kr.id) return kr.id;
+    for (const o of okna.values()) { if (o.sekcja.hidden) continue; const m = ID_Z_KLUCZA.exec(o.klucz || ''); if (m) return m[1]; }
+    return null;
+  }
+  function powiedzPrzy() {
+    if (cicho || !klucz) return;
+    const p = terazPrzy();
+    if (p === ostatniePrzy) return;
+    if (doKanalu({ t: 'przy', rzecz: p })) ostatniePrzy = p;
+  }
+  // Przeglądarka nie umie dołączyć klucza do otwarcia połączenia, więc przedstawia się pierwszą wiadomością.
+  function przedstawSieKanalowi() {
+    ostatniePrzy = undefined;
+    if (!klucz) { doKanalu({ t: 'wychodze' }); return; }
+    if (klucz !== zlyKlucz) doKanalu({ t: 'jestem', klucz, cicho });
+  }
+  // Wyłącznik obecności: uczestnik dalej słyszy zmiany, ale inni nie widzą, że tu jest ani przy czym.
+  function rysujWidac(wSrodku) {
+    let g = $('widac');
+    if (!g) {
+      g = el('button', { id: 'widac', type: 'button', klik: () => {
+        cicho = !cicho;
+        localStorage.setItem(CICHO, cicho ? 'tak' : 'nie');
+        doKanalu({ t: 'cicho', cicho });
+        ostatniePrzy = undefined;
+        powiedzPrzy();
+        rysujWidac(true);
+      } });
+      $('wejscie').after(g);
+    }
+    g.hidden = !wSrodku;
+    g.textContent = cicho ? 'nie widać mnie' : 'widać mnie';
+    g.setAttribute('aria-pressed', cicho ? 'false' : 'true');
+    g.title = cicho ? 'Inni uczestnicy nie widzą, że tu jesteś. Dotknij, żeby było Cię widać.' : 'Inni uczestnicy (z kluczem) widzą, że tu jesteś i przy której rzeczy. Dotknij, żeby się schować.';
+  }
+  function ustawZywe(tak) { zywe = tak; if (!tak) { stanObecnych.lista = []; stanObecnych.ilu = null; } rysujStan(); }
+  function zaplanujPolaczenie(najmniej = 0) {
+    clearTimeout(zegarPolaczenia);
+    const ms = Math.max(najmniej, Math.min(60000, 1000 * 2 ** Math.min(proba, 6)) * (0.7 + Math.random() * 0.6));
+    proba++;
+    zegarPolaczenia = setTimeout(polacz, ms);
+  }
+  function pingKanalu() {
+    if (document.visibilityState !== 'visible' || czekaNaPong) return;
+    if (!doKanalu('ping')) return;
+    czekaNaPong = setTimeout(() => { czekaNaPong = null; try { if (gniazdo) gniazdo.close(); } catch { /* i tak zamknięte */ } }, 10000);
+  }
+  function polacz() {
+    clearTimeout(zegarPolaczenia);
+    if (gniazdo || !('WebSocket' in window)) return;
+    if (document.visibilityState !== 'visible') return; // niewidoczna karta połączy się, gdy wróci na wierzch
+    let g;
+    try { g = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/srodowisko/zywe'); } catch { zaplanujPolaczenie(); return; }
+    gniazdo = g;
+    g.addEventListener('open', () => {
+      if (gniazdo !== g) return;
+      proba = 0;
+      ustawZywe(true);
+      przedstawSieKanalowi();
+      clearInterval(zegarPing);
+      zegarPing = setInterval(pingKanalu, 45000);
+    });
+    g.addEventListener('message', (e) => {
+      if (gniazdo !== g) return;
+      if (e.data === 'pong') { clearTimeout(czekaNaPong); czekaNaPong = null; return; }
+      let m = null;
+      try { m = JSON.parse(e.data); } catch { return; }
+      if (!m || typeof m !== 'object') return;
+      if (m.t === 'witaj') powiedzPrzy();
+      if (m.t === 'akt' || m.t === 'witaj') {
+        if (m.calosc) odswiez().catch(() => {});
+        else if (Number.isInteger(m.akt) && m.akt !== akt) zaplanujDogonienie();
+      } else if (m.t === 'obecni') {
+        stanObecnych.lista = Array.isArray(m.lista) ? m.lista.filter((x) => x && typeof x.kto === 'string') : [];
+        stanObecnych.ilu = Number.isInteger(m.ilu) ? m.ilu : null;
+        rysujStan();
+      }
+    });
+    g.addEventListener('close', (e) => {
+      if (gniazdo !== g) return;
+      gniazdo = null;
+      clearInterval(zegarPing);
+      clearTimeout(czekaNaPong); czekaNaPong = null;
+      ustawZywe(false);
+      // 4401: Miejsce nie zna tego klucza (nie wysyłamy go drugi raz); 4429 i 4503: za dużo wiadomości albo połączeń
+      if (e.code === 4401) zlyKlucz = klucz;
+      zaplanujPolaczenie(e.code === 4429 || e.code === 4503 ? 60000 : 0);
+    });
+    g.addEventListener('error', () => { try { g.close(); } catch { /* i tak zamknięte */ } });
+  }
+
+  // Bez połączenia na żywo: gdy karta jest widoczna, co kilka sekund pytamy o numer ostatniego aktu.
   let czeka = 5000;
   async function puls() {
-    if (document.visibilityState === 'visible') {
+    if (!zywe && document.visibilityState === 'visible') {
       try {
         const p = await czytaj('/api/srodowisko/puls');
-        if (p.akt !== akt) {
-          await odswiez();
-          czeka = 5000;
-          for (const o of okna.values()) if (o.chce.includes('rzeczy') && o.ramka.contentWindow) o.ramka.contentWindow.postMessage({ jaskinia: 1, type: 'changed', akt }, '*');
-        } else czeka = Math.min(30000, czeka + 1000);
+        if (p.akt !== akt) { await dogon(); czeka = 5000; } else czeka = Math.min(30000, czeka + 1000);
       } catch { czeka = 30000; }
     }
-    setTimeout(puls, czeka);
+    setTimeout(puls, zywe ? 5000 : czeka);
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') czeka = 5000; });
-  odswiez().then(() => setTimeout(puls, czeka), (blad) => { $('tresc').textContent = ''; $('tresc').append(el('p', { klasa: 'uwaga', tekst: 'Nie udało się przeczytać Miejsca: ' + blad.message })); $('stan').textContent = 'brak połączenia'; });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    czeka = 5000;
+    if (!gniazdo) { proba = 0; polacz(); }
+    if (zalegle) { zalegle = false; zaplanujDogonienie(0); }
+  });
+  odswiez().then(() => { polacz(); setTimeout(puls, czeka); }, (blad) => { $('tresc').textContent = ''; $('tresc').append(el('p', { klasa: 'uwaga', tekst: 'Nie udało się przeczytać Miejsca: ' + blad.message })); $('stan').textContent = 'brak połączenia'; });
 })();

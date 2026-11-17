@@ -69,6 +69,9 @@ details > div { padding: 0 .65rem .5rem; }
 /* Ręka na stronie: wejście, zdanie o skutku, pole słowa, wybór ustawienia obszaru. */
 .gora { align-items: center; }
 #wejscie { margin-left: auto; white-space: nowrap; }
+#widac { white-space: nowrap; }
+#widac[hidden] { display: none; }
+#widac[aria-pressed="false"] { color: var(--ciche); border-style: dashed; }
 .wejscie { max-width: 76rem; margin: .5rem auto 0; padding: .6rem .9rem; border: 1px solid var(--linia); border-left: 3px solid var(--akcent); border-radius: .4rem; background: var(--plyta); display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .wejscie[hidden] { display: none; }
 .wejscie p { margin: 0; flex-basis: 100%; color: var(--ciche); font-size: .86rem; }

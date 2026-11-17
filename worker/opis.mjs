@@ -3,6 +3,7 @@
 // Goły tekst, bo najsłabsze ciało agenta umie tylko wejść pod adres i przeczytać.
 import { TYPY, STOPNIE, USTAWIENIA } from './srodowisko.mjs';
 import { PREFIKS_PLIKU } from './obserwator.mjs';
+import { WERSJA } from './miejsce.mjs';
 
 const dzien = (iso) => String(iso).replace('T', ' ').slice(0, 16) + ' UTC';
 const wiersze = (...w) => w.flat(9).filter((x) => x !== null && x !== undefined && x !== false).join('\n');
@@ -24,7 +25,7 @@ export function czasowniki(s) {
     { nazwa: 'przyjmij', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'przyjmij czekającą propozycję (zmiana wchodzi w życie)', wejscie: '{op, co:"przyjmij", propozycja}', wynik: '{skutek: "przyjeta", rzecz, adres}' },
     { nazwa: 'odrzuc', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'odrzuć czekającą propozycję; autor tym samym ruchem wycofuje własną', wejscie: '{op, co:"odrzuc", propozycja, powod?}', wynik: '{skutek: "odrzucona"|"wycofana"}' },
     { nazwa: 'kod', ktoredy: 'drzwi: POST /api/srodowisko/kod?op=…', opis: 'zapisz kod gościa (jeden plik HTML jako ciało żądania)', wejscie: 'tekst HTML', wynik: '{zapis, adres: "/gosc/<zapis>"}' },
-    { nazwa: 'spis', ktoredy: 'drzwi: GET /api/srodowisko/spis?rodzaj=&obszar=&gdzie.<cecha>=&szukaj=&odlozone=; tekstem: /rzeczy z tymi samymi dodatkami; okno: read spis', opis: 'lista rzeczy: jednego rodzaju, z jednego obszaru, o danej wartości cechy albo z danym słowem; odłożone tylko na życzenie (odlozone=tak albo razem)', wejscie: 'rodzaj?, obszar?, gdzie?, szukaj?, odlozone?, pomin?, ile?', wynik: '{rzeczy: [{id, rodzaj, obszar, cechy, tytul, wersja, numer, …}], razem, pokazane, wszystko}' },
+    { nazwa: 'spis', ktoredy: 'drzwi: GET /api/srodowisko/spis?rodzaj=&obszar=&gdzie.<cecha>=&szukaj=&odlozone=&po=<akt>; tekstem: /rzeczy z tymi samymi dodatkami; okno: read spis', opis: 'lista rzeczy: jednego rodzaju, z jednego obszaru, o danej wartości cechy albo z danym słowem; odłożone tylko na życzenie (odlozone=tak albo razem)', wejscie: 'rodzaj?, obszar?, gdzie?, szukaj?, odlozone?, pomin?, ile?', wynik: '{rzeczy: [{id, rodzaj, obszar, cechy, tytul, wersja, numer, …}], razem, pokazane, wszystko}' },
     { nazwa: 'rzecz', ktoredy: 'drzwi: GET /api/srodowisko/rzecz?id=; tekstem: /rzecz/<id>; okno: read rzecz', opis: 'jedna rzecz z historią i tym, co na nią wskazuje', wejscie: 'id', wynik: '{rzecz, historia: [{numer, akt, kto, kiedy}], wskazuja}' },
     { nazwa: 'wersja', ktoredy: 'drzwi: GET /api/srodowisko/wersja?id=&akt=', opis: 'treść wcześniejszej wersji rzeczy (akt to znacznik z jej historii)', wejscie: 'id, akt', wynik: '{wersja: {rzecz, akt, numer, kto, kiedy, rodzaj, obszar, cechy, odlozone}}' },
     { nazwa: 'widzialem', ktoredy: 'drzwi: POST /api/srodowisko/widzialem', opis: 'zapisz swoją wizytę: następny odczyt /co-tu-jest tym samym kluczem pokaże tylko to, co zmieniło się po niej', wejscie: '{akt?}', wynik: '{widziane_do}' },
@@ -32,6 +33,7 @@ export function czasowniki(s) {
     { nazwa: 'wywoz', ktoredy: 'drzwi: GET /api/miejsce/eksport (tylko właściciel)', opis: 'całe Miejsce jako jeden plik: niezmienne zapisy, dziennik aktów i głowy; z tego da się odtworzyć spis bez kodu Jaskini', wejscie: '-', wynik: '{format: "jaskinia-miejsce", wersja, zebrane, zapisy, akty, glowy, odczyty}' },
     { nazwa: 'obejdz', ktoredy: 'drzwi: POST /api/srodowisko/obejdz (tylko właściciel; działa, gdy obserwator jest włączony ustawieniem OBSERWATOR=tak); sam budzi się alarmem', opis: 'obserwator faktów obchodzi publiczne repozytoria właściciela: z API GitHuba, a gdy ono odmawia, z pliku faktów starej Jaskini (bez limitu, odświeżanego przez starą Jaskinię zwykle dwa razy na dobę). Zapisuje tylko to, co się zmieniło, i sprawdza gałęzie kilku repozytoriów na raz', wejscie: 'ile? (1 do 50: ile repozytoriów dostaje sprawdzone gałęzie w tym obejściu, domyślnie 5; jako ?ile= w adresie)', wynik: '{ok, stan: "ok"|"czesciowe"|"brak", zrodlo: "api"|"plik", zebrane, repozytoria, galezie_sprawdzone, zmienione, bez_zmian, odlozone, luki, zadan}' },
     { nazwa: 'puls', ktoredy: 'drzwi: GET /api/srodowisko/puls', opis: 'numer ostatniego aktu; zmienia się po każdym ruchu', wejscie: '-', wynik: '{akt}' },
+    { nazwa: 'zywe', ktoredy: 'drzwi: połączenie WebSocket pod /api/srodowisko/zywe (wss://<adres>/api/srodowisko/zywe); agent podaje klucz w nagłówku Authorization, przeglądarka pierwszą wiadomością', opis: 'kanał na żywo: Miejsce samo mówi, że coś się zmieniło (sam numer ostatniego aktu; treść doczytaj przez spis z po=<akt>) i kto jest obecny; nic z tego nie trafia do dziennika', wejscie: 'wiadomości JSON: {t:"jestem", klucz, cicho?}, {t:"przy", rzecz|null}, {t:"cicho", cicho?}, {t:"wychodze"}; sam napis ping', wynik: 'wiadomości JSON: {t:"witaj", kto, akt}, {t:"akt", akt, calosc?}, {t:"obecni", lista:[{kto, przy?}]} albo dla zwiedzającego {t:"obecni", ilu}, {t:"blad", blad}; na ping napis pong' },
     { nazwa: 'opis', ktoredy: 'tekstem: /co-tu-jest; drzwi: GET /api/srodowisko/opis', opis: 'ten tekst (albo to samo jako dane)', wejscie: 'od?, jako?', wynik: 'tekst' },
   ];
   for (const g of s.spis({ rodzaj: 'gosc/1', limit: 500 })) {
@@ -92,28 +94,30 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
   const rola = s.rola(widzKto);
   const liczby = s.liczby();
   const ks = s.ksztalty();
-  const wizyta = kto ? s.r.nowe(kto) : null;
+  const wizyta = kto ? s.r.wizyta(kto) : null;
   let odAktu = null, skad = 'pierwszy raz';
   if (Number.isInteger(od) && od >= 0) { odAktu = Math.min(od, ostatni); skad = 'z adresu'; }
   else if (wizyta && !wizyta.pierwszy_raz) { odAktu = wizyta.widziane_do; skad = 'z zapisanej wizyty'; }
   const zm = zmiany(s, odAktu ?? 0, odAktu === null ? 15 : 60);
-  const cz = s.czeka();
-  const miary = s.spis({ rodzaj: 'miara/1', limit: 200 });
+  // Części opisu, które nie zależą od tego, kto pyta, są pamiętane do następnego aktu (s.pamietaj): strona czyta opis
+  // po każdej zmianie, a zmierzone 17 XI jedno takie czytanie przy 636 rzeczach kosztowało 5510 wierszy bazy.
+  const cz = s.pamietaj('opis:czeka', () => s.czeka());
+  const miary = s.pamietaj('opis:miary', () => s.spis({ rodzaj: 'miara/1', limit: 200 }));
   // Licznik przeniesienia bierze liczbę publicznych repozytoriów z miary dołożonej ręką, a gdy jej nie ma, z miary
   // obserwatora faktów: on i tak wie, ile ich jest, więc Miejsce nie powinno mówić, że nie wie.
   const m = miary.find((x) => x.cechy.nazwa === 'publiczne-repozytoria') || miary.find((x) => x.cechy.nazwa === 'obserwator-faktow');
   return {
-    miejsce: { srodowisko: 'srodowisko-1', format: s.r.stan().wersja, adres: origin, akt: ostatni, stan_na: new Date(s.r.teraz()).toISOString(), podglad },
+    miejsce: { srodowisko: 'srodowisko-1', format: WERSJA, adres: origin, akt: ostatni, stan_na: new Date(s.r.teraz()).toISOString(), podglad },
     czytasz_jako: { imie: widzKto, rola, pewnosc: kto ? 'klucz' : (widzKto ? 'bez dowodu (podgląd, ?jako=)' : 'bez klucza') },
     liczby, razem: liczby.reduce((a, x) => a + x.ile, 0),
     rodzaje: [...ks.values()].map((k) => ({ dla: k.cechy.dla, opis: k.cechy.opis, rzecz: k.id, ile: (liczby.find((l) => l.rodzaj === k.cechy.dla) || { ile: 0 }).ile })).sort((a, b) => a.dla.localeCompare(b.dla)),
     bez_ksztaltu: liczby.filter((l) => !ks.has(l.rodzaj)).map((l) => l.rodzaj),
-    obszary: obszary(s),
-    goscie: s.spis({ rodzaj: 'gosc/1', limit: 500 }).map((g) => ({ id: g.id, nazwa: s.tytul(g), opis: g.cechy.opis || '', kod: g.cechy.kod || null, adres: g.cechy.adres || null, umowa: g.cechy.umowa || null, dolozyl: g.utworzyl })),
-    uczestnicy: s.spis({ rodzaj: 'uczestnik/1', limit: 500 }).map((u) => ({ imie: u.cechy.imie, rola: u.cechy.rola, cialo: u.cechy.cialo || null })),
+    obszary: s.pamietaj('opis:obszary', () => obszary(s)),
+    goscie: s.pamietaj('opis:goscie', () => s.spis({ rodzaj: 'gosc/1', limit: 500 }).map((g) => ({ id: g.id, nazwa: s.tytul(g), opis: g.cechy.opis || '', kod: g.cechy.kod || null, adres: g.cechy.adres || null, umowa: g.cechy.umowa || null, dolozyl: g.utworzyl }))),
+    uczestnicy: s.pamietaj('opis:uczestnicy', () => s.spis({ rodzaj: 'uczestnik/1', limit: 500 }).map((u) => ({ imie: u.cechy.imie, rola: u.cechy.rola, cialo: u.cechy.cialo || null }))),
     zmiany: { od: odAktu, skad, pierwszy_raz: odAktu === null, lista: zm.lista, wiecej: zm.wiecej, wizyta_zapisana: wizyta && !wizyta.pierwszy_raz ? { akt: wizyta.widziane_do, kiedy: wizyta.widziane_kiedy } : null },
     czeka: { propozycje: cz.propozycje.map((p) => ({ id: p.id, od: p.cechy.od, co: p.cechy.co || 'poloz', rodzaj: p.cechy.rodzaj, obszar: p.obszar, rzecz: p.cechy.rzecz || null, kiedy: p.utworzono, wymaga: p.cechy.wymaga || null })), prosby: cz.prosby.map((p) => ({ id: p.id, tresc: p.cechy.tresc, tryb: p.cechy.tryb || 'czeka', od: p.utworzyl, kiedy: p.utworzono })) },
-    zdolnosci: s.spis({ rodzaj: 'zdolnosc/1', limit: 500 }).map((z) => ({ id: z.id, nazwa: z.cechy.nazwa, stan: z.cechy.stan, opis: z.cechy.opis, jak: z.cechy.jak || null })),
+    zdolnosci: s.pamietaj('opis:zdolnosci', () => s.spis({ rodzaj: 'zdolnosc/1', limit: 500 }).map((z) => ({ id: z.id, nazwa: z.cechy.nazwa, stan: z.cechy.stan, opis: z.cechy.opis, jak: z.cechy.jak || null }))),
     przeniesienie: { projekty_w_srodku: (liczby.find((l) => l.rodzaj === 'projekt/1') || { ile: 0 }).ile, publiczne_repozytoria: m ? { ile: m.cechy.wartosc, stan_na: m.cechy.stan_na || null, zrodlo: m.cechy.zrodlo || null } : null },
     obserwator: obserwator(s),
     czasowniki: czasowniki(s),
@@ -122,7 +126,7 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
     // próbny", żeby ręka mogła spróbować gestów bez wpisywania czegokolwiek. W prawdziwym Miejscu tego pola nie ma.
     klucz_probny_wlasciciela: podglad ? kluczProbnyWlasciciela : null,
     probny_imie: podglad ? probnyImie : null,
-    zalatwione: { prosby: s.ile({ rodzaj: 'prosba/1', gdzie: { stan: 'zalatwiona' } }), propozycje_przyjete: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'przyjeta' } }), propozycje_odrzucone: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'odrzucona' } }), propozycje_wycofane: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'wycofana' } }) },
+    zalatwione: s.pamietaj('opis:zalatwione', () => ({ prosby: s.ile({ rodzaj: 'prosba/1', gdzie: { stan: 'zalatwiona' } }), propozycje_przyjete: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'przyjeta' } }), propozycje_odrzucone: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'odrzucona' } }), propozycje_wycofane: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'wycofana' } }) })),
     odlozone: s.ile({ odlozone: 'tak' }),
     wlasciciel: s.wlasciciel,
     // ile wierszy bazy to Miejsce dziś przeczytało i zapisało (mierzone u źródła); null tam, gdzie nikt nie liczy
@@ -412,8 +416,9 @@ export function umowaOkna() {
     '',
     'Od gościa:',
     '  hello    {name (do 60 znaków), version (do 40), wants: ["rzeczy"]}   przedstaw się; wants: ["rzeczy"] znaczy, że chcesz czytać rzeczy i dostawać "changed"',
-    '  read     {id, what: "spis", rodzaj?, obszar?, gdzie?, szukaj?, pomin?}   lista rzeczy; rodzaj np. "projekt/1" (z pokoleniem) albo samo "projekt" (wszystkie pokolenia);',
-    '                                                    gdzie: {cecha: wartość}, np. {stan: "czeka"}; szukaj: słowo w którejkolwiek cesze',
+    '  read     {id, what: "spis", rodzaj?, obszar?, pomin?, po?, odlozone?}   lista rzeczy; rodzaj np. "projekt/1" (z pokoleniem) albo samo "projekt" (wszystkie pokolenia);',
+    '                                                    po: numer aktu, wraca tylko to, co zmieniło się po nim (z odlozone: "razem" także rzeczy odłożone po nim);',
+    '                                                    wynik niesie akt, do którego doczytano; po "changed" wystarczy zapytać o zmiany po swoim akcie',
     '  read     {id, what: "rzecz", rzecz: "<id>"}       jedna rzecz z historią',
     '  read     {id, what: "ksztalty"}                   rodzaje rzeczy z opisem cech',
     '  read     {id, what: "ja"}                         kim jest czytający i jako który gość jesteś otwarty',

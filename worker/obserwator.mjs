@@ -34,6 +34,7 @@ export const ZR_OBA = `${ZR_API}, uzupełnione z pliku faktów starej Jaskini`;
 // Miara z pliku zaczyna swoje źródło od tych słów; po nich /co-tu-jest rozpoznaje, że fakty są z pliku.
 export const PREFIKS_PLIKU = 'Plik faktów starej Jaskini';
 const KURSOR = 'obserwator:kursor'; // pełna nazwa ostatniego repozytorium, któremu sprawdzono gałęzie; 0 = zacznij od początku
+const SPOKOJNY_PLIK = 'obserwator:spokojny-plik'; // wiek pliku, który obserwator przeszedł już całym kołem bez żadnej zmiany
 const KOLO = 'obserwator:kolo'; // ile zmian zapisano w bieżącym kole gałęzi: koło bez zmian to koło spokojne
 const PROBA = 'obserwator:proba'; // ostatnia próba (także nieudana): czas, stan i skrót luk, żeby awaria była widoczna
 const STRON_GALEZI = 3;
@@ -344,6 +345,33 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
       }
       return wyn;
     };
+    // Plik, który obserwator przeszedł już całym spokojnym kołem, nie ma nic nowego: wtedy nie czytamy spisu wcale.
+    // Zmierzone 17 XI: spokojne obejście czytało 3550 wierszy bazy co godzinę tylko po to, żeby stwierdzić, że nic się
+    // nie zmieniło. Cena: zmiana zrobiona ręką w faktach zostaje do następnego pokolenia pliku.
+    if (zb.stan === 'brak' && plikOk && s.r.meta(SPOKOJNY_PLIK) === plik.zebrane) {
+      wynik.zrodlo = 'plik';
+      wynik.zebrane = plik.zebrane;
+      wynik.repozytoria = plik.repos.length;
+      wynik.kolo_spokojne = true;
+      wynik.bez_nowego_pliku = true;
+      wynik.stan = wynik.luki.length ? 'czesciowe' : 'ok';
+      wynik.luki = czysc(wynik.luki);
+      zapamietajProbe(wynik.stan);
+      return zakoncz();
+    }
+    // Gałęzie, które już są w Miejscu, czytamy raz na obejście i dzielimy po repozytorium w pamięci: pytanie o gałęzie
+    // każdego repozytorium osobno przeglądało za każdym razem wszystkie gałęzie.
+    let galezieWgRepo = null;
+    const galezieRepo = (repoId) => {
+      if (!galezieWgRepo) {
+        galezieWgRepo = new Map();
+        for (const x of s.wszystkie({ rodzaj: 'galaz/1', odlozone: 'razem' })) {
+          if (!galezieWgRepo.has(x.cechy.repo)) galezieWgRepo.set(x.cechy.repo, []);
+          galezieWgRepo.get(x.cechy.repo).push(x);
+        }
+      }
+      return galezieWgRepo.get(repoId) || [];
+    };
     const istnieja = new Map();
     for (const x of s.wszystkie({ rodzaj: 'repo/1', odlozone: 'razem' })) if (typeof x.cechy.pelna_nazwa === 'string') istnieja.set(x.cechy.pelna_nazwa, x);
     const plikRepos = new Map();
@@ -370,7 +398,7 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
         } else {
           for (const [p, rz] of znikniete) {
             if (!(await odloz('repo', rz, await kluczRepo(p), `repozytorium zniknęło u źródła: plik faktów z ${plik.zebrane} go nie zawiera, a obejmuje pełne klony`))) continue;
-            for (const g of s.wszystkie({ rodzaj: 'galaz/1', gdzie: { repo: rz.id } })) await odloz('galaz', g, await kluczGalezi(p, g.cechy.nazwa), 'repozytorium zniknęło u źródła');
+            for (const g of galezieRepo(rz.id).filter((x) => !x.odlozone)) await odloz('galaz', g, await kluczGalezi(p, g.cechy.nazwa), 'repozytorium zniknęło u źródła');
           }
         }
       }
@@ -400,7 +428,7 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
         if (!repoId) continue;
         const r = plikRepos.get(pelna);
         wynik.repozytoria_z_galeziami++;
-        const bylyG = new Map(s.wszystkie({ rodzaj: 'galaz/1', gdzie: { repo: repoId }, odlozone: 'razem' }).map((x) => [x.cechy.nazwa, x]));
+        const bylyG = new Map(galezieRepo(repoId).map((x) => [x.cechy.nazwa, x]));
         for (const b of r.galezie) {
           wynik.galezie_sprawdzone++;
           const bylo = bylyG.get(b.nazwa);
@@ -423,6 +451,7 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
         }
       }
       przesunKursor(przerobiony, klucze);
+      if (wynik.kolo_spokojne === true) s.r.ustawMeta(SPOKOJNY_PLIK, plik.zebrane);
 
       wynik.stan = wynik.luki.length ? 'czesciowe' : 'ok';
       wynik.luki = czysc(wynik.luki);
@@ -459,7 +488,7 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
         if (rz.odlozone || chciane.has(pelna)) continue;
         const k = await kluczRepo(pelna);
         if (await odloz('repo', rz, k, 'repozytorium zniknęło z pełnej listy publicznych repozytoriów u źródła')) {
-          for (const g of s.wszystkie({ rodzaj: 'galaz/1', gdzie: { repo: rz.id } })) await odloz('galaz', g, `g-${(await odcisk([pelna, g.cechy.nazwa])).slice(0, 12)}`, 'repozytorium zniknęło u źródła');
+          for (const g of galezieRepo(rz.id).filter((x) => !x.odlozone)) await odloz('galaz', g, `g-${(await odcisk([pelna, g.cechy.nazwa])).slice(0, 12)}`, 'repozytorium zniknęło u źródła');
         }
       }
     }
@@ -510,7 +539,7 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
       if (!repoId || !(g.galezie.length || g.pelna)) continue;
       wynik.repozytoria_z_galeziami++;
       wynik.galezie_sprawdzone += g.galezie.length;
-      const bylyG = new Map(s.wszystkie({ rodzaj: 'galaz/1', gdzie: { repo: repoId }, odlozone: 'razem' }).map((x) => [x.cechy.nazwa, x]));
+      const bylyG = new Map(galezieRepo(repoId).map((x) => [x.cechy.nazwa, x]));
       const zPliku = plikRepos.get(pelna);
       const widziane = new Set();
       for (const b of g.galezie) {
