@@ -367,6 +367,12 @@ function rysujPasek() {
   const ile = swiat ? swiat.projekty.length : 0;
   $('stan').textContent = `${lp(ile, 'projekt', 'projekty', 'projektów')} · akt ${d.miejsce.akt} · ${ja || 'zwiedzający'} · ${drzwi.zywe ? 'na żywo' : 'bez połączenia na żywo'}${tu}`;
   $('stan').title = drzwi.zywe ? 'Połączenie stoi: zmiany przychodzą same.' : 'Połączenie na żywo nie stoi: strona pyta o zmiany co kilka sekund.';
+  // To, co czeka na właściciela (propozycje agentów, także położeń, i prośby), widać od razu; rozstrzyga się na
+  // stronie gospodarza, bo szkielet nie ma jeszcze warstwy propozycji na płótnie.
+  const ileCzeka = d.czeka.propozycje.length + d.czeka.prosby.length;
+  $('czeka').hidden = !ileCzeka;
+  $('czeka').textContent = 'czeka: ' + ileCzeka;
+  $('czeka').title = 'Propozycje i prośby, które czekają na właściciela. Rozstrzyga się je na stronie gospodarza.';
   $('przelacz').textContent = t >= 0.5 ? 'połóż' : 'nadmuchaj';
   $('przelacz').title = t >= 0.5 ? 'Wróć do stanu stałego: rzeczy płyną tam, gdzie je położyłeś' : 'Nadmuchaj: rzeczy wypełniają okno, ważniejsze większe';
   const g = $('wejscie'), p = $('wejscie-panel');
