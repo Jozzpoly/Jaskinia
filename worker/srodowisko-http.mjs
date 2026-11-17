@@ -109,7 +109,10 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
       let c = null;
       try { c = JSON.parse(surowe); } catch { /* zostaje null */ }
       if (c === null) return json({ ok: false, status: 400, blad: 'ciało żądania ma być obiektem JSON (nagłówek Content-Type: application/json)' });
-      return json(await s.ruch(kto, c, { slad }));
+      // X-Gosc: ruch z okna. Dokłada go strona gospodarza, która wie, z którego okna przyszła wiadomość; aktorem
+      // ruchu jest wtedy gość, a uczestnik z klucza zostaje przy akcie jako ten, kto okno otworzył.
+      const gosc = request.headers.get('x-gosc');
+      return json(await s.ruch(kto, c, { slad, ...(gosc !== null ? { gosc } : {}) }));
     }
     if (sciezka === '/api/srodowisko/kod') {
       const kod = await cialoTekstem(request);

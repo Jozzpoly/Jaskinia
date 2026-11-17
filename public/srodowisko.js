@@ -97,16 +97,18 @@
     const id = 'okno-' + ++nrOkna;
     const ramka = el('iframe', { src: adres, title: tytul, referrerpolicy: 'no-referrer', allow: 'fullscreen; gamepad', sandbox: PIASKOWNICE[piaskownica] || PIASKOWNICE.obcy });
     const mowi = el('span', { klasa: 'mowi' });
+    // ślad pisania: ile razy narzędzie w tym oknie coś zapisało albo zaproponowało (ruch z okna, umowa okno/3)
+    const sladOkna = el('span', { klasa: 'slad-okna' });
     const tyt = el('span', { klasa: 'tytul', tekst: tytul });
     const sekcja = el('section', { klasa: 'okno', 'aria-label': tytul },
-      el('div', { klasa: 'pasek' }, tyt, mowi,
+      el('div', { klasa: 'pasek' }, tyt, mowi, sladOkna,
         el('a', { klasa: 'guzik', href: adres, target: '_blank', rel: 'noopener', tekst: 'nowa karta' }),
         el('button', { tekst: 'zwiń', title: 'Zwiń do guzika na dole; okno zostaje załadowane', klik: () => pokaz(id, false) }),
         el('button', { tekst: '×', title: 'Zamknij okno', klik: () => zamknij(id) })),
       ramka);
     const guzik = el('button', { tekst: tytul, klik: () => pokaz(id, sekcja.hidden) });
-    okna.set(id, { klucz, ramka, sekcja, guzik, tyt, mowi, gosc, chce: [], nazwa: tytul });
-    ramka.addEventListener('load', () => ramka.contentWindow && ramka.contentWindow.postMessage({ jaskinia: 1, type: 'hi', v: 2 }, '*'));
+    okna.set(id, { klucz, ramka, sekcja, guzik, tyt, mowi, gosc, chce: [], nazwa: tytul, slad: sladOkna, zapisy: 0, propozycje: 0 });
+    ramka.addEventListener('load', () => ramka.contentWindow && ramka.contentWindow.postMessage({ jaskinia: 1, type: 'hi', v: 2, umowy: ['okno/2', 'okno/3'] }, '*'));
     $('okna').append(sekcja);
     $('dok').append(guzik);
     pokaz(id, true);
@@ -160,12 +162,34 @@
         } else if (m.what === 'ksztalty') {
           dane = { ksztalty: (await czytaj('/api/srodowisko/ksztalty')).ksztalty };
         } else if (m.what === 'ja') {
-          dane = { uczestnik: opis ? opis.czytasz_jako : null, gosc: o.gosc ? { rzecz: o.gosc.id, nazwa: o.gosc.nazwa } : null };
+          dane = { uczestnik: opis ? opis.czytasz_jako : null, gosc: o.gosc ? { rzecz: o.gosc.id, nazwa: o.gosc.nazwa, umowa: o.gosc.umowa || null, imie: 'gosc-' + o.gosc.id } : null, pisze: !!(klucz && o.gosc && o.gosc.umowa === 'okno/3') };
         } else throw new Error('nie znam takiego czytania: ' + String(m.what) + '; znane: spis, rzecz, ksztalty, ja');
         odp({ type: 'result', id: m.id, ok: true, data: dane });
       } catch (blad) { odp({ type: 'result', id: m.id, ok: false, error: String(blad && blad.message || blad).slice(0, 300) }); }
     }
-    // signals, event, flag i wszystko nieznane: na razie pomijamy bez błędu (umowa okna, pokolenie 2)
+    else if (m.type === 'move') {
+      // Ruch z okna (umowa okna, pokolenie 3): narzędzie pisze pod własnym imieniem, nie imieniem tego, kto je otworzył.
+      // Strona dokłada tylko to, czego gość sam wiedzieć nie może: klucz otwierającego i identyfikator gościa.
+      const zle = (tekst) => odp({ type: 'result', id: m.id, ok: false, error: tekst });
+      const r = m.move;
+      if (!o.gosc || o.gosc.umowa !== 'okno/3') return zle('to okno mówi umową, która nie zna ruchów; gość pisze, gdy jest zgłoszony z "umowa":"okno/3"');
+      if (!klucz) return zle('okno pisze dopiero wtedy, gdy ten, kto je otworzył, wszedł (guzik "Wejdź" na górze strony)');
+      if (!r || typeof r !== 'object' || !['poloz', 'odloz', 'przywroc', 'cofnij'].includes(r.co)) return zle('move: {co: "poloz"|"odloz"|"przywroc"|"cofnij", …}; propozycji nie rozstrzyga się z okna');
+      const cialo = { op: typeof m.op === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(m.op) ? m.op : nowyOp(), co: r.co };
+      for (const pole of ['rodzaj', 'cechy', 'rzecz', 'wersja', 'obszar', 'powod', 'do']) if (pole in r) cialo[pole] = r[pole];
+      try {
+        const odpowiedz = await fetch('/api/srodowisko/ruch', { method: 'POST', headers: naglowki({ 'content-type': 'application/json', 'x-cialo': 'okno goscia', 'x-gosc': o.gosc.id }), body: JSON.stringify(cialo) });
+        const d = await odpowiedz.json().catch(() => null);
+        if (!odpowiedz.ok || !d || d.ok === false) return zle((d && d.blad) || 'drzwi odpowiedziały: ' + odpowiedz.status);
+        if (d.skutek === 'propozycja') o.propozycje++; else o.zapisy++;
+        o.slad.textContent = [o.zapisy ? 'zapisało: ' + o.zapisy : null, o.propozycje ? 'zaproponowało: ' + o.propozycje : null].filter(Boolean).join(' · ');
+        o.slad.title = 'Tyle razy to narzędzie pisało w tym oknie. Każdy jego ruch stoi w historii pod jego imieniem.';
+        odp({ type: 'result', id: m.id, ok: true, data: { skutek: d.skutek, rzecz: d.rzecz || null, propozycja: d.propozycja || null, wersja: d.wersja ?? null, numer: d.numer ?? null, powod: d.powod || null, powtorzone: !!d.powtorzone } });
+        if (d.skutek === 'propozycja') komunikat(`Narzędzie "${o.nazwa}" zaproponowało zmianę (${d.powod || 'czeka na rozstrzygnięcie'}). Znajdziesz ją w "Czeka na właściciela".`);
+        dogon().catch(() => {});
+      } catch (err) { zle('nie udało się połączyć: ' + String(err && err.message || err).slice(0, 200)); }
+    }
+    // signals, event, flag i wszystko nieznane: na razie pomijamy bez błędu (umowa okna, pokolenia 2 i 3)
   });
 
   // --- strona --------------------------------------------------------------------------------------------------
@@ -479,7 +503,7 @@
     const adres = !kod && typeof c.adres === 'string' && /^https:\/\//.test(c.adres) ? c.adres : null;
     const k = el('article', { klasa: 'karta' }, el('div', { klasa: 'nazwa', tekst: r.tytul }), el('div', { klasa: 'opis', tekst: typeof c.opis === 'string' ? c.opis : '' }));
     k.style.borderLeftColor = 'var(--akcent)';
-    k.append(el('div', { klasa: 'ruchy' }, kod || adres ? el('button', { klasa: 'glowny', tekst: 'Otwórz', klik: () => otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul } }) }) : el('span', { klasa: 'ciche', tekst: 'bez kodu i adresu' })),
+    k.append(el('div', { klasa: 'ruchy' }, kod || adres ? el('button', { klasa: 'glowny', tekst: 'Otwórz', klik: () => otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul, umowa: typeof c.umowa === 'string' ? c.umowa : null } }) }) : el('span', { klasa: 'ciche', tekst: 'bez kodu i adresu' })),
       el('div', { klasa: 'meta' }, r.wersja > widziany && widziany > 0 ? el('span', { klasa: 'nowe', tekst: 'nowe' }) : null, el('span', { tekst: `dołożył ${r.utworzyl} · ${kiedy(r.utworzono)}` }), el('a', { href: '/rzecz/' + r.id, tekst: 'szczegóły' })));
     k.append(...slowoPrzy(r).filter(Boolean));
     return k;

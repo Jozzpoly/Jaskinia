@@ -8,6 +8,8 @@ import { ETAPY } from './ziarna.mjs';
 
 const dzien = (iso) => String(iso).replace('T', ' ').slice(0, 16) + ' UTC';
 const wiersze = (...w) => w.flat(9).filter((x) => x !== null && x !== undefined && x !== false).join('\n');
+// Ilu gości mówi którym pokoleniem umowy okna: pierwszy pomiar tego, czy stare pokolenie jest jeszcze używane.
+const umowyWUzyciu = (goscie) => { const m = new Map(); for (const g of goscie) { const u = g.umowa || 'bez umowy'; m.set(u, (m.get(u) || 0) + 1); } return [...m].sort().map(([u, n]) => `${u}: ${n}`).join(', '); };
 const obetnij = (s, n = 110) => { s = String(s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
 export const CO_ZNACZY = {
@@ -26,6 +28,7 @@ export function czasowniki(s) {
     { nazwa: 'przyjmij', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'przyjmij czekającą propozycję (zmiana wchodzi w życie)', wejscie: '{op, co:"przyjmij", propozycja}', wynik: '{skutek: "przyjeta", rzecz, adres}' },
     { nazwa: 'odrzuc', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'odrzuć czekającą propozycję; autor tym samym ruchem wycofuje własną', wejscie: '{op, co:"odrzuc", propozycja, powod?}', wynik: '{skutek: "odrzucona"|"wycofana"}' },
     { nazwa: 'kod', ktoredy: 'drzwi: POST /api/srodowisko/kod?op=…', opis: 'zapisz kod gościa (jeden plik HTML jako ciało żądania)', wejscie: 'tekst HTML', wynik: '{zapis, adres: "/gosc/<zapis>"}' },
+    { nazwa: 'ruch-z-okna', ktoredy: 'okno: {type: "move", id, move}; w drzwiach to POST /api/srodowisko/ruch z nagłówkiem X-Gosc: <id gościa>, który dokłada strona gospodarza', opis: 'ruch narzędzia otwartego w oknie: zapisuje się pod imieniem gościa (gosc-<id>), z prawem nie większym niż prawo agenta w obszarze i tego, kto okno otworzył; tylko gość zgłoszony z umową okno/3', wejscie: '{co: "poloz"|"odloz"|"przywroc"|"cofnij", rodzaj, cechy, rzecz?, wersja?, obszar?}', wynik: '{skutek, rzecz|propozycja, wersja, numer, powod?}' },
     { nazwa: 'spis', ktoredy: 'drzwi: GET /api/srodowisko/spis?rodzaj=&obszar=&gdzie.<cecha>=&szukaj=&odlozone=&po=<akt>; tekstem: /rzeczy z tymi samymi dodatkami; okno: read spis', opis: 'lista rzeczy: jednego rodzaju, z jednego obszaru, o danej wartości cechy albo z danym słowem; odłożone tylko na życzenie (odlozone=tak albo razem)', wejscie: 'rodzaj?, obszar?, gdzie?, szukaj?, odlozone?, pomin?, ile?', wynik: '{rzeczy: [{id, rodzaj, obszar, cechy, tytul, wersja, numer, …}], razem, pokazane, wszystko}' },
     { nazwa: 'rzecz', ktoredy: 'drzwi: GET /api/srodowisko/rzecz?id=; tekstem: /rzecz/<id>; okno: read rzecz', opis: 'jedna rzecz z historią i tym, co na nią wskazuje', wejscie: 'id', wynik: '{rzecz, historia: [{numer, akt, kto, kiedy}], wskazuja}' },
     { nazwa: 'wersja', ktoredy: 'drzwi: GET /api/srodowisko/wersja?id=&akt=', opis: 'treść wcześniejszej wersji rzeczy (akt to znacznik z jej historii)', wejscie: 'id, akt', wynik: '{wersja: {rzecz, akt, numer, kto, kiedy, rodzaj, obszar, cechy, odlozone}}' },
@@ -179,8 +182,8 @@ export function coTuJest(s, opcje = {}) {
     'Rzecz rodzaju, którego kształt mówi lezy_z, nie ma własnego obszaru: leży tam, gdzie rzecz wskazana tą cechą, i idzie za nią, gdy tamta zmienia obszar.',
     d.wyrownanie ? `Wyrównanie spisu: ${ile(d.wyrownanie.razem, 'rzecz dostała', 'rzeczy dostały', 'rzeczy dostało')} w spisie obszar rzeczy, z którą z natury leży (ostatnio ${d.wyrownanie.ostatnio}, ${dzien(d.wyrownanie.kiedy)}); zapisy tych rzeczy się nie zmieniły.` : null,
     '',
-    d.goscie.length ? 'Goście (organy i narzędzia; otwierają się w oknie na stronie głównej /):' : 'Gości (organów i narzędzi) jeszcze nie ma.',
-    d.goscie.map((g) => `  ${g.nazwa}: ${obetnij(g.opis, 130)}   -> /rzecz/${g.id}${g.kod ? `, kod: /gosc/${g.kod}` : ''}${g.adres ? `, adres: ${g.adres}` : ''}`),
+    d.goscie.length ? `Goście (organy i narzędzia; otwierają się w oknie na stronie głównej /). Umowy okna w użyciu: ${umowyWUzyciu(d.goscie)} (pokolenia działają obok siebie; okno/3 także pisze):` : 'Gości (organów i narzędzi) jeszcze nie ma.',
+    d.goscie.map((g) => `  ${g.nazwa}: ${obetnij(g.opis, 130)} [${g.umowa || 'bez umowy'}]   -> /rzecz/${g.id}${g.kod ? `, kod: /gosc/${g.kod}` : ''}${g.adres ? `, adres: ${g.adres}` : ''}`),
     '',
     `Uczestnicy: ${d.uczestnicy.map((u) => `${u.imie} (${u.rola})`).join(', ')}. Uczestnik z kluczem, którego tu nie wypisano, ma rolę agent.`,
     d.przeniesienie.publiczne_repozytoria
@@ -214,6 +217,7 @@ export function coTuJest(s, opcje = {}) {
       'Taki ruch zrobiony przez kogoś innego nie jest odrzucany: staje się propozycją do właściciela.',
       'Propozycję przyjmuje właściciel albo uczestnik, który ten sam ruch mógłby zrobić sam ze skutkiem; autor może swoją tylko wycofać (co: odrzuc).',
       'Propozycje kosztują uwagę właściciela: możesz mieć jedną czekającą na rzecz i najwyżej 20 czekających naraz. Rzecz rodzaju uczestnik nie daje klucza ani dostępu.',
+      'Gość (narzędzie w oknie, umowa okno/3) pisze pod własnym imieniem gosc-<id>, tylko gdy ten, kto otworzył okno, wszedł kluczem. Ma w obszarze tyle prawa co agent i nigdy więcej niż otwierający; propozycji z okna się nie rozstrzyga.',
       'Niczego nie da się tu usunąć: każda zmiana jest nowym zapisem obok starego, a historia zostaje. Rzecz można odłożyć (co: odloz) i przywrócić.',
     ],
     `Możliwe wartości ile_wolno: ${STOPNIE.map((x) => `${x} (${CO_ZNACZY[x]})`).join('; ')}.`,
@@ -257,6 +261,7 @@ export function coTuJest(s, opcje = {}) {
     '     Odpowiedź: {"ok":true,"zapis":"<64 znaki>","adres":"/gosc/<zapis>"}',
     '  2. {"op":"moj-gosc-0002","co":"poloz","rodzaj":"gosc/1","cechy":{"nazwa":"…","opis":"…","kod":"<zapis>","umowa":"okno/2"}}',
     '  Gość otwiera się w oknie na stronie głównej (/). Działa w piaskownicy: nie ma sieci, pamięci ani dostępu do adresu Miejsca; rzeczy czyta, rozmawiając z gospodarzem.',
+    '  Gość, który ma też pisać (zakładać i zmieniać rzeczy z okna), zgłasza się z "umowa":"okno/3"; zasady i przykład: /umowa-okna, część RUCH Z OKNA.',
     '  Jak gość rozmawia z gospodarzem (z gotowym przykładem do skopiowania): /umowa-okna',
     '  Gość, który żyje pod własnym adresem (np. gra): zamiast "kod" podaj "adres":"https://…".',
     '',
@@ -412,10 +417,11 @@ export function stronaRzeczy(s, id, { kto = null } = {}) {
 
 export function umowaOkna() {
   return wiersze(
-    'UMOWA OKNA, POKOLENIE 2 (okno/2)',
+    'UMOWA OKNA, POKOLENIA 2 I 3 (okno/2, okno/3)',
     'Jak gość (narzędzie albo widok otwarty w oknie Jaskini) rozmawia z gospodarzem, czyli stroną, która go otworzyła.',
     'Pokolenie 1 to kontrakt przyrządu starej Jaskini (hello, state, signals, event, flag); pokolenie 2 dokłada czytanie rzeczy.',
     'Gość pokolenia 1 działa u gospodarza pokolenia 2 bez zmian. Nieznane typy wiadomości i nieznane pola obie strony pomijają.',
+    'Pokolenie 3 dokłada ruch z okna: gość zakłada i zmienia rzeczy pod własnym imieniem. Oba pokolenia działają obok siebie; którym mówi gość, stoi w jego cesze umowa.',
     '',
     'GDZIE ŻYJE GOŚĆ',
     'Gość z cechą "kod" to jeden plik HTML zapisany w Miejscu. Gospodarz otwiera go w ramce, w piaskownicy:',
@@ -436,15 +442,17 @@ export function umowaOkna() {
     '                                                    wynik niesie akt, do którego doczytano; po "changed" wystarczy zapytać o zmiany po swoim akcie',
     '  read     {id, what: "rzecz", rzecz: "<id>"}       jedna rzecz z historią',
     '  read     {id, what: "ksztalty"}                   rodzaje rzeczy z opisem cech',
-    '  read     {id, what: "ja"}                         kim jest czytający i jako który gość jesteś otwarty',
+    '  read     {id, what: "ja"}                         kim jest czytający, jako który gość jesteś otwarty i czy to okno może pisać',
+    '  move     {id, move: {co: "poloz"|"odloz"|"przywroc"|"cofnij", rodzaj, cechy, rzecz?, wersja?, obszar?, powod?, do?}, op?}   ruch z okna (tylko okno/3): te same pola co w drzwiach,',
+    '                                                    bez klucza; op (8 do 80 znaków) podaj, gdy chcesz bezpiecznie ponawiać, bez niego gospodarz nada własny',
     '  state    {text (do 240 znaków), data? (JSON do 8 KB)}   co się u Ciebie dzieje; gospodarz pokazuje tekst pod oknem',
     '  signals  {values: {nazwa: liczba}}                liczby na żywo (do 24)',
     '  event    {text (do 200), level: "info"|"uwaga"|"blad"}',
     '  flag     {}                                       właściciel chce zostawić uwagę przy tym gościu',
     '',
     'Od gospodarza:',
-    '  hi       {v: 2}                                   po załadowaniu strony; odpowiedz hello',
-    '  result   {id, ok: true, data} albo {id, ok: false, error}   odpowiedź na read o tym samym id',
+    '  hi       {v: 2, umowy: ["okno/2", "okno/3"]}      po załadowaniu strony; odpowiedz hello',
+    '  result   {id, ok: true, data} albo {id, ok: false, error}   odpowiedź na read albo move o tym samym id',
     '  changed  {akt}                                    w Miejscu coś się zmieniło; jeśli pokazujesz rzeczy, przeczytaj je znowu',
     '  visible  {visible: true|false}                    okno schowane albo znowu widoczne; schowany gość może odpocząć',
     '  remark   {text, at}                               uwaga właściciela, tylko gdy prosiłeś o nią w hello (wants: ["remark"])',
@@ -454,10 +462,23 @@ export function umowaOkna() {
     '  read rzecz    -> {rzecz: {…jak wyżej…}, historia: [{numer, akt, kto, kiedy}], wskazuja: [{od, cecha}]}',
     'Daty (utworzono, zmieniono, kiedy) są w zapisie ISO 8601 w czasie UTC, więc porządkują się jak zwykłe napisy. numer to która to wersja rzeczy; wersja to znacznik do zmiany.',
     '  read ksztalty -> {ksztalty: [{dla, opis, tytul, cechy: {nazwa: {typ, opis, wymagana}}, rzecz}]}',
-    '  read ja       -> {uczestnik: {imie, rola}, gosc: {rzecz, nazwa}}',
+    '  read ja       -> {uczestnik: {imie, rola}, gosc: {rzecz, nazwa, umowa, imie}, pisze}',
+    '  move          -> {skutek: "polozone"|"odlozone"|"przywrocone"|"cofniete"|"propozycja", rzecz|propozycja, wersja, numer, powod?}',
     'Pole obszar w rzeczy to identyfikator rzeczy rodzaju obszar/1 (jej nazwa stoi w cesze nazwa) albo null, czyli obszar główny.',
     'Nazwy obszarów dostaniesz przez read spis z rodzaj: "obszar". Rzecz leży dokładnie w jednym obszarze; obszary tworzą drzewo (obszar też ma pole obszar).',
     'read spis oddaje najwyżej 1000 rzeczy, od ostatnio zmienionej; pole razem mówi, ile jest wszystkich, a wszystko: true, że to cała lista. Dalszy kawałek: pomin: <ile już masz>.',
+    '',
+    'RUCH Z OKNA (okno/3)',
+    'Gość zgłoszony z "umowa":"okno/3" może zakładać i zmieniać rzeczy. Zasady:',
+    '  - ruch zapisuje się pod imieniem gościa (gosc-<identyfikator jego rzeczy>), a ten, kto otworzył okno, stoi przy nim jako kontekst: historia mówi, że zrobiło to narzędzie, i w czyim oknie;',
+    '  - okno pisze tylko wtedy, gdy otwierający wszedł kluczem; gość ma w obszarze tyle prawa co agent i nigdy więcej niż otwierający (wygrywa słabsze);',
+    '  - tam, gdzie wolno tylko proponować, ruch wraca jako {skutek: "propozycja", powod}: czeka na właściciela i to jest poprawny wynik, nie błąd;',
+    '  - nowa rzecz bez pola obszar ląduje w obszarze Nowe; ruch zastrzeżony dla właściciela (ustawienia obszaru, uczestnicy, kształty rdzenia) jest z okna zawsze propozycją do niego;',
+    '  - z okna nie da się przyjąć ani odrzucić propozycji ani zapisać kodu gościa.',
+    'Przykład (dopisz do najmniejszego gościa niżej):',
+    'function rusz(move) { return new Promise((tak, nie) => { const id = ++nr; czekaja.set(id, { tak, nie }); powiedz({ type: "move", id, move }); setTimeout(() => { if (czekaja.delete(id)) nie(new Error("gospodarz nie odpowiedział")); }, 15000); }); }',
+    'const w = await rusz({ co: "poloz", rodzaj: "slowo/1", cechy: { tresc: "Słowo z narzędzia", dotyczy: ["<id rzeczy>"] } });   // w.skutek: "polozone" albo "propozycja"',
+    'Gotowy gość, który pisze, stoi w tym Miejscu jako przykład: "Słowa" (lista gości: /rzeczy?rodzaj=gosc/1; jego kod: /gosc/<zapis z cechy kod>).',
     '',
     'NAJMNIEJSZY DZIAŁAJĄCY GOŚĆ (cały plik; skopiuj i zmień funkcję pokaz)',
     '<!doctype html>',
@@ -480,8 +501,8 @@ export function umowaOkna() {
     'Sprawdzenie bez przeglądarki: od chwili zgłoszenia gościa /gosc/<zapis> oddaje dokładnie ten plik, a /rzecz/<id gościa> pokazuje jego cechy.',
     'Gospodarz wysyła hi po załadowaniu ramki; jeśli gość wyśle hello wcześniej, też dobrze (hello można wysłać więcej niż raz).',
     '',
-    'CZEGO JESZCZE NIE MA: ruchów z okna (gość na razie tylko czyta), własnej tożsamości gościa przy czytaniu, wołania czasowników gościa,',
-    'osadzania jednego gościa w drugim, okna w przestrzeni Startu, pamięci gościa.',
+    'CZEGO JESZCZE NIE MA: własnej tożsamości gościa przy czytaniu (gość czyta dziś tyle, co strona, która go otworzyła), zgody dla wskazanego narzędzia',
+    'we wskazanym obszarze, wołania czasowników gościa, osadzania jednego gościa w drugim, okna w przestrzeni Startu, pamięci gościa.',
     '',
   );
 }

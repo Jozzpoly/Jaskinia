@@ -49,7 +49,7 @@ test('E2. tekst pod adresem pokazuje stan budowy etapami, z liczbami, które sum
   }
   assert.equal(suma, d.zdolnosci.length, 'żadna zdolność nie wypada poza etapy');
   assert.match(osma, /\[BRAK\] Ustawienia jako dane:/);
-  assert.match(osma, /\[BRAK\] Gość, który pisze:/);
+  assert.match(osma, /\[CIENKO\] Gość, który pisze:/);
   // kolejność etapów w tekście jest kolejnością budowy
   const pozycje = ETAPY.map((e) => osma.indexOf(e.nazwa.toUpperCase()));
   assert.deepEqual([...pozycje].sort((a, b) => a - b), pozycje);

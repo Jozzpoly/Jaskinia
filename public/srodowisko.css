@@ -55,6 +55,8 @@ details > div { padding: 0 .65rem .5rem; }
 .okno .pasek { display: flex; align-items: center; gap: .6rem; padding: .35rem .5rem .35rem .75rem; border-bottom: 1px solid var(--linia); }
 .okno .pasek .tytul { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .okno .pasek .mowi { color: var(--ciche); font-size: .8rem; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.okno .pasek .slad-okna { color: var(--akcent); font-size: .8rem; white-space: nowrap; }
+.okno .pasek .slad-okna:empty { display: none; }
 .okno iframe { flex: 1; width: 100%; border: 0; background: #fff; }
 @media (prefers-color-scheme: dark) { .okno iframe { background: #111; } }
 #dok { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; gap: .4rem; padding: .45rem .7rem calc(.45rem + env(safe-area-inset-bottom, 0px)); overflow-x: auto; background: color-mix(in srgb, var(--tlo) 90%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--linia); }

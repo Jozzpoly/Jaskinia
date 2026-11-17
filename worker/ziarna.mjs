@@ -84,6 +84,102 @@ powiedz({ type: 'hello', name: 'Lista rzeczy', version: '1', wants: ['rzeczy'] }
 </html>
 `;
 
+const GOSC_SLOWA = `<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Słowa</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 12px 14px; font: 15px/1.45 system-ui, sans-serif; }
+  h1 { font-size: 1.05rem; margin: 0 0 2px; }
+  #stan { margin: 0 0 10px; opacity: .75; font-size: .9rem; }
+  form { display: grid; gap: 6px; margin: 0 0 12px; }
+  select, textarea, button { font: inherit; font-size: 16px; padding: 6px 8px; }
+  textarea { min-height: 3.4rem; }
+  button { justify-self: start; min-height: 44px; padding: 6px 14px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+  small { opacity: .65; }
+</style>
+</head>
+<body>
+<h1>Słowa</h1>
+<p id="stan">Czekam na gospodarza…</p>
+<form id="nowe">
+  <select id="przy" aria-label="Przy której rzeczy"></select>
+  <textarea id="tresc" aria-label="Twoje słowo" placeholder="Słowo przy tej rzeczy"></textarea>
+  <button type="submit">Zostaw słowo</button>
+</form>
+<ul id="lista"></ul>
+<script>
+// Gość Jaskini, który pisze: przykład umowy okna, pokolenie 3 (ruch z okna). Pełny opis: adres /umowa-okna.
+// Ruch zapisuje się pod imieniem tego gościa, nie tego, kto otworzył okno. Tam, gdzie gościowi wolno tylko
+// proponować, wynik to {skutek: "propozycja"}: czeka na właściciela i to jest poprawny wynik, nie błąd.
+const gospodarz = window.parent;
+let nr = 0;
+const czekaja = new Map();
+const powiedz = (m) => gospodarz.postMessage({ jaskinia: 1, ...m }, '*');
+function zapytaj(typ, wiecej, ms) {
+  return new Promise((tak, nie) => {
+    const id = ++nr;
+    czekaja.set(id, { tak, nie });
+    powiedz({ type: typ, id, ...wiecej });
+    setTimeout(() => { if (czekaja.delete(id)) nie(new Error('gospodarz nie odpowiedział')); }, ms);
+  });
+}
+const czytaj = (what, wiecej) => zapytaj('read', { what, ...wiecej }, 8000);
+const rusz = (move) => zapytaj('move', { move }, 15000);
+const stan = document.getElementById('stan');
+addEventListener('message', (e) => {
+  const m = e.data;
+  if (e.source !== gospodarz || !m || m.jaskinia !== 1) return;
+  if (m.type === 'hi') { powiedz({ type: 'hello', name: 'Słowa', version: '1', wants: ['rzeczy'] }); pokaz(); }
+  else if (m.type === 'result') { const c = czekaja.get(m.id); if (c) { czekaja.delete(m.id); if (m.ok) c.tak(m.data); else c.nie(new Error(m.error)); } }
+  else if (m.type === 'changed') pokaz();
+});
+async function pokaz() {
+  try {
+    const [slowa, rzeczy] = await Promise.all([czytaj('spis', { rodzaj: 'slowo' }), czytaj('spis', {})]);
+    const tytuly = new Map(rzeczy.rzeczy.map((r) => [r.id, r.tytul]));
+    const przy = document.getElementById('przy');
+    const wybrane = przy.value;
+    przy.textContent = '';
+    for (const r of rzeczy.rzeczy.filter((x) => /^(projekt|repo|gosc|widok)\\//.test(x.rodzaj)).slice(0, 200)) {
+      const o = document.createElement('option'); o.value = r.id; o.textContent = r.tytul + ' [' + r.rodzaj + ']'; przy.append(o);
+    }
+    if (wybrane) przy.value = wybrane;
+    const lista = document.getElementById('lista');
+    lista.textContent = '';
+    for (const s of slowa.rzeczy.slice(0, 30)) {
+      const li = document.createElement('li');
+      li.textContent = s.cechy.tresc + ' ';
+      const m = document.createElement('small');
+      m.textContent = 'przy: ' + (s.cechy.dotyczy || []).map((id) => tytuly.get(id) || id.slice(0, 6)).join(', ') + ' · ' + s.utworzyl;
+      li.append(m); lista.append(li);
+    }
+    stan.textContent = slowa.razem + ' słów w Miejscu';
+    powiedz({ type: 'state', text: slowa.razem + ' słów' });
+  } catch (err) { stan.textContent = 'Nie udało się przeczytać: ' + err.message; }
+}
+document.getElementById('nowe').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const tresc = document.getElementById('tresc'), przy = document.getElementById('przy').value;
+  if (!tresc.value.trim() || !przy) { stan.textContent = 'Wybierz rzecz i wpisz słowo.'; return; }
+  try {
+    const w = await rusz({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: tresc.value.trim(), dotyczy: [przy] } });
+    stan.textContent = w.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (w.powod || 'czeka na właściciela') + ').' : 'Zapisane.';
+    tresc.value = '';
+    pokaz();
+  } catch (err) { stan.textContent = 'Nie zapisało się: ' + err.message; }
+});
+powiedz({ type: 'hello', name: 'Słowa', version: '1', wants: ['rzeczy'] });
+</script>
+</body>
+</html>
+`;
+
 export function ziarna({ wlasciciel }) {
   return [
     k('ksztalt', { dla: 'ksztalt/1', tytul: 'dla', opis: 'Kształt: opis rodzaju rzeczy, czyli jakie cechy ma rzecz tego rodzaju. Sam jest rzeczą, więc nowy rodzaj dokłada się ruchem, bez zmiany kodu.',
@@ -114,6 +210,7 @@ export function ziarna({ wlasciciel }) {
     k('propozycja', { dla: 'propozycja/1', tytul: 'rodzaj', opis: 'Propozycja: ruch uczestnika, który nie ma prawa do skutku. Leży tam, gdzie rzecz, której dotyczy, i czeka, aż ktoś z prawem ją przyjmie albo odrzuci.',
       cechy: {
         od: { typ: 'tekst', wymagana: true, opis: 'kto proponuje' },
+        przez: { typ: 'tekst', opis: 'gdy proponuje gość z okna: kto otworzył to okno' },
         co: { typ: 'wybor', wartosci: ['poloz', 'odloz', 'przywroc', 'cofnij'], wymagana: true },
         rodzaj: { typ: 'tekst', wymagana: true, opis: 'rodzaj rzeczy, której dotyczy ruch' },
         tresc: { typ: 'dowolne', wymagana: true, opis: '{obszar, cechy}: to, co ruch chciał zapisać' },
@@ -147,7 +244,7 @@ export function ziarna({ wlasciciel }) {
         opis: { typ: 'tekst', wymagana: true, opis: 'co ten gość pokazuje albo robi' },
         kod: { typ: 'zapis', rodzaj: 'kod/1', opis: 'zapis rodzaju kod/1 z jednym plikiem HTML; powstaje przez POST /api/srodowisko/kod' },
         adres: { typ: 'adres', opis: 'adres strony, która żyje poza Jaskinią (np. gra)' },
-        umowa: { typ: 'tekst', opis: 'pokolenie umowy okna, którym gość mówi, np. okno/2' },
+        umowa: { typ: 'tekst', opis: 'pokolenie umowy okna, którym gość mówi: okno/2 (czyta rzeczy) albo okno/3 (czyta i pisze: ruch z okna pod własnym imieniem gościa)' },
         czasowniki: { typ: 'dowolne', opis: 'lista {nazwa, opis, wejscie, wynik}: co ten gość umie zrobić na prośbę' },
       } }),
     k('zdolnosc', { dla: 'zdolnosc/1', tytul: 'nazwa', opis: 'Zdolność środowiska: co ono już umie, co umie cienko, a czego jeszcze nie. Stan budowy mieszka tu, a nie w czyjejś głowie.',
@@ -252,8 +349,8 @@ export function ziarna({ wlasciciel }) {
     zd('samowyjasnianie', 'stoi', 'Samowyjaśnianie pod adresem: /co-tu-jest mówi gołym tekstem, co tu jest, co się zmieniło, co komu wolno i jak coś dołożyć; powstaje z danych.'),
     zd('obszary', 'cienko', 'Obszary i prawo do skutku z danych: ten sam ruch daje skutek, propozycję albo odmowę zależnie od ustawienia obszaru.', 'Działa ile_wolno, liczone w obszarze, w którym rzecz leży, i w tym, do którego trafia. Ustawienia uwaga, widzi i uklada są zapisane, ale nic jeszcze z nich nie wynika. Wszyscy agenci mają w obszarze to samo prawo.'),
     zd('propozycje', 'cienko', 'Propozycje: ruch bez prawa do skutku czeka, aż przyjmie go albo odrzuci właściciel albo ktoś, kto sam mógłby zrobić ten ruch ze skutkiem; autor może swoją wycofać.', 'Ruch, który zmienia coś zastrzeżonego dla właściciela, też staje się propozycją, tylko do niego. Nie ma wygasania ani warstwy do obejrzenia przed przyjęciem.'),
-    zd('goscie', 'cienko', 'Goście z kodem w piaskownicy: jeden plik HTML zapisany w Miejscu, podawany bez dostępu do sieci i do adresu Miejsca.', 'Gość czyta rzeczy przez umowę okna. Jeszcze nie proponuje ruchów z okna i nie ma własnej pamięci.'),
-    zd('umowa-okna', 'cienko', 'Umowa okna, pokolenie 2: przyrząd starej Jaskini (hello, state, signals, event, flag) i czytanie rzeczy.', 'Opis: /umowa-okna. Brakuje ruchów z okna, wołania czasowników gościa i okna w przestrzeni Startu.'),
+    zd('goscie', 'cienko', 'Goście z kodem w piaskownicy: jeden plik HTML zapisany w Miejscu, podawany bez dostępu do sieci i do adresu Miejsca.', 'Gość czyta rzeczy przez umowę okna, a z umową okno/3 także pisze pod własnym imieniem. Nie ma własnej pamięci.'),
+    zd('umowa-okna', 'cienko', 'Umowa okna, pokolenia 2 i 3: przyrząd starej Jaskini (hello, state, signals, event, flag), czytanie rzeczy (okno/2) i ruch z okna (okno/3); oba pokolenia działają obok siebie.', 'Opis: /umowa-okna. Brakuje czytania jako gość, wołania czasowników gościa, osadzania gościa w gościu i okna w przestrzeni Startu.'),
     zd('czasowniki', 'cienko', 'Spis czasowników: jedna lista tego, co da się zrobić, z wejściem i wynikiem.', 'Są czasowniki drzwi i okna. Czasowniki gości są tylko wypisane; wołać ich jeszcze się nie da.'),
     zd('na-zywo', 'cienko', 'Zmiany na żywo: otwarta strona dowiaduje się o cudzej zmianie od razu, bez przeładowania i bez pytania.', 'Kanał: połączenie pod /api/srodowisko/zywe niesie sam numer ostatniego aktu, a strona doczytuje tylko to, co się zmieniło (spis z po=<akt>). Gdy połączenie nie stoi, strona pyta o puls co kilka sekund. Niesprawdzone na prawdziwym telefonie ani przy słabej sieci.'),
     zd('wywoz', 'cienko', 'Wywóz i wwóz całości: właściciel dostaje wszystko jako jeden plik spod /api/miejsce/eksport; plik sam mówi, jak go czytać, a wwieziony do pustego Miejsca odtwarza to samo środowisko.', 'Obcy czytnik odtworzył spis z samego pliku (dowód D3, 17 XI, sędzia: Opus Code). Powrót do siebie pilnuje sprawdzian budowniczego; nikt obcy go jeszcze nie sądził.'),
@@ -279,7 +376,7 @@ export function ziarna({ wlasciciel }) {
     zd('uczestnicy-z-danych', 'brak', 'Uczestnicy z danych: imię, rolę i klucz uczestnika dokłada właściciel ruchem, bez wdrożenia; role obejmują drugiego człowieka i agentów różnych dostawców.', 'Dziś klucze stoją w ustawieniach wdrożenia, a role są trzy (właściciel, agent, automat). Rzecz rodzaju uczestnik/1 opisuje uczestnika, ale nie daje mu dostępu.'),
     zd('tozsamosc-po-zmianie', 'brak', 'Tożsamość, która przeżywa zmianę: rzecz zostaje sobą po zmianie nazwy u źródła, a dwie rzeczy da się połączyć albo jedną rozdzielić, z rodowodem i bez gubienia wskazań.', 'Dziś zmiana nazwy repozytorium u źródła daje nową rzecz, a stara jest odkładana (kluczem jest nazwa). Łączenia i dzielenia nie ma.'),
     zd('ustawienia', 'brak', 'Ustawienia jako dane: wszystko, co da się stroić, ma deklarację (typ, zakres), wartość z zasięgiem i historią oraz nazwane zestawy, zmieniane w działającym Miejscu.', 'Dziś są cztery ustawienia obszaru wpisane w kod, z czego działa jedno (ile_wolno). Wszystko, co stroi się na Starcie, jest stałą w kodzie.'),
-    zd('gosc-pisze', 'brak', 'Gość, który pisze: narzędzie w oknie zakłada i zmienia rzeczy pod własnym imieniem (domyślnie jako propozycja) i czyta tylko to, co gościowi wolno.', 'Dziś gość czyta tyle, co strona, która go otworzyła, i niczego nie zmienia. Bez tego nikt poza budowniczym nie dołoży narzędzia, które coś robi.'),
+    zd('gosc-pisze', 'cienko', 'Gość, który pisze: narzędzie w oknie zakłada i zmienia rzeczy pod własnym imieniem (domyślnie jako propozycja) i czyta tylko to, co gościowi wolno.', 'Ruch z okna (umowa okno/3) zapisuje się pod imieniem gosc-<id>, a ten, kto otworzył okno, stoi przy nim jako kontekst. Gość ma w obszarze tyle prawa co agent i nigdy więcej niż otwierający. Nie ma jeszcze zgody dla wskazanego narzędzia we wskazanym obszarze, a czyta dalej tyle, co strona, która go otworzyła.'),
     zd('narzedzia-agenta', 'brak', 'Narzędzia Miejsca w ręku agenta: czasowniki ze spisu stoją na liście narzędzi agenta (serwer narzędzi), więc agent używa ich bez czytania opisu i bez adresu w poleceniu.', 'Dziś spis czasowników jest tekstem wpisanym w kod, a agent musi przeczytać /co-tu-jest i sam złożyć żądanie.'),
     zd('wersje-do-uruchomienia', 'brak', 'Wersje i buildy przychodzą same: nowa wersja labu albo działający build staje się rzeczą ze znakiem nowe i wejściem do uruchomienia.', 'Dziś same przychodzą fakty o repozytoriach i gałęziach, tak świeże jak odświeżenie starej Jaskini; wersji do uruchomienia nie ma, a znak nowe nie istnieje.'),
     zd('doreczenie-slowa', 'brak', 'Słowo dociera do agenta: słowo zostawione przy rzeczy trafia do agentów, którzy się nią zajmują, od razu albo po ich obudzeniu, a odpowiedź wraca w to samo miejsce.', 'Dziś słowo jest rzeczą przy rzeczy i widać je na stronie, ale żaden agent się o nim nie dowie, dopóki sam nie zajrzy.'),
@@ -304,6 +401,12 @@ export function ziarna({ wlasciciel }) {
         const w = await s.r.wykonaj('srodowisko', { op: 'zasiew-kod-lista-' + szybkiOdcisk(GOSC_LISTA), co: 'zapisz', rodzaj: 'kod/1', tresc: GOSC_LISTA }, { slad: 'zasiew' });
         if (!w.ok) throw new Error('kod gościa: ' + w.blad);
         return { nazwa: 'Lista rzeczy', opis: 'Najprostszy gość: wszystkie rzeczy pogrupowane według rodzaju. Przykład umowy okna do skopiowania.', kod: w.zapis ?? w.akt.zapis, umowa: 'okno/2' };
+      } },
+    { nazwa: 'gosc-slowa', rodzaj: 'gosc/1',
+      cechy: async (s) => {
+        const w = await s.r.wykonaj('srodowisko', { op: 'zasiew-kod-slowa-' + szybkiOdcisk(GOSC_SLOWA), co: 'zapisz', rodzaj: 'kod/1', tresc: GOSC_SLOWA }, { slad: 'zasiew' });
+        if (!w.ok) throw new Error('kod gościa: ' + w.blad);
+        return { nazwa: 'Słowa', opis: 'Gość, który pisze: zostawia słowo przy wybranej rzeczy i pokazuje ostatnie słowa. Przykład ruchu z okna (umowa okno/3) do skopiowania.', kod: w.zapis ?? w.akt.zapis, umowa: 'okno/3' };
       } },
   ];
 }
