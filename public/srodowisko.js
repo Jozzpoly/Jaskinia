@@ -396,7 +396,7 @@
     const jakoProjekt = (r) => (r.rodzaj.startsWith('repo/') ? { ...r, tytul: (typeof r.cechy.ladna_nazwa === 'string' && r.cechy.ladna_nazwa) || r.tytul, cechy: { ...r.cechy, opis: (typeof r.cechy.tozsamosc === 'string' && r.cechy.tozsamosc) || r.cechy.opis, zagraj: r.cechy.strona, karta: r.cechy.karta, wejscie: r.cechy.wejscie, zrodlo: r.cechy.adres, zycie: r.cechy.ostatni_push } } : r);
     const projekty = rzeczy.filter((r) => r.rodzaj.startsWith('projekt/') || r.rodzaj.startsWith('repo/')).map(jakoProjekt).sort((a, b) => String(b.cechy.zycie || '').localeCompare(String(a.cechy.zycie || '')));
     const pr = d.przeniesienie;
-    t.append(el('section', {}, el('h2', {}, 'Projekty ', el('span', { klasa: 'ile', tekst: pr.publiczne_repozytoria ? `${projekty.length} w środku na ${pr.publiczne_repozytoria.ile} publicznych repozytoriów` : `${projekty.length} w środku` })),
+    t.append(el('section', {}, el('h2', {}, 'Projekty ', el('span', { klasa: 'ile', tekst: (() => { const fakty = projekty.filter((r) => r.rodzaj.startsWith('repo/')).length, dziela = projekty.length - fakty; return [dziela ? `dzieła: ${dziela}` : null, fakty ? `repozytoria z faktów: ${fakty}` : null].filter(Boolean).join(' · ') || '0'; })() })),
       projekty.length ? el('div', { klasa: 'siatka' }, projekty.map(kartaProjektu)) : el('p', { klasa: 'ciche', tekst: 'Jeszcze żadnego. Projekt dokłada się jednym ruchem: /co-tu-jest, punkt 5.' })));
 
     const goscie = rzeczy.filter((r) => r.rodzaj.startsWith('gosc/'));

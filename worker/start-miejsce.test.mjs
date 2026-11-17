@@ -161,6 +161,11 @@ test('M9. odbudowa spisu z dziennika daje ten sam obszar miejsc co praca na bie�
   const s2 = new Srodowisko(r);
   assert.equal(s2.rzecz(a.rzecz).obszar, nowe, 'wyrównanie przy starcie');
   assert.equal(s2.ile({ rodzaj: 'miejsce/1', obszar: nowe }), 1);
+  // wyrównanie nie zmienia żadnego zapisu, więc zostawia ślad: liczbę i chwilę, a opis pod adresem mówi to zdaniem
+  const slad = s2.wyrownano();
+  assert.deepEqual([slad.razem, slad.ostatnio], [1, 1], JSON.stringify(slad));
+  const { coTuJest } = await import('./opis.mjs');
+  assert.match(coTuJest(s2, { origin: 'https://proba.example' }), /Wyrównanie spisu: 1 rzecz dostała w spisie obszar rzeczy, z którą z natury leży/);
 });
 
 test('M10. reguła nie daje się zamknąć w koło, a kształt z lezy_z dołożony po rzeczach od razu je porządkuje', async () => {

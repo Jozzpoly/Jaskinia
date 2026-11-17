@@ -654,7 +654,7 @@ export class Srodowisko {
 
   // Wyrównanie spisu z regułą lezy_z: każda rzecz rodzaju, który z natury leży z inną rzeczą, dostaje w spisie obszar
   // tamtej. Potrzebne dla spisu sprzed tej reguły i po odbudowie z dziennika. Zwraca, ile rzeczy zmieniło obszar.
-  wyrownajZNatury() {
+  wyrownajZNatury({ slad = true } = {}) {
     const rodzaje = [...this.ksztalty()].filter(([, k]) => k && k.cechy && typeof k.cechy.lezy_z === 'string').map(([r]) => r);
     let razem = 0;
     for (let obieg = 0; rodzaje.length && obieg < 8; obieg++) {
@@ -668,7 +668,19 @@ export class Srodowisko {
       razem += ruszone;
       if (!ruszone) break;
     }
+    // Wyrównanie nie zmienia żadnego zapisu, więc bez tego śladu nikt by się o nim nie dowiedział (uwaga drugiej linii:
+    // naprawialiśmy ciszę, nie wolno naprawić jej czymś, co samo milczy). Opis pod adresem mówi to jednym zdaniem.
+    if (razem && slad) {
+      let bylo = {};
+      try { bylo = JSON.parse(this.r.meta('spis:wyrownano') || '{}') || {}; } catch { /* zaczynamy od zera */ }
+      this.r.ustawMeta('spis:wyrownano', JSON.stringify({ razem: (Number(bylo.razem) || 0) + razem, ostatnio: razem, kiedy: new Date(this.r.teraz()).toISOString() }));
+    }
     return razem;
+  }
+
+  // Ślad po wyrównaniach spisu: ile rzeczy dostało obszar z natury bez nowego zapisu (razem i ostatnim razem) i kiedy.
+  wyrownano() {
+    try { const w = JSON.parse(this.r.meta('spis:wyrownano') || 'null'); return w && Number(w.razem) > 0 ? w : null; } catch { return null; }
   }
 
   // Co ten uczestnik może zrobić z istniejącą rzeczą, nie zmieniając jej rodzaju ani obszaru (dla tekstu pod adresem).
@@ -1074,8 +1086,9 @@ export class Srodowisko {
     this._zbudujPrzekroj();
     this._role = { nr: -1, mapa: new Map() };
     for (const rz of this.wszystkie({ odlozone: 'razem' })) this._odniesienia(rz.id, rz.rodzaj, rz.cechy, this.ksztaltDla(rz.rodzaj));
-    // zapis rzeczy z regułą lezy_z obszaru nie niesie (albo niesie dawny): spis dostaje go z rzeczy wskazanej
-    this.wyrownajZNatury();
+    // zapis rzeczy z regułą lezy_z obszaru nie niesie (albo niesie dawny): spis dostaje go z rzeczy wskazanej.
+    // To jest zwykłe liczenie spisu od nowa, a nie poprawka zastanego, więc nie zostawia śladu wyrównania.
+    this.wyrownajZNatury({ slad: false });
     return { ok: true, rzeczy: glowy.length };
   }
 
