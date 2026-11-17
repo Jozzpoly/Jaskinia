@@ -305,7 +305,7 @@
     const drzwiCzekaja = Boolean(stanDrzwi && stanDrzwi.sekret_sesji_ustawiony && stanDrzwi.poswiadczen === 0);
     const zdanie = naPodgladzie
       ? (drzwiCzekaja
-        ? 'Tu nie potrzebujesz żadnego klucza: guzik „Wejdź jako właściciel próbny" wpuszcza jednym naciśnięciem. Drzwi jednym dotknięciem czekają na pierwsze urządzenie — wejdź, otwórz ten panel jeszcze raz i wybierz „Dodaj to urządzenie".'
+        ? 'Tu nie potrzebujesz żadnego klucza: guzik „Wejdź jako właściciel próbny" wpuszcza jednym naciśnięciem. Drzwi jednym dotknięciem czekają na pierwsze urządzenie — po wejściu ten panel zostanie otwarty na kroku „Dodaj to urządzenie".'
         : 'Tu nie potrzebujesz żadnego klucza: guzik „Wejdź jako właściciel próbny" wpuszcza jednym naciśnięciem. Pole na klucz jest dla agentów bez przeglądarki.')
       : 'Wejście jest potrzebne tylko do zmian. Klucz zostaje w tej przeglądarce.';
     // UWAGA: append(null) wpisuje na stronę gołe słowo "null". Guzik, którego nie ma, musi zniknąć, a nie
