@@ -7,7 +7,7 @@
 // Cloudflare trzyma tę bazę po stronie serwera, z odtworzeniem do dowolnej chwili z ostatnich 30 dni
 // (point-in-time recovery dla Durable Objects z SQLite).
 import { Rdzen, obsluzMiejsce } from './miejsce.mjs';
-import { Srodowisko, AUTOMAT } from './srodowisko.mjs';
+import { Srodowisko, AUTOMAT, CZYTELNIK_PODGLADU } from './srodowisko.mjs';
 import { ziarna } from './ziarna.mjs';
 import { obsluzSrodowisko } from './srodowisko-http.mjs';
 import { obejdz } from './obserwator.mjs';
@@ -43,6 +43,25 @@ export class Miejsce {
   }
 
   get _podglad() { return this.env.PODGLAD === 'tak'; }
+
+  // Imiona z kluczy wchodzą do danych, zanim ktokolwiek zrobi pierwszy ruch. Dwa powody, oba znalezione w pracy:
+  // czytający nie ma widzieć w historii imienia, którego nie ma wśród uczestników (uwaga sędziego, 17 XI), a od
+  // 17 XI prawa bierze się z rzeczy uczestnika, więc BEZ tego zasiewu uczestnik z poprawnym kluczem nie miałby
+  // praw wcale. Dlatego zasiew stoi też na otwarciu kanału na żywo, które wcześniej omijało tę ścieżkę w całości.
+  async _poznaj(request) {
+    const zKluczy = (request.headers.get('x-imiona') || '').split(',');
+    // Na podglądzie czytający bez klucza jest uczestnikiem, bo klucz uczestnika stoi tam jawnie na stronie. Do 17 XI
+    // brało się to z tego, że KAŻDE imię dostawało rolę agenta; teraz prawa są z danych, więc ten wyjątek musi być
+    // zapisany jako dana - imieniem `podglad`, które poza podglądem nie powstaje.
+    if (this._podglad) zKluczy.push(CZYTELNIK_PODGLADU);
+    const imiona = zKluczy.filter((i) => /^[a-z][a-z0-9_-]{0,39}$/.test(i) && i !== this.rdzen.wlasciciel && i !== AUTOMAT);
+    this.znani ??= new Set();
+    const nowi = imiona.filter((i) => !this.znani.has(i));
+    if (!nowi.length) return;
+    await this.srod.zasiej(nowi.map((imie) => ({ nazwa: 'uczestnik-' + imie, rodzaj: 'uczestnik/1', cechy: { imie, rola: 'agent',
+      opis: imie === CZYTELNIK_PODGLADU ? 'Czytający bez klucza na podglądzie. Jest uczestnikiem, bo klucz uczestnika stoi na podglądzie jawnie na stronie; w Miejscu właściciela ta rzecz nie powstaje.' : 'Uczestnik znany z klucza ustawionego przez właściciela.' } })));
+    nowi.forEach((i) => this.znani.add(i));
+  }
 
   // Czym kanał na żywo patrzy na rzecz: dokładnie tymi okularami co spis i adres rzeczy. Obecność niesie
   // identyfikator rzeczy, przy której ktoś siedzi, więc musi pytać o prawa tam, gdzie one stoją — w środowisku.
@@ -180,15 +199,7 @@ export class Miejsce {
     // Środowisko zasiewa swoje rzeczy przy pierwszym wejściu; kolejne wejścia czekają na ten sam zasiew.
     await this._zasiew();
     await this._pierwszyAlarm();
-    // Uczestnik, którego klucz właściciel ustawił, ma być widoczny jako rzecz, zanim zrobi pierwszy ruch:
-    // inaczej czytający widzi w historii imię, którego nie ma wśród uczestników (uwaga sędziego, 17 XI).
-    const imiona = (request.headers.get('x-imiona') || '').split(',').filter((i) => /^[a-z][a-z0-9_-]{0,39}$/.test(i) && i !== this.rdzen.wlasciciel && i !== AUTOMAT);
-    this.znani ??= new Set();
-    const nowi = imiona.filter((i) => !this.znani.has(i));
-    if (nowi.length) {
-      await this.srod.zasiej(nowi.map((imie) => ({ nazwa: 'uczestnik-' + imie, rodzaj: 'uczestnik/1', cechy: { imie, rola: 'agent', opis: 'Uczestnik znany z klucza ustawionego przez właściciela.' } })));
-      nowi.forEach((i) => this.znani.add(i));
-    }
+    await this._poznaj(request);
     const odp = await obsluzSrodowisko(this.srod, request, {
       podglad: this._podglad, kluczProbny: this.env.KLUCZ_PROBNY_AGENTA || null, kluczProbnyWlasciciela: this.env.KLUCZ_PROBNY_WLASCICIELA || null,
       obejdz: this._wolnoObserwatorowi() ? (dodatkowe) => this._obejdz(dodatkowe) : null, budzet: this.budzet.opis(),
@@ -203,6 +214,7 @@ export class Miejsce {
     if ((request.headers.get('upgrade') || '').toLowerCase() !== 'websocket') return { ok: false, status: 426, blad: 'to są drzwi kanału na żywo: potrzebne połączenie WebSocket (nagłówek Upgrade: websocket)' };
     if (typeof WebSocketPair !== 'function' || typeof this.ctx.acceptWebSocket !== 'function') return { ok: false, status: 501, blad: 'to środowisko nie umie połączeń na żywo' };
     await this._zasiew();
+    await this._poznaj(request);
     if (!zrobMiejsce(this._gniazda())) return { ok: false, status: 503, blad: 'za dużo połączeń na żywo naraz; spróbuj za chwilę' };
     const para = new WebSocketPair();
     const klient = para[0], serwer = para[1];

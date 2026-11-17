@@ -5,6 +5,7 @@
 import { coTuJest, opisDane, listaRzeczy, listaRodzajow, stronaRodzaju, stronaRzeczy, umowaOkna } from './opis.mjs';
 import { sprawdzSpojnosc } from './spojnosc.mjs';
 import { poprawneImie } from './miejsce.mjs';
+import { CZYTELNIK_PODGLADU } from './srodowisko.mjs';
 
 const TEKST = { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
 const tekst = (t, status = 200) => new Response(t, { status, headers: TEKST });
@@ -69,7 +70,7 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
   // WYJĄTEK PODGLĄDU, świadomy: na podglądzie klucz uczestnika stoi jawnym napisem na stronie i w `/co-tu-jest`,
   // więc "bez klucza" nie znaczy tam "obcy" — znaczy "nie chciało mu się go skopiować". Udawanie, że podgląd
   // czegoś pilnuje, byłoby zabezpieczeniem na niby. Dlatego na podglądzie czytający bez klucza jest uczestnikiem.
-  const czytelnik = opcje.kto || (podglad ? (opcje.jako || opcje.probnyImie || 'podglad') : null);
+  const czytelnik = opcje.kto || (podglad ? (opcje.jako || opcje.probnyImie || CZYTELNIK_PODGLADU) : null);
   const w = s.dla(czytelnik);
   if (request.method === 'GET') {
     if (sciezka.startsWith('/gosc/')) {

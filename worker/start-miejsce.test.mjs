@@ -13,7 +13,7 @@ async function swiat() {
   let t = Date.UTC(2026, 10, 17, 9, 0, 0);
   const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
   const s = new Srodowisko(r);
-  await s.zasiej(ziarna({ wlasciciel: 'jozz' }));
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-probny', 'agent-a', 'agent-b', 'agent-0', 'agent-1', 'agent-2', 'podglad'] }));
   const widok = s.spis({ rodzaj: 'widok/1', limit: 5 }).find((w) => w.cechy.nazwa === 'Start');
   const projekt = await s.ruch('jozz', { op: 'miejsce-test-projekt', co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Próbny projekt' } });
   assert.equal(projekt.ok, true, JSON.stringify(projekt));

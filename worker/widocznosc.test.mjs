@@ -13,7 +13,7 @@ async function swiat() {
   let t = Date.UTC(2026, 10, 17, 16, 0, 0);
   const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
   const s = new Srodowisko(r);
-  await s.zasiej(ziarna({ wlasciciel: 'jozz' }));
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-probny', 'agent-a', 'agent-b', 'agent-0', 'agent-1', 'agent-2', 'podglad'] }));
   // trzy obszary o trzech ustawieniach widoczności, każdy z jedną rzeczą
   const obszar = async (nazwa, widzi, op) => {
     const o = await s.ruch('jozz', { op, co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa, ile_wolno: 'proponowac', widzi } });
