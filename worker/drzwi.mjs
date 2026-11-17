@@ -1,0 +1,188 @@
+// Drzwi właściciela: wejście jednym dotknięciem, bez klucza do wklejania i bez cudzej usługi tożsamości
+// (17 XI 2026, front B, Opus Code). Status: próba (TYMCZASOWE.md).
+//
+// Po co. Dziś właściciel wchodzi, wklejając klucz z ustawień Cloudflare. To jest dokładnie ten rodzaj tarcia,
+// który sprawia, że człowiek nie wraca: na telefonie wklejenie klucza jest gestem na pół minuty, a wejście
+// ma być gestem na sekundę. Passkey (WebAuthn) daje to bez hasła i bez konta u nikogo obcego: telefon trzyma
+// klucz prywatny, my trzymamy sam klucz publiczny, a Miejsce sprawdza podpis własnym kodem.
+//
+// Czego ten plik NIE zna. Ani Cloudflare, ani bazy, ani Miejsca: dostaje bajty i sekrety jako argumenty,
+// więc cały łańcuch sprawdzenia da się puścić w Node z udawanym authenticatorem (worker/drzwi.test.mjs).
+// Trzy funkcje (cbor, kluczZCose, derNaSurowy) pochodzą z falsyfikatora proby/b1-drzwi-passkey i wchodzą tu
+// bez zmiany: tam zadaliśmy pytanie, czy to się da samym WebCrypto, tu z odpowiedzi robi się mechanizm.
+//
+// Granica, którą trzeba postawić od pierwszego dnia (falsyfikator, pytanie 2): nazwa strony (rp.id) jest
+// DOKŁADNYM hostem tego Miejsca, nigdy domeną nadrzędną. workers.dev jest na publicznej liście sufiksów,
+// więc jozzpoly.workers.dev byłaby domeną rejestrowalną - i jedno poświadczenie dzieliłoby się z każdym
+// podglądem gałęzi na tym koncie, a podglądy są publiczne i mają jawne klucze.
+
+export const CIASTKO = 'jaskinia_wejscie';
+export const WYZWANIE_WAZNE_MS = 2 * 60 * 1000;         // dotknięcie telefonu mieści się w dwóch minutach
+export const SESJA_WAZNA_MS = 30 * 24 * 60 * 60 * 1000; // miesiąc: wejście ma być gestem na sekundę, nie co dzień
+const T = new TextEncoder();
+
+// --- bajty i napisy ------------------------------------------------------------------------------------------
+export const b64uZ = (u8) => btoa(String.fromCharCode(...new Uint8Array(u8))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+export const b64uDo = (s) => {
+  if (typeof s !== 'string' || !/^[A-Za-z0-9_-]*$/.test(s)) throw new Error('to nie jest base64url');
+  const p = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(p + '='.repeat((4 - (p.length % 4)) % 4));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+};
+const rowne = (a, b) => {
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a[i] ^ b[i];
+  return r === 0;
+};
+const skrot = async (u8) => new Uint8Array(await crypto.subtle.digest('SHA-256', u8));
+
+// --- CBOR, klucz COSE i podpis (z falsyfikatora, bez zmiany) -------------------------------------------------
+export function cbor(u8, i = 0) {
+  const d = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const glowa = u8[i++], typ = glowa >> 5; let n = glowa & 31;
+  if (n === 24) n = u8[i++];
+  else if (n === 25) { n = d.getUint16(i); i += 2; }
+  else if (n === 26) { n = d.getUint32(i); i += 4; }
+  else if (n === 27) throw new Error('64-bitowe długości: nie w kluczu COSE');
+  if (typ === 0) return [n, i];
+  if (typ === 1) return [-1 - n, i];
+  if (typ === 2) return [u8.slice(i, i + n), i + n];
+  if (typ === 3) return [new TextDecoder().decode(u8.slice(i, i + n)), i + n];
+  if (typ === 4) { const t = []; for (let k = 0; k < n; k++) { const [w, j] = cbor(u8, i); t.push(w); i = j; } return [t, i]; }
+  if (typ === 5) { const m = new Map(); for (let k = 0; k < n; k++) { const [kk, j] = cbor(u8, i); const [vv, j2] = cbor(u8, j); m.set(kk, vv); i = j2; } return [m, i]; }
+  throw new Error('nieobsługiwany typ CBOR: ' + typ);
+}
+
+// Klucz COSE EC2 (alg -7) -> CryptoKey, przez surowy punkt 0x04||x||y.
+export async function kluczZCose(cose) {
+  const [m] = cbor(cose instanceof Uint8Array ? cose : new Uint8Array(cose));
+  if (!(m instanceof Map)) throw new Error('klucz COSE nie jest mapą');
+  const kty = m.get(1), alg = m.get(3), crv = m.get(-1), x = m.get(-2), y = m.get(-3);
+  if (kty !== 2 || alg !== -7 || crv !== 1) throw new Error(`nieobsługiwany klucz: kty=${kty} alg=${alg} crv=${crv}`);
+  if (!(x instanceof Uint8Array) || x.length !== 32 || !(y instanceof Uint8Array) || y.length !== 32) throw new Error('współrzędne klucza nie mają 32 bajtów');
+  const surowy = new Uint8Array(65); surowy[0] = 4; surowy.set(x, 1); surowy.set(y, 33);
+  return { klucz: await crypto.subtle.importKey('raw', surowy, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']), surowy };
+}
+
+// Podpis z authenticatora jest w DER (ASN.1 SEQUENCE{r,s}), a WebCrypto chce surowego r||s.
+export function derNaSurowy(der) {
+  if (der[0] !== 0x30) throw new Error('podpis nie jest SEQUENCE');
+  let i = 2; if (der[1] & 0x80) i = 2 + (der[1] & 0x7f);
+  const czytaj = () => { if (der[i++] !== 0x02) throw new Error('podpis nie jest INTEGER'); const n = der[i++]; const v = der.slice(i, i + n); i += n; return v; };
+  const dopelnij = (v) => { const out = new Uint8Array(32); const z = v[0] === 0 ? v.slice(1) : v; if (z.length > 32) throw new Error('liczba dłuższa niż 32 bajty'); out.set(z, 32 - z.length); return out; };
+  const r = dopelnij(czytaj()), s = dopelnij(czytaj());
+  const out = new Uint8Array(64); out.set(r, 0); out.set(s, 32); return out;
+}
+
+// --- authenticatorData ---------------------------------------------------------------------------------------
+// 32 bajty skrótu nazwy strony, bajt flag, 4 bajty licznika; przy zakładaniu dalej jeszcze dane poświadczenia.
+export function czytajAuthData(u8) {
+  if (!(u8 instanceof Uint8Array) || u8.length < 37) throw new Error('authenticatorData krótsze niż 37 bajtów');
+  const d = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const flagi = u8[32];
+  const stan = { skrotNazwyStrony: u8.slice(0, 32), flagi, obecny: (flagi & 1) === 1, sprawdzony: (flagi & 4) === 4, zPoswiadczeniem: (flagi & 64) === 64, licznik: d.getUint32(33) };
+  if (!stan.zPoswiadczeniem) return stan;
+  if (u8.length < 55) throw new Error('authenticatorData mówi, że niesie poświadczenie, a jest za krótkie');
+  const dlugosc = d.getUint16(53);
+  if (u8.length < 55 + dlugosc) throw new Error('authenticatorData krótsze niż długość poświadczenia w nim zapisana');
+  stan.poswiadczenie = u8.slice(55, 55 + dlugosc);
+  stan.cose = u8.slice(55 + dlugosc);
+  return stan;
+}
+
+// --- wyzwanie i sesja ----------------------------------------------------------------------------------------
+const hmac = async (sekret, tekst) => {
+  if (typeof sekret !== 'string' || sekret.length < 16) throw new Error('sekret sesji musi mieć co najmniej 16 znaków');
+  const k = await crypto.subtle.importKey('raw', T.encode(sekret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return new Uint8Array(await crypto.subtle.sign('HMAC', k, T.encode(tekst)));
+};
+
+// Sesja: imię, do kiedy, podpis. Nic nie trzeba pamiętać po stronie Miejsca, a sekret stoi w ustawieniach
+// Workera, nigdy w kodzie ani w danych (zasada 12).
+export async function zrobSesje(sekret, imie, { teraz = Date.now(), ile = SESJA_WAZNA_MS } = {}) {
+  const az = teraz + ile;
+  const tresc = `${b64uZ(T.encode(imie))}.${az}`;
+  return `${tresc}.${b64uZ(await hmac(sekret, tresc))}`;
+}
+export async function czytajSesje(sekret, zeton, { teraz = Date.now() } = {}) {
+  if (typeof zeton !== 'string' || zeton.length > 1024) return null;
+  const cz = zeton.split('.');
+  if (cz.length !== 3) return null;
+  const [imieB, azB, podpis] = cz;
+  const tresc = `${imieB}.${azB}`;
+  let oczekiwany;
+  try { oczekiwany = b64uZ(await hmac(sekret, tresc)); } catch { return null; }
+  if (!rowne(T.encode(podpis), T.encode(oczekiwany))) return null;
+  const az = Number(azB);
+  if (!Number.isFinite(az) || az <= teraz) return null;
+  let imie;
+  try { imie = new TextDecoder().decode(b64uDo(imieB)); } catch { return null; }
+  return { imie, do: az };
+}
+
+export const ciastkoZNaglowka = (naglowek) => {
+  if (typeof naglowek !== 'string') return null;
+  for (const cz of naglowek.split(';')) {
+    const i = cz.indexOf('=');
+    if (i > 0 && cz.slice(0, i).trim() === CIASTKO) return cz.slice(i + 1).trim();
+  }
+  return null;
+};
+// SameSite=Strict, bo to ciastko JEST wejściem: żadna obca strona nie ma go wysyłać w naszym imieniu.
+export const ciastkoNaglowek = (zeton, { ile = SESJA_WAZNA_MS } = {}) =>
+  `${CIASTKO}=${zeton}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.floor(ile / 1000)}`;
+export const ciastkoKoniec = () => `${CIASTKO}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
+
+// --- sprawdzenie, co przyszło od przeglądarki ----------------------------------------------------------------
+const czytajClientData = (bajty, oczekiwanyTyp, wyzwanie, origin) => {
+  let c;
+  try { c = JSON.parse(new TextDecoder().decode(bajty)); } catch { return 'clientDataJSON nie jest poprawnym JSON'; }
+  if (!c || typeof c !== 'object') return 'clientDataJSON nie jest obiektem';
+  if (c.type !== oczekiwanyTyp) return `clientDataJSON mówi type: ${c.type}, a tu są drzwi ${oczekiwanyTyp}`;
+  if (typeof c.challenge !== 'string' || c.challenge !== wyzwanie) return 'wyzwanie w clientDataJSON jest inne niż to, które wydaliśmy';
+  if (c.origin !== origin) return `clientDataJSON mówi origin: ${c.origin}, a te drzwi stoją pod ${origin}`;
+  return null;
+};
+
+// Założenie poświadczenia. Nie sprawdzamy oświadczenia producenta (attestation): sami jesteśmy stroną, a klucz
+// zaufany jest ten, który przyszedł, gdy właściciel BYŁ JUŻ wpuszczony kluczem. To świadomy wybór, nie luka:
+// zaufanie bierze się z tego, kto o to poprosił, nie z tego, kto zrobił telefon.
+export async function sprawdzZalozenie({ clientDataJSON, authenticatorData, wyzwanie, origin, nazwaStrony }) {
+  const cd = czytajClientData(clientDataJSON, 'webauthn.create', wyzwanie, origin);
+  if (cd) return { ok: false, blad: cd };
+  let a;
+  try { a = czytajAuthData(authenticatorData); } catch (e) { return { ok: false, blad: String(e.message || e) }; }
+  if (!rowne(a.skrotNazwyStrony, await skrot(T.encode(nazwaStrony)))) return { ok: false, blad: 'authenticatorData jest dla innej nazwy strony niż ta' };
+  if (!a.obecny) return { ok: false, blad: 'authenticator nie potwierdził, że ktoś przy nim był' };
+  if (!a.zPoswiadczeniem || !a.poswiadczenie || !a.poswiadczenie.length) return { ok: false, blad: 'authenticatorData nie niesie poświadczenia' };
+  let k;
+  try { k = await kluczZCose(a.cose); } catch (e) { return { ok: false, blad: String(e.message || e) }; }
+  return { ok: true, poswiadczenie: b64uZ(a.poswiadczenie), kluczPubliczny: b64uZ(k.surowy), licznik: a.licznik, sprawdzony: a.sprawdzony };
+}
+
+// Wejście. `licznikZnany` to ostatni widziany licznik tego poświadczenia; wiele authenticatorów (passkey
+// Apple) zawsze podaje 0, więc licznik PILNUJE tylko wtedy, gdy kiedyś był większy od zera - inaczej
+// odrzucalibyśmy prawdziwe wejścia. Przed powtórzeniem broni jednorazowe wyzwanie, nie licznik.
+export async function sprawdzWejscie({ clientDataJSON, authenticatorData, podpis, kluczPubliczny, licznikZnany = 0, wyzwanie, origin, nazwaStrony }) {
+  const cd = czytajClientData(clientDataJSON, 'webauthn.get', wyzwanie, origin);
+  if (cd) return { ok: false, blad: cd };
+  let a;
+  try { a = czytajAuthData(authenticatorData); } catch (e) { return { ok: false, blad: String(e.message || e) }; }
+  if (!rowne(a.skrotNazwyStrony, await skrot(T.encode(nazwaStrony)))) return { ok: false, blad: 'authenticatorData jest dla innej nazwy strony niż ta' };
+  if (!a.obecny) return { ok: false, blad: 'authenticator nie potwierdził, że ktoś przy nim był' };
+  if (licznikZnany > 0 && a.licznik <= licznikZnany) return { ok: false, blad: 'licznik authenticatora nie urósł: to wygląda na powtórzenie starego podpisu' };
+  let klucz;
+  try { klucz = await crypto.subtle.importKey('raw', b64uDo(kluczPubliczny), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']); } catch (e) { return { ok: false, blad: 'zapisany klucz publiczny nie da się wczytać: ' + String(e.message || e) }; }
+  let surowy;
+  try { surowy = derNaSurowy(podpis); } catch (e) { return { ok: false, blad: String(e.message || e) }; }
+  const doPodpisu = new Uint8Array(authenticatorData.length + 32);
+  doPodpisu.set(authenticatorData);
+  doPodpisu.set(await skrot(clientDataJSON), authenticatorData.length);
+  const zgadza = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, klucz, surowy, doPodpisu);
+  if (!zgadza) return { ok: false, blad: 'podpis się nie zgadza' };
+  return { ok: true, licznik: a.licznik, sprawdzony: a.sprawdzony };
+}
+
+// Nazwa strony dla WebAuthn: DOKŁADNY host, nigdy domena nadrzędna (patrz nagłówek tego pliku).
+export const nazwaStronyZAdresu = (origin) => new URL(origin).hostname;

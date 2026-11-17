@@ -48,6 +48,18 @@ Czego **nie** wiemy i czego nie da się sprawdzić bez niego: czy jego konkretny
 założą passkey dla tego adresu w praktyce. To jest jedno dotknięcie z jego strony i jedyny moment, w
 którym drzwi potrzebują jego ręki.
 
+## Co z tej próby weszło do Miejsca (dopisane 17 XI 2026, wieczorem)
+
+Odpowiedzi były na tak, więc z pytania zrobił się mechanizm. Trzy funkcje tego falsyfikatora (`cbor`,
+`kluczZCose`, `derNaSurowy`) stoją **bez zmiany** w [`worker/drzwi.mjs`](../../worker/drzwi.mjs), a cała
+droga chodzi pod adresem: `/api/drzwi/stan`, `zacznij`, `zapisz`, `wejdz`, `wyjdz`. Sprawdziany:
+`worker/drzwi.test.mjs` (sam łańcuch, z kontrolami przeciwnymi) i `worker/drzwi-trasy.test.mjs` (ta sama
+droga **przez prawdziwe trasy**, z udawanym telefonem — bo jednego dnia mechaniczna zmiana w trasie
+wywracała `/api/srodowisko/wersja` na każdym żądaniu przy zielonych sprawdzianach funkcji).
+
+Ten plik zostaje: pytanie 2 nadal nie ma odpowiedzi od jego telefonu, a falsyfikator jest jedynym miejscem,
+w którym to pytanie stoi na osobno, a nie jako zdanie w opisie zdolności.
+
 ## Warunek zburzenia tej próby
 
 Gdyby odpowiedź na pytanie 2 okazała się u niego „nie", drzwi jednym dotknięciem nie powstaną pod tym

@@ -640,7 +640,9 @@ test('7e. drzwi: ?jako= poza podglądem nie zmienia roli ani nie wstrzykuje teks
 
 test('7f. drzwi: ?pomin= i ?ile= ze skrajnymi wartościami dają spójną odpowiedź', async () => {
   const { s } = await swiat();
-  const razem = s.ile({});
+  // Liczymy OCZAMI TEGO, KTO PYTA (na podglądzie bez klucza to uczestnik `podglad`): odkąd widoczność jest
+  // z danych, porównanie z liczbą środowiska mierzyłoby dwa różne światy. Obszar Drzwi jest widzi: wlasciciel.
+  const razem = s.dla('podglad').ile({});
   for (const q of ['pomin=0&ile=0', 'pomin=99999999999&ile=1', 'ile=999999999999', 'pomin=-1', 'pomin=abc&ile=xyz', 'pomin=1.5', 'ile=1']) {
     const j = await (await http(s, '/api/srodowisko/spis?' + q)).json();
     assert.equal(j.ok, true, q);

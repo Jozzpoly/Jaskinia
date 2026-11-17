@@ -14,6 +14,7 @@ import { obejdz } from './obserwator.mjs';
 import { WLASCICIEL as WLASCICIEL_GITHUBA } from './fakty.mjs';
 import { liczacySql, Budzet, naglowekKosztu } from './budzet.mjs';
 import { ADRES_ZYWEGO, przyjmijGniazdo, przyjmijWiadomosc, poZamknieciu, rozglos, zrobMiejsce } from './zywe.mjs';
+import { ADRES_DRZWI, obsluzDrzwi } from './drzwi-http.mjs';
 
 const MINUTA_MS = 60 * 1000;
 // Plik starej Jaskini zmienia się zwykle dwa razy na dobę: gdy koło gałęzi jest domknięte i nic się nie zmieniło,
@@ -182,6 +183,14 @@ export class Miejsce {
     const sciezka = new URL(request.url).pathname;
     this._zapamietajAdres(request);
     if (sciezka === ADRES_ZYWEGO) return this._zywe(request);
+    if (sciezka.startsWith(ADRES_DRZWI)) {
+      await this._zasiew();
+      await this._poznaj(request);
+      const przedD = this.srod.ostatniNr();
+      const odp = await obsluzDrzwi(this, request);
+      if (this.srod.ostatniNr() !== przedD) { try { this._rozglosZmiane(przedD); } catch { /* rozgłoszenie to wygoda */ } }
+      return odp;
+    }
     // Tylko żądania, które mogą coś zmienić, płacą za sprawdzenie numeru aktu przed i po.
     const zmienia = request.method !== 'GET';
     // Bezpiecznik: po dojściu do dobowego limitu zapisów Miejsce tylko czyta (budzet.mjs).

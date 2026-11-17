@@ -52,7 +52,7 @@ export const USTAWIENIA = { ile_wolno: STOPNIE, uwaga: UWAGI, widzi: WIDZI, ukla
 export const DOMYSLNE = { ile_wolno: 'proponowac', uwaga: 'znak', widzi: 'uczestnicy', uklada: 'reka' };
 export const ROLE = ['wlasciciel', 'agent', 'automat'];
 // Rodzaje, których kształt i rzeczy trzymają całość w ryzach: zmienia je tylko właściciel.
-const KSZTALTY_RDZENIA = ['ksztalt/1', 'obszar/1', 'uczestnik/1', 'propozycja/1'];
+const KSZTALTY_RDZENIA = ['ksztalt/1', 'obszar/1', 'uczestnik/1', 'propozycja/1', 'poswiadczenie/1'];
 // Ile propozycji jednego uczestnika może czekać naraz: lista "czeka na właściciela" ma zostać listą, nie zalewem.
 export const NAJWIECEJ_CZEKAJACYCH = 20;
 // Co da się zrobić z rzeczą jednym ruchem i jak nazywa się skutek.
@@ -700,6 +700,8 @@ export class Srodowisko {
   _zastrzezone(rodzaj, cechy, stara) {
     const byl = (r) => !!stara && stara.rodzaj === r;
     if (rodzaj === 'uczestnik/1' || byl('uczestnik/1')) return 'uczestników dopisuje i zmienia tylko właściciel';
+    // Poświadczenie to czym się wchodzi: cudza ręka przy nim znaczyłaby cudze wejście.
+    if (rodzaj === 'poswiadczenie/1' || byl('poswiadczenie/1')) return 'poświadczenia do drzwi zakłada i zmienia tylko właściciel';
     if (rodzaj === 'obszar/1' || byl('obszar/1')) {
       for (const k of Object.keys(USTAWIENIA)) {
         const bylo = byl('obszar/1') ? (stara.cechy[k] ?? null) : null;

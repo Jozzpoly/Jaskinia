@@ -3,7 +3,7 @@
 // więc stąd wychodzi tylko obiekt domyślny i klasa Durable Object Miejsca; trasy i stałe są w osobnych plikach.
 import { json, zdrowie, dom } from './trasy.mjs';
 import { odpowiedz, wCronie } from './fakty.mjs';
-import { ktoTo, wczytajKlucze } from './klucze.mjs';
+import { ktoTo, wczytajKlucze, maTozsamosc } from './klucze.mjs';
 import { skrot } from './miejsce.mjs';
 import { cialoTekstem, ZLE_KODOWANIE } from './srodowisko-http.mjs';
 import { ADRES_ZYWEGO } from './zywe.mjs';
@@ -31,19 +31,25 @@ const obiektMiejsca = (env) => env.MIEJSCE.get(env.MIEJSCE.idFromName(typeof env
 // tylko na podglądzie (PODGLAD = tak), gdzie wszystko jest publiczne; ruch zawsze wymaga klucza. Kod gościa (/gosc/…)
 // jest jawny z natury: wykonuje go przeglądarka tego, kto otworzył okno.
 const SRODOWISKO_TEKSTEM = ['/co-tu-jest', '/umowa-okna', '/rodzaje', '/rzeczy'];
-const doSrodowiska = (p) => p.startsWith('/api/srodowisko/') || SRODOWISKO_TEKSTEM.includes(p) || p.startsWith('/rzecz/') || p.startsWith('/rodzaj/') || p.startsWith('/gosc/');
+const doSrodowiska = (p) => p.startsWith('/api/srodowisko/') || SRODOWISKO_TEKSTEM.includes(p) || p.startsWith('/rzecz/') || p.startsWith('/rodzaj/') || p.startsWith('/gosc/') || p.startsWith('/api/drzwi/');
 
 async function srodowisko(request, env, url) {
   if (!env.MIEJSCE) return json({ blad: 'Miejsce nie jest podłączone (brak wiązania MIEJSCE)' }, 503);
   const zywe = url.pathname === ADRES_ZYWEGO && request.method === 'GET';
+  // Drzwi właściciela same wpuszczają: do nich wolno przyjść bez niczego, bo to one dają tożsamość.
+  // Który ich krok wymaga właściciela, rozstrzyga samo Miejsce (drzwi-http.mjs), nie ten front.
+  const drzwi = url.pathname.startsWith('/api/drzwi/');
   let kto = '';
-  if (request.headers.has('authorization')) {
+  if (maTozsamosc(request)) {
     const k = await ktoTo(request, env);
-    if (!k.ok) return json({ blad: k.blad }, k.status);
-    kto = k.kto;
-  } else if (request.method !== 'GET') {
+    // Ciastko mogło się przeterminować albo zostać po innym Miejscu: wtedy czytamy dalej jak bez klucza,
+    // zamiast odmawiać wszystkiego komuś, kto po prostu ma stare ciastko w przeglądarce.
+    if (!k.ok && request.headers.has('authorization')) return json({ blad: k.blad }, k.status);
+    if (k.ok) kto = k.kto;
+  }
+  if (!kto && !drzwi && request.method !== 'GET') {
     return json({ blad: 'do ruchu potrzebny jest klucz: nagłówek Authorization: Bearer <klucz>' }, 401);
-  } else if (env.PODGLAD !== 'tak' && !url.pathname.startsWith('/gosc/') && !zywe) {
+  } else if (!kto && !drzwi && env.PODGLAD !== 'tak' && !url.pathname.startsWith('/gosc/') && !zywe) {
     return json({ blad: 'to Miejsce nie jest publiczne: do czytania potrzebny jest klucz (nagłówek Authorization: Bearer <klucz>)' }, 401);
   }
   const naglowki = new Headers({ 'x-kto': kto, 'x-origin': url.origin });
