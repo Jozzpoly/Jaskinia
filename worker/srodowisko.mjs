@@ -458,6 +458,28 @@ export class Srodowisko {
       }),
       liczby: () => cel._liczbyDla(kto),
       przekroj: () => cel._przekrojDla(kto),
+      // Rodzaj jest rzeczą i leży w obszarze, więc kształt położony w obszarze zamkniętym nie ma wychodzić w liście
+      // rodzajów (znalezisko Fable z drugiego ataku na tę granicę, 17 XI 2026; potwierdzone u źródła przez drugą
+      // linię). Owinięte jest TYLKO wołanie na widoku: `ksztaltDla` i `tytul` są wiązane z celem, więc nazwa
+      // rzeczy widocznego rodzaju nie znika czytającemu tylko dlatego, że opisu rodzaju nie wolno mu czytać.
+      ksztalty: () => {
+        const pelne = cel.ksztalty();
+        const zle = cel._niewidoczneDla(kto);
+        if (!zle) return pelne;
+        const mapa = new Map();
+        for (const [r, k] of pelne) if (!zle.includes(k.obszar ?? null) && !zle.includes(k.id)) mapa.set(r, k);
+        return mapa;
+      },
+      // Prawo dziedziczy się w głąb, więc `ustawienie` MUSI chodzić po całej drodze w górę — także przez obszary,
+      // których czytający nie widzi; inaczej widoczność nie policzyłaby samej siebie. Ale `skad` to identyfikator
+      // rzeczy: obszar jawny w obszarze zamkniętym podawał tak identyfikator swojego ukrytego rodzica
+      // (druga linia, 17 XI, z tego samego skanu co lista rodzajów). Wartość zostaje, źródło milczy.
+      ustawienie: (obszar, klucz) => {
+        const u = cel.ustawienie(obszar, klucz);
+        if (!u || !u.skad) return u;
+        const zle = cel._niewidoczneDla(kto);
+        return zle && (zle.includes(u.skad) || cel.rzecz(u.skad, { dla: kto }) === null) ? { ...u, skad: null } : u;
+      },
       // Surowy SQL przez widok czytelnika nie przechodzi. To nie wygoda, a bezpiecznik: dopóki tu stał, każde nowe
       // zapytanie napisane "szybko" obok widoku omijało granicę po cichu i nikt tego nie widział (dwie z pięciu
       // dziur z ataku Fable były dokładnie tym kształtem). Kto potrzebuje surowego zapytania, pisze je na
