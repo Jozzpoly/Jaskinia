@@ -11,8 +11,8 @@ import { ziarna } from './ziarna.mjs';
 import { obsluzSrodowisko } from './srodowisko-http.mjs';
 import { umowaOkna } from './opis.mjs';
 import { sprawdzSpojnosc } from './spojnosc.mjs';
-import { policzUstawienia, POKRETLO_ZESTAWOW, FORMAT_USTAWIEN, wadaWartosci, wadyDeklaracji } from './ustawienia.mjs';
-import { POKRETLA, Pokretla } from '../public/pokretla.mjs';
+import { policzUstawienia, policzUstawieniaDlaNazw, POKRETLO_ZESTAWOW, FORMAT_USTAWIEN, wadaWartosci, wadyDeklaracji } from './ustawienia.mjs';
+import { POKRETLA, Pokretla, NAZWY_POKRETEL } from '../public/pokretla.mjs';
 
 async function swiat() {
   let t = Date.UTC(2026, 10, 17, 21, 0, 0);
@@ -399,4 +399,43 @@ test('U17. za długi napis mówi, że jest za długi, a nie że nie jest napisem
   assert.equal(b.length, 1);
   assert.match(b[0], /200001 znaków, a może mieć najwyżej 200000/);
   assert.match(sprawdzCechy(k, { tresc: 7 }, () => null, () => null).bledy[0], /ma być napisem/);
+});
+
+test('U18. koszt liczenia dla twarzy nie rośnie z tym, co ktoś dołożył obok: twarz pyta po nazwach, a środowisko czyta tylko te pokrętła i zasięgi na drodze', async () => {
+  const { s, ok, szkic, glowny, wartosc } = await swiat();
+  ok(await wartosc('jozz', 'ust-u18-akcent', 'wyglad.kolor.akcent', '#102030'));
+  const noc = ok(await s.ruch('jozz', { op: 'ust-u18-noc', co: 'poloz', rodzaj: 'zestaw/1', cechy: { nazwa: 'Noc', po_co: 'motyw', wartosci: { 'wyglad.kolor.tlo': '#000011' } } }));
+  ok(await wartosc('jozz', 'ust-u18-wlacz', POKRETLO_ZESTAWOW, [noc.rzecz]));
+  const nazwy = NAZWY_POKRETEL.split(',');
+  const licz = async (f) => { let wiersze = 0, pytan = 0; const q0 = s.q; s.q = function (...a) { const w = q0.apply(this, a); pytan++; wiersze += w.length; return w; }; try { return { wynik: await f(), wiersze, pytan }; } finally { s.q = q0; } };
+  const przed = await licz(() => policzUstawieniaDlaNazw(s.dla('agent-a'), { nazwy }));
+  assert.equal(przed.wynik.ok, true);
+  assert.deepEqual(Object.keys(przed.wynik.wartosci).sort(), [...nazwy].sort(), 'tyle wartości, o ile nazw zapytano');
+  assert.deepEqual(przed.wynik.wartosci, Object.fromEntries(Object.entries(policzUstawienia(s.dla('agent-a')).wartosci).filter(([n]) => nazwy.includes(n))), 'to samo, co daje liczenie wszystkiego');
+  assert.equal(przed.wynik.wartosci['wyglad.kolor.akcent'].wartosc, '#102030');
+  assert.equal(przed.wynik.wartosci['wyglad.kolor.tlo'].skad, 'zestaw');
+  // ktoś dokłada obok 120 własnych pokręteł i 120 wartości tam, gdzie prowadzi
+  for (let i = 0; i < 120; i++) {
+    ok(await s.ruch('agent-a', { op: 'ust-u18-obce-' + i, co: 'poloz', rodzaj: 'pokretlo/1', cechy: { nazwa: 'obce.narzedzie.p' + i, typ: 'liczba', domyslna: i, opis: 'Pokrętło obcego narzędzia.' } }));
+    ok(await wartosc('agent-a', 'ust-u18-obca-wartosc-' + i, 'obce.narzedzie.p' + i, i + 1, { zasieg: szkic }));
+  }
+  const po = await licz(() => policzUstawieniaDlaNazw(s.dla('agent-a'), { nazwy }));
+  assert.deepEqual(po.wynik.wartosci, przed.wynik.wartosci);
+  assert.ok(po.wiersze <= przed.wiersze + 4, `wiersze przed ${przed.wiersze}, po ${po.wiersze}`);
+  assert.ok(po.pytan <= przed.pytan + 4, `pytania przed ${przed.pytan}, po ${po.pytan}`);
+  assert.ok(Object.keys(policzUstawienia(s.dla('agent-a')).wartosci).length >= nazwy.length + 120, 'liczenie wszystkiego niesie też cudze pokrętła, więc rośnie razem z nimi');
+  // zasięg na drodze dalej działa: przez szkic widać wartość ze szkicu, a obce pokrętło jest dostępne temu, kto o nie zapyta
+  ok(await wartosc('agent-a', 'ust-u18-szkic', 'wyglad.kolor.akcent', '#008800', { zasieg: szkic }));
+  assert.equal((await policzUstawieniaDlaNazw(s.dla('agent-a'), { nazwy, dla: szkic })).wartosci['wyglad.kolor.akcent'].wartosc, '#008800');
+  assert.deepEqual((await policzUstawieniaDlaNazw(s.dla('agent-a'), { nazwy: ['obce.narzedzie.p7', 'nie.ma.takiego'], dla: szkic })).wartosci, { 'obce.narzedzie.p7': { wartosc: 8, skad: 'wartosc', zasieg: szkic, rzecz: (await policzUstawieniaDlaNazw(s.dla('agent-a'), { nazwy: ['obce.narzedzie.p7'], dla: szkic })).wartosci['obce.narzedzie.p7'].rzecz, wersja: (await policzUstawieniaDlaNazw(s.dla('agent-a'), { nazwy: ['obce.narzedzie.p7'], dla: szkic })).wartosci['obce.narzedzie.p7'].wersja } });
+  // przez drzwi, i oczami czytającego: zamknięty zasięg brzmi jak brak
+  const pytanie = (sciezka, kto = 'agent-a') => obsluzSrodowisko(s, new Request('https://proba.example' + sciezka, { headers: { 'x-kto': kto } }));
+  const d = await (await pytanie('/api/srodowisko/ustawienia?nazwy=wyglad.kolor.akcent,nie.ma.takiego,ZLA NAZWA')).json();
+  assert.deepEqual(Object.keys(d.wartosci), ['wyglad.kolor.akcent']);
+  assert.equal(d.lancuch[d.lancuch.length - 1].id, glowny);
+  const T = ok(await s.ruch('jozz', { op: 'ust-u18-tajne', co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Tajne', widzi: 'wlasciciel', ile_wolno: 'prowadzic' } })).rzecz;
+  ok(await wartosc('jozz', 'ust-u18-tajna', 'wyglad.kolor.akcent', '#abcdef', { zasieg: T }));
+  assert.equal((await pytanie('/api/srodowisko/ustawienia?nazwy=wyglad.kolor.akcent&dla=' + T)).status, 404);
+  assert.equal((await (await pytanie('/api/srodowisko/ustawienia?nazwy=wyglad.kolor.akcent&dla=' + T, 'jozz')).json()).wartosci['wyglad.kolor.akcent'].wartosc, '#abcdef');
+  assert.equal((await pytanie('/api/srodowisko/ustawienia?nazwy=' + Array.from({ length: 201 }, (_, i) => 'a.b' + i).join(','))).status, 400);
 });

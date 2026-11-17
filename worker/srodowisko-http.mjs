@@ -4,7 +4,7 @@
 // nie da się wejść inaczej niż przez Workera.
 import { coTuJest, opisDane, listaRzeczy, listaRodzajow, stronaRodzaju, stronaRzeczy, umowaOkna } from './opis.mjs';
 import { sprawdzSpojnosc } from './spojnosc.mjs';
-import { policzUstawienia, stronaUstawien } from './ustawienia.mjs';
+import { policzUstawienia, policzUstawieniaDlaNazw, stronaUstawien } from './ustawienia.mjs';
 import { poprawneImie } from './miejsce.mjs';
 import { CZYTELNIK_PODGLADU } from './srodowisko.mjs';
 
@@ -100,7 +100,12 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
       return json({ ok: true, widok, akt, polozenia: w.widokNa(widok, akt) });
     }
     // Ustawienia policzone dla zasięgu, oczami czytającego: jedno żądanie daje twarzy wszystkie wartości pokręteł.
-    if (sciezka === '/api/srodowisko/ustawienia') return json(policzUstawienia(w, { dla: p.get('dla') || null, nakladki: (p.get('nakladki') || '').split(',').filter(Boolean), deklaracje: p.get('deklaracje') === 'tak' }));
+    if (sciezka === '/api/srodowisko/ustawienia') {
+      const o = { dla: p.get('dla') || null, nakladki: (p.get('nakladki') || '').split(',').filter(Boolean) };
+      // Twarz pyta po nazwach swoich pokręteł: koszt nie zależy wtedy od tego, ile pokręteł i wartości leży w Miejscu.
+      // Bez nazw: wszystko, co zadeklarowane (panel, agent, który chce zobaczyć całość).
+      return json(p.has('nazwy') ? await policzUstawieniaDlaNazw(w, { ...o, nazwy: p.get('nazwy').split(',') }) : policzUstawienia(w, { ...o, deklaracje: p.get('deklaracje') === 'tak' }));
+    }
     if (sciezka === '/api/srodowisko/spis') {
       const filtr = filtrZAdresu(w, p);
       const pomin = liczba(p.get('pomin')) || 0;
