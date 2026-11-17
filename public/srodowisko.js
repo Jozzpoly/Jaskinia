@@ -127,9 +127,24 @@
   // signals, event, flag). Bez tych kilku linii nowe srodowisko otwarte w jej oknie dzialaloby "po cichu":
   // bez nazwy, bez stanu i bez liczb. Dzieki nim jedno miejsce jest prawda od pierwszego dnia, a stara
   // Jaskinia nie wymaga ani jednej zmiany.
+  // Znani rodzice. Uwaga Fable, 17 XI: strona w ramce ma mowic stan tylko temu, kogo zna. Pierwsza wersja
+  // tego mostu wysylala stan przez postMessage z celem '*', czyli komukolwiek, kto nas osadzi. Dopoki wszystko
+  // tu jest publiczne, nic to nie kosztuje; w dniu, w ktorym wejdzie pierwsza prywatna rzecz, byloby to okno
+  // na cudza strone. Dlatego: nigdy '*', nigdy pierwsi do nieznajomego, a stan tylko do adresu z tej listy.
+  const ZNANI_RODZICE = [
+    'https://jozzpoly.github.io',   // stara Jaskinia i laby wlasciciela
+    location.origin,                // to samo Miejsce osadzone w sobie (podglad, proby)
+  ];
+  const znanyRodzic = (adres) => typeof adres === 'string' && ZNANI_RODZICE.includes(adres);
   const gospodarzOnad = window.parent && window.parent !== window ? window.parent : null;
+  // Adres rodzica poznajemy dopiero z wiadomosci od niego (origin ramki jest nieczytelny z drugiej strony).
+  // Przed pierwsza wiadomoscia mozemy go zgadnac z referrera - i tylko wtedy, gdy jest na liscie, odzywamy sie pierwsi.
+  let adresRodzica = null;
   let ostatniStan = null;
-  const doGospodarza = (w) => { if (gospodarzOnad) try { gospodarzOnad.postMessage({ jaskinia: 1, ...w }, '*'); } catch { /* okno moglo zniknac */ } };
+  const doGospodarza = (w) => {
+    if (!gospodarzOnad || !znanyRodzic(adresRodzica)) return;
+    try { gospodarzOnad.postMessage({ jaskinia: 1, ...w }, adresRodzica); } catch { /* okno moglo zniknac */ }
+  };
   function przedstawSie() {
     doGospodarza({ type: 'hello', name: 'Jaskinia: srodowisko', version: '1', wants: [] });
     if (ostatniStan) powiedzStan();
@@ -140,16 +155,21 @@
     doGospodarza({ type: 'signals', values: { rzeczy: ostatniStan.rzeczy, czeka: ostatniStan.czeka, akt: ostatniStan.akt } });
   }
   if (gospodarzOnad) {
-    // Umowa mowi, ze gospodarz odzywa sie pierwszy, ale nie wiadomo, czy zdazymy go uslyszec: mowimy od razu
-    // i jeszcze raz po jego "hi" (ten sam wzor, ktory zastosowal gosc z dowodu D1).
     addEventListener('message', (e) => {
       const m = e.data;
       if (e.source !== gospodarzOnad || !m || m.jaskinia !== 1) return;
+      if (!znanyRodzic(e.origin)) return;   // nieznajomy nie uslyszy od nas nic, nawet ze tu jestesmy
+      adresRodzica = e.origin;
       if (m.type === 'hi') przedstawSie();
       else if (m.type === 'state?') powiedzStan();
       else if (m.type === 'remark' && typeof m.text === 'string') doGospodarza({ type: 'event', text: 'uwaga wlasciciela trafila do srodowiska: ' + m.text.slice(0, 120), level: 'info' });
     });
-    przedstawSie();
+    // Odzywamy sie pierwsi tylko do znanego adresu z referrera: umowa nie rozstrzyga, kto zaczyna,
+    // a stara Jaskinia potrafi wyslac 'hi', zanim ten skrypt zdazy sie zaladowac.
+    try {
+      const r = document.referrer ? new URL(document.referrer).origin : null;
+      if (znanyRodzic(r)) { adresRodzica = r; przedstawSie(); }
+    } catch { /* bez referrera czekamy na jego pierwsze slowo */ }
   }
 
   function rysuj() {
