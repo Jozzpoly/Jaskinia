@@ -375,17 +375,35 @@ export class Srodowisko {
   }
 
   ile(filtr = {}) {
-    // Proste pytania (wszystko albo jeden rodzaj z pokoleniem, bez odłożonych) mają odpowiedź w pamiętanych liczbach.
+    // Proste pytania (rodzaj z pokoleniem, obszar, odłożone albo nie) mają odpowiedź w pamiętanym przekroju spisu:
+    // opis pyta o takie liczby kilkanaście razy, a każde osobne liczenie przeglądało cały spis.
     const { rodzaj = null, obszar, gdzie: cechy = null, szukaj = null, odlozone = 'nie', po = null } = filtr;
-    if (obszar === undefined && !cechy && !szukaj && odlozone === 'nie' && po === null && (rodzaj === null || (typeof rodzaj === 'string' && rodzaj.includes('/') && RODZAJ_LUB_NAZWA.test(rodzaj)))) {
-      const l = this.liczby();
-      return rodzaj === null ? l.reduce((a, x) => a + x.ile, 0) : (l.find((x) => x.rodzaj === rodzaj) || { ile: 0 }).ile;
+    const prostyRodzaj = rodzaj === null || (typeof rodzaj === 'string' && rodzaj.includes('/') && RODZAJ_LUB_NAZWA.test(rodzaj));
+    if (!cechy && !szukaj && po === null && prostyRodzaj && ['nie', 'tak', 'razem'].includes(odlozone)) {
+      let n = 0;
+      for (const w of this.przekroj()) {
+        if (rodzaj !== null && w.rodzaj !== rodzaj) continue;
+        if (obszar !== undefined && (obszar === null || obszar === '' ? w.obszar !== null : w.obszar !== String(obszar))) continue;
+        if (odlozone === 'nie' ? w.odlozone : (odlozone === 'tak' ? !w.odlozone : false)) continue;
+        n += w.ile;
+      }
+      return n;
     }
     const { gdzie, par, trzebaTresci } = this._warunek(filtr);
     return this.q(`SELECT COUNT(*) AS n FROM rzeczy r ${trzebaTresci ? 'JOIN zapisy z ON z.id = r.zapis' : ''} ${gdzie}`, ...par)[0].n;
   }
 
-  liczby() { return this.pamietaj('liczby', () => Object.freeze(this.q(`SELECT rodzaj, COUNT(*) AS ile FROM rzeczy WHERE odlozone = 0 GROUP BY rodzaj ORDER BY rodzaj`))); }
+  // Jeden przegląd spisu na akt: ile rzeczy którego rodzaju leży w którym obszarze i ile z nich jest odłożonych.
+  // Z niego biorą się liczby rodzajów, liczby w obszarach i liczba odłożonych, zamiast osobnego przeglądu na każde.
+  przekroj() { return this.pamietaj('przekroj', () => Object.freeze(this.q(`SELECT rodzaj, obszar, odlozone, COUNT(*) AS ile FROM rzeczy GROUP BY rodzaj, obszar, odlozone`))); }
+
+  liczby() {
+    return this.pamietaj('liczby', () => {
+      const m = new Map();
+      for (const w of this.przekroj()) if (!w.odlozone) m.set(w.rodzaj, (m.get(w.rodzaj) || 0) + w.ile);
+      return Object.freeze([...m].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([rodzaj, ile]) => ({ rodzaj, ile })));
+    });
+  }
 
   // Historia rzeczy: każda wersja ma kolejny numer (1, 2, 3…) i znacznik `akt`, czyli numer aktu, który ją ustawił.
   historia(id) {
