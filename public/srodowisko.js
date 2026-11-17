@@ -229,12 +229,24 @@
     przedstawSieKanalowi();
     return odswiez().then(() => komunikat(klucz ? 'Jesteś jako ' + (opis.czytasz_jako.imie || '?') + ' (' + opis.czytasz_jako.rola + ').' : 'Wyszedłeś. Czytasz jako zwiedzający.'), (blad) => komunikat('Nie udało się wejść: ' + blad.message, true));
   }
+  // Stan drzwi (czy w ogóle jest czym wejść) pytamy RAZ, przy pierwszym otwarciu panelu. Guzik, który po
+  // naciśnięciu mówi „tu jeszcze nic nie ma", jest gorszy niż brak guzika: to jest narzędzie do zmniejszania
+  // tarcia, więc samo nie może go dokładać.
+  let stanDrzwi = null;
+  async function dajStanDrzwi() {
+    if (stanDrzwi || !window.Drzwi) return stanDrzwi;
+    try { stanDrzwi = await window.Drzwi.stanDrzwi(); } catch { stanDrzwi = { poswiadczen: 0, nieudane: true }; }
+    return stanDrzwi;
+  }
+  const mozaDotknac = () => Boolean(window.Drzwi && window.Drzwi.umieDotkniecie() && stanDrzwi && stanDrzwi.poswiadczen > 0);
+
   async function dotknij(co, nazwa) {
     if (!window.Drzwi) return komunikat('Drzwi właściciela nie wczytały się na tej stronie.', true);
     try {
       komunikat(co === 'wejdz' ? 'Poproś urządzenie o potwierdzenie…' : 'Potwierdź na urządzeniu, że to Ty…');
       if (co === 'wejdz') await window.Drzwi.wejdzDotknieciem();
       else await window.Drzwi.dodajUrzadzenie(nazwa, klucz ? { authorization: 'Bearer ' + klucz } : {});
+      stanDrzwi = null; // po dodaniu urządzenia stan jest inny; pytamy od nowa przy następnym otwarciu
       $('wejscie-panel').hidden = true;
       await odswiez();
       komunikat(co === 'wejdz' ? 'Jesteś w środku. Wejście zostaje w tej przeglądarce na miesiąc.' : 'To urządzenie otwiera teraz drzwi.');
@@ -243,6 +255,8 @@
       komunikat((co === 'wejdz' ? 'Nie udało się wejść dotknięciem: ' : 'Nie udało się dodać urządzenia: ') + (b && b.message ? b.message : String(b)), true);
     }
   }
+
+  const guzikDotkniecia = () => (mozaDotknac() ? el('button', { klasa: 'glowny', tekst: 'Wejdź dotknięciem', title: 'Passkey: urządzenie potwierdza, że to Ty, bez wklejania klucza', klik: () => dotknij('wejdz') }) : null);
 
   function rysujWejscie() {
     const d = opis, p = $('wejscie-panel'), g = $('wejscie');
@@ -266,10 +280,15 @@
       }
       return;
     }
-    g.onclick = () => { p.hidden = !p.hidden; };
+    g.onclick = async () => {
+      const otwieram = p.hidden;
+      p.hidden = !p.hidden;
+      // Przy pierwszym otwarciu dopytujemy drzwi i rysujemy panel jeszcze raz, już z guzikiem albo bez niego.
+      if (otwieram && !stanDrzwi && window.Drzwi) { await dajStanDrzwi(); rysujWejscie(); p.hidden = false; }
+    };
     const pole = el('input', { type: 'password', id: 'pole-klucza', placeholder: 'Twój klucz', autocomplete: 'current-password', 'aria-label': 'Klucz uczestnika' });
     p.append(el('p', { tekst: 'Wejście jest potrzebne tylko do zmian. Klucz zostaje w tej przeglądarce.' }),
-      window.Drzwi && window.Drzwi.umieDotkniecie() ? el('button', { klasa: 'glowny', tekst: 'Wejdź dotknięciem', title: 'Passkey: urządzenie potwierdza, że to Ty, bez wklejania klucza', klik: () => dotknij('wejdz') }) : null,
+      guzikDotkniecia(),
       d.klucz_probny_wlasciciela ? el('button', { klasa: 'glowny', tekst: 'Wejdź jako właściciel próbny', title: 'Na podglądzie klucze próbne są jawne; nic tu nie jest prywatne', klik: () => wejdz(d.klucz_probny_wlasciciela) }) : null,
       d.klucz_probny ? el('button', { tekst: 'Wejdź jako agent próbny', klik: () => wejdz(d.klucz_probny) }) : null,
       el('div', { klasa: 'rzad' }, pole, el('button', { tekst: 'Wejdź kluczem', klik: () => wejdz(pole.value) })));
