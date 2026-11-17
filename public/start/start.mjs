@@ -115,6 +115,7 @@ function poZmianie() {
   przelicz();
   if (!kam) kam = kameraNa(t >= 0.5 ? pole : staly.granice, okno, 20, gora);
   rysujPasek(); rysujKarte(); rysujListe(); popros();
+  rysujCofanie(); rysujUklady();
   odswiezUstawienia();
 }
 function przelicz() {
@@ -514,17 +515,87 @@ function naRzecz(id) {
   popros();
 }
 
+// --- gesty ręki: cofnij, ponów, zapisane układy -------------------------------------------------------------------------
+// Każdy ruch ręki niesie znak gestu (zamiana dwóch kart to jeden gest z dwóch zapisów). Znaki własnych gestów leżą
+// w pamięci tej przeglądarki, więc "cofnij" działa także po przeładowaniu strony. Cofnięcie jest w Miejscu zwykłą
+// czynnością z autorem: wraca wszystko, co gest ruszył, albo nic, gdy ktoś po drodze coś z niego zmienił.
+const GESTY = 'jaskinia:start:gesty';
+const nowyGest = () => 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+let stosGestow = (() => { try { const z = JSON.parse(localStorage.getItem(GESTY) || 'null'); return z && Array.isArray(z.cofnij) && Array.isArray(z.ponow) ? z : { kto: null, cofnij: [], ponow: [] }; } catch { return { kto: null, cofnij: [], ponow: [] }; } })();
+const zapiszStos = () => { try { localStorage.setItem(GESTY, JSON.stringify(stosGestow)); } catch { /* bez pamięci przeglądarki stos żyje do przeładowania */ } rysujCofanie(); };
+function zapamietajGest(gest) {
+  if (stosGestow.kto !== drzwi.imie) stosGestow = { kto: drzwi.imie, cofnij: [], ponow: [] };
+  if (stosGestow.cofnij[stosGestow.cofnij.length - 1] !== gest) stosGestow.cofnij.push(gest);
+  stosGestow.cofnij = stosGestow.cofnij.slice(-50);
+  stosGestow.ponow = [];
+  zapiszStos();
+}
+function rysujCofanie() {
+  const moje = stosGestow.kto === drzwi.imie && !!drzwi.klucz;
+  $('cofnij').disabled = !(moje && stosGestow.cofnij.length);
+  $('ponow').disabled = !(moje && stosGestow.ponow.length);
+}
+async function cofnijAlboPonow(ponow) {
+  const z = ponow ? stosGestow.ponow : stosGestow.cofnij, na = ponow ? stosGestow.cofnij : stosGestow.ponow;
+  if (stosGestow.kto !== drzwi.imie || !z.length) return;
+  const cofany = z[z.length - 1], gest = nowyGest();
+  const o = await drzwi.ruch({ co: 'cofnij-gest', cofany, gest });
+  if (!o.ok) {
+    // gest, którego Miejsce nie zna (inne Miejsce, inny uczestnik), schodzi ze stosu; każda inna odmowa go zostawia
+    if (/^nie ma gestu/.test(o.blad)) { z.pop(); zapiszStos(); }
+    komunikat(o.blad, true);
+    return;
+  }
+  z.pop(); na.push(gest); zapiszStos();
+  await drzwi.dogon().catch(() => {});
+  const ile = o.dane.rzeczy || 0;
+  komunikat((ponow ? 'Ponowione: ' : 'Cofnięte: ') + lp(ile, 'rzecz wróciła', 'rzeczy wróciły', 'rzeczy wróciło') + (ponow ? ' do stanu po geście.' : ' do stanu sprzed gestu.'));
+}
+$('cofnij').addEventListener('click', () => cofnijAlboPonow(false));
+$('ponow').addEventListener('click', () => cofnijAlboPonow(true));
+addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z' || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
+  e.preventDefault();
+  cofnijAlboPonow(e.shiftKey);
+});
+// Zapisany układ to nazwana chwila widoku (rzecz chwila/1). Powrót do niego jest gestem, więc "cofnij" go cofa.
+function rysujUklady() {
+  const p = $('uklady');
+  if (p.hidden) return;
+  const lista = widok ? [...drzwi.rzeczy.values()].filter((r) => r.rodzaj === 'chwila/1' && r.cechy.widok === widok.id).sort((a, b) => b.cechy.akt - a.cechy.akt) : [];
+  p.textContent = '';
+  p.append(el('p', { tekst: 'Zapisany układ pamięta, gdzie co leżało w tej chwili. Powrót do niego da się cofnąć.' }),
+    el('button', { klasa: 'glowny', tekst: 'Zapisz obecny układ', disabled: drzwi.klucz && widok ? null : true, klik: async () => {
+      const kiedy = new Date();
+      const nazwa = 'Układ ' + kiedy.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) + ', ' + kiedy.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+      const o = await drzwi.ruch({ co: 'poloz', rodzaj: 'chwila/1', cechy: { nazwa, widok: widok.id, akt: drzwi.akt } });
+      if (!o.ok) { komunikat(o.blad, true); return; }
+      await drzwi.dogon().catch(() => {});
+      komunikat(o.dane.skutek === 'propozycja' ? 'Zapis układu poszedł jako propozycja.' : 'Zapisany: ' + nazwa + '.');
+    } }),
+    lista.length ? el('ul', { klasa: 'lista-ukladow' }, lista.map((u) => el('li', {}, el('span', { tekst: u.cechy.nazwa }),
+      el('button', { tekst: 'wróć', title: 'Ustaw położenia tak, jak leżały w tym układzie', disabled: drzwi.klucz ? null : true, klik: async () => {
+        const gest = nowyGest();
+        const o = await drzwi.ruch({ co: 'przywroc-uklad', chwila: u.id, gest });
+        if (!o.ok) { komunikat(o.blad, true); return; }
+        if (o.dane.rzeczy) zapamietajGest(gest);
+        await drzwi.dogon().catch(() => {});
+        komunikat(o.dane.rzeczy ? 'Wrócił układ "' + u.cechy.nazwa + '": ' + lp(o.dane.rzeczy, 'położenie zmienione', 'położenia zmienione', 'położeń zmienionych') + '. Guzik ↶ to cofa.' : 'Układ "' + u.cechy.nazwa + '" jest już ustawiony.');
+      } })))) : el('p', { klasa: 'ciche', tekst: 'Ten widok nie ma jeszcze zapisanych układów.' }));
+}
+$('uklady-guzik').addEventListener('click', () => { const p = $('uklady'); p.hidden = !p.hidden; $('uklady-guzik').setAttribute('aria-expanded', p.hidden ? 'false' : 'true'); rysujUklady(); });
+
 // --- ruchy ręki, które trafiają do Miejsca (zapis przy puszczeniu, nigdy przy ruchu) -----------------------------------
 // Położenie rzeczy to rzecz rodzaju miejsce z kluczem (widok, rzecz): każde przesunięcie jest nową wersją tego samego
 // miejsca. "dowolna" to świadoma zgoda na nadpisanie: ręka jest najsilniejszym prawem, ostatnie położenie wygrywa.
-async function poloz(id, miejsce, zdanie) {
+async function poloz(id, miejsce, zdanie, gest = nowyGest()) {
   if (!widok) { komunikat('W tym Miejscu nie ma jeszcze widoku Start (rodzaj widok): nie ma gdzie zapisać położenia.', true); return false; }
   const bylo = swiat.miejsca.get(id) || null;
   const m = { x: Math.round(miejsce.x), y: Math.round(miejsce.y), skala: miejsce.skala ?? (bylo ? bylo.skala : 1) };
   wToku.set(id, m);
   swiat.miejsca.set(id, { ...(bylo || {}), ...m });
   przelicz(); rysujKarte(); popros();
-  const o = await drzwi.ruch({ co: 'poloz', rodzaj: 'miejsce/1', wersja: 'dowolna', cechy: { widok: widok.id, rzecz: id, x: m.x, y: m.y, ...(m.skala !== 1 ? { skala: Math.round(m.skala * 100) / 100 } : {}) } });
+  const o = await drzwi.ruch({ co: 'poloz', gest, rodzaj: 'miejsce/1', wersja: 'dowolna', cechy: { widok: widok.id, rzecz: id, x: m.x, y: m.y, ...(m.skala !== 1 ? { skala: Math.round(m.skala * 100) / 100 } : {}) } });
   wToku.delete(id);
   const propozycja = o.ok && o.dane.skutek === 'propozycja';
   if (!o.ok || propozycja) {
@@ -534,6 +605,7 @@ async function poloz(id, miejsce, zdanie) {
     komunikat(propozycja ? 'Położenie poszło jako propozycja (' + (o.dane.powod || 'czeka na właściciela') + '). Rzecz zostaje na miejscu, dopóki nie zostanie przyjęta.' : o.blad, !propozycja);
     return false;
   }
+  zapamietajGest(gest);
   await drzwi.dogon().catch(() => {});
   if (zdanie) komunikat(zdanie);
   return true;
@@ -547,17 +619,20 @@ async function zmienSkale(id, mnoznik) {
 async function oddajSiatce(id) {
   const m = swiat.miejsca.get(id);
   if (!m || !m.id) return;
-  const o = await drzwi.ruch({ co: 'odloz', rzecz: m.id, wersja: 'dowolna', powod: 'oddane siatce domyślnej na Starcie' });
+  const gest = nowyGest();
+  const o = await drzwi.ruch({ co: 'odloz', gest, rzecz: m.id, wersja: 'dowolna', powod: 'oddane siatce domyślnej na Starcie' });
   if (!o.ok) { komunikat(o.blad, true); return; }
+  if (o.dane.skutek !== 'propozycja') zapamietajGest(gest);
   await drzwi.dogon().catch(() => {});
   komunikat(o.dane.skutek === 'propozycja' ? 'Poszło jako propozycja.' : 'Rzecz wróciła do siatki domyślnej. Jej położenie z ręki jest odłożone, nie skasowane.');
 }
 async function zamien(a, b) {
   const sa = srodekStaly(a), sb = srodekStaly(b);
   const pa = poId(a), pb = poId(b);
-  const ok = await poloz(a, sb, null);
+  const gest = nowyGest(); // zamiana to jeden gest z dwóch zapisów: cofa się w całości
+  const ok = await poloz(a, sb, null, gest);
   if (!ok) return;
-  if (await poloz(b, sa, null)) komunikat(`Zamienione miejscami: ${pa.tytul} i ${pb.tytul}.`);
+  if (await poloz(b, sa, null, gest)) komunikat(`Zamienione miejscami: ${pa.tytul} i ${pb.tytul}.`);
 }
 
 // --- okno gry -----------------------------------------------------------------------------------------------------------

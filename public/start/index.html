@@ -22,11 +22,15 @@
   </label>
   <button id="przelacz" type="button" title="Przełącz między stanem stałym a ciekłym; rzeczy płyną na nowe miejsca">nadmuchaj</button>
   <button id="caly" type="button" title="Pokaż wszystko w oknie"><span class="dlugi">cały widok</span><span class="krotki">całość</span></button>
+  <button id="cofnij" type="button" title="Cofnij ostatni gest ręki (Ctrl+Z)" aria-label="Cofnij ostatni gest" disabled>↶</button>
+  <button id="ponow" type="button" title="Ponów cofnięty gest (Ctrl+Shift+Z)" aria-label="Ponów cofnięty gest" disabled>↷</button>
+  <button id="uklady-guzik" type="button" aria-expanded="false" aria-controls="uklady" title="Zapisane układy tego widoku" aria-label="Zapisane układy"><span class="dlugi">układy</span><span class="krotki">▤</span></button>
   <button id="pomoc-guzik" type="button" aria-expanded="false" aria-controls="pomoc" title="Jak się tym posługiwać">?</button>
   <a class="guzik znak-czeka" id="czeka" href="/" hidden></a>
   <button id="wejscie" type="button">Wejdź</button>
 </header>
 <div id="wejscie-panel" class="panel" hidden></div>
+<div id="uklady" class="panel" hidden></div>
 <div id="pomoc" class="panel pomoc" hidden>
   <h2>Jak się tym posługiwać</h2>
   <ul>

@@ -32,6 +32,10 @@ button[hidden], .guzik[hidden] { display: none; }
 
 .panel { position: fixed; z-index: 12; top: 3rem; right: .6rem; max-width: min(30rem, calc(100vw - 1.2rem)); background: var(--plyta); border: 1px solid var(--linia); border-left: 3px solid var(--akcent); border-radius: .5rem; padding: .6rem .8rem; box-shadow: 0 10px 40px rgba(0, 0, 0, .3); display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; }
 .panel[hidden] { display: none; }
+#uklady { flex-direction: column; align-items: stretch; gap: .5rem; }
+.lista-ukladow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+.lista-ukladow li { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+#cofnij, #ponow { min-width: 2.2rem; font-size: 1.1em; line-height: 1; }
 .panel p { margin: 0; flex-basis: 100%; }
 .panel input { font: inherit; font-size: 16px; color: var(--tekst); background: var(--tlo); border: 1px solid var(--linia); border-radius: .4rem; padding: .4rem .55rem; flex: 1; min-width: 9rem; }
 .pomoc { display: block; max-height: calc(100vh - 4rem); overflow-y: auto; }
