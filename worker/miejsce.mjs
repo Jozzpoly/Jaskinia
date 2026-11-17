@@ -286,8 +286,22 @@ export class Rdzen {
   }
 
   // Całość jako jeden JSON: kopia na dysk właściciela, przeprowadzka, praca bez nas.
+  // Dowod D3 (17 XI 2026): obcy czytnik odtworzyl z samego wywozu 78 rzeczy, ich rodzaje, obszary i tytuly,
+  // ale wersje pomylil co do jednej - bo musial zgadnac, czym jest "wersja". Dane byly w pliku (akt glowy),
+  // brakowalo tylko zdania, ze to one. Dlatego wywoz tlumaczy sie teraz sam: kto go czyta, nie potrzebuje
+  // ani kodu Jaskini, ani jej opisu pod adresem.
+  static JAK_ODBUDOWAC = [
+    'zapisy: niezmienne tresci; id to odcisk tresci. tresc rzeczy to napis JSON {"obszar": <id albo null>, "cechy": {...}}. Zapisy rodzaju kod/1 to strony gosci, nie rzeczy.',
+    'akty: dziennik. Jeden ruch to para aktow o tym samym op z koncowkami .z (co:"zapisz", wklada tresc) i .p (co:"przesun", ustawia glowe). Pole z_zapisu to poprzedni zapis tej glowy, null przy pierwszej wersji.',
+    'glowy: stan biezacy. Glowa o nazwie "rzecz:<id>" to rzecz o tozsamosci <id>; jej pole zapis wskazuje aktualna tresc. Zapisy, ktorych nie wskazuje zadna glowa, to stare wersje albo strony gosci.',
+    'wersja rzeczy = pole akt jej glowy (numer aktu, ktory ja tam ustawil), a NIE liczba przesuniec. Tej samej liczby zada drzwi przy zmianie rzeczy.',
+    'tytul rzeczy: rzeczy rodzaju ksztalt/1 maja ceche dla (opisywany rodzaj) i tytul (nazwa cechy, ktora jest nazwa rzeczy tego rodzaju).',
+    'nic nie jest usuwane: zastapienie to przesuniecie glowy na nowy zapis, a stary zostaje w magazynie.',
+  ];
+
   eksport() {
     return { ok: true, format: 'jaskinia-miejsce', wersja: WERSJA, zebrane: new Date(this.teraz()).toISOString(),
+      jak_odbudowac: Rdzen.JAK_ODBUDOWAC,
       zapisy: this.q(`SELECT * FROM zapisy ORDER BY id`), akty: this.q(`SELECT * FROM akty ORDER BY nr`),
       glowy: this.q(`SELECT * FROM glowy ORDER BY nazwa`), odczyty: this.q(`SELECT * FROM odczyty ORDER BY kto`) };
   }
