@@ -23,6 +23,7 @@ export function czasowniki(s) {
     { nazwa: 'spis', ktoredy: 'drzwi: GET /api/srodowisko/spis?rodzaj=&obszar=; tekstem: /rzeczy; okno: read spis', opis: 'lista rzeczy, opcjonalnie jednego rodzaju albo z jednego obszaru', wejscie: 'rodzaj?, obszar?', wynik: '{rzeczy: [{id, rodzaj, obszar, cechy, tytul, wersja, …}]}' },
     { nazwa: 'rzecz', ktoredy: 'drzwi: GET /api/srodowisko/rzecz?id=; tekstem: /rzecz/<id>; okno: read rzecz', opis: 'jedna rzecz z historią i tym, co na nią wskazuje', wejscie: 'id', wynik: '{rzecz, historia, wskazuja}' },
     { nazwa: 'ksztalty', ktoredy: 'drzwi: GET /api/srodowisko/ksztalty; tekstem: /rodzaje; okno: read ksztalty', opis: 'wszystkie rodzaje rzeczy z opisem cech', wejscie: '-', wynik: '{ksztalty: [{dla, opis, cechy, …}]}' },
+    { nazwa: 'wywoz', ktoredy: 'drzwi: GET /api/miejsce/eksport (tylko właściciel)', opis: 'całe Miejsce jako jeden plik: niezmienne zapisy, dziennik aktów i głowy; z tego da się odtworzyć spis bez kodu Jaskini', wejscie: '-', wynik: '{format: "jaskinia-miejsce", wersja, zebrane, zapisy, akty, glowy, odczyty}' },
     { nazwa: 'puls', ktoredy: 'drzwi: GET /api/srodowisko/puls', opis: 'numer ostatniego aktu; zmienia się po każdym ruchu', wejscie: '-', wynik: '{akt}' },
     { nazwa: 'opis', ktoredy: 'tekstem: /co-tu-jest; drzwi: GET /api/srodowisko/opis', opis: 'ten tekst (albo to samo jako dane)', wejscie: 'od?, jako?', wynik: 'tekst' },
   ];
