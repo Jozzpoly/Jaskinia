@@ -385,7 +385,10 @@ function rysujPasek() {
   $('przelacz').textContent = t >= 0.5 ? 'połóż' : 'nadmuchaj';
   $('przelacz').title = t >= 0.5 ? 'Wróć do stanu stałego: rzeczy płyną tam, gdzie je położyłeś' : 'Nadmuchaj: rzeczy wypełniają okno, ważniejsze większe';
   const g = $('wejscie'), p = $('wejscie-panel');
-  g.textContent = drzwi.klucz && ja ? ja + ' · wyjdź' : 'Wejdź';
+  // Na wąskim ekranie imię stoi już w linii stanu, więc guzik mówi samo "wyjdź" i mieści się w jednym rzędzie.
+  g.replaceChildren();
+  if (drzwi.klucz && ja) { const imie = document.createElement('span'); imie.className = 'dlugi'; imie.textContent = ja + ' · '; g.append(imie, 'wyjdź'); g.title = 'Wszedłeś jako ' + ja; }
+  else { g.append('Wejdź'); g.title = ''; }
   if (drzwi.klucz && ja) { g.onclick = () => drzwi.wejdz('').then(() => komunikat('Wyszedłeś. Oglądasz jako zwiedzający.')); p.hidden = true; return; }
   g.onclick = () => { p.hidden = !p.hidden; };
   if (p.dataset.akt === String(d.klucz_probny_wlasciciela) + '|' + String(d.klucz_probny)) return;
