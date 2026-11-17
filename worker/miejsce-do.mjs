@@ -44,6 +44,10 @@ export class Miejsce {
 
   get _podglad() { return this.env.PODGLAD === 'tak'; }
 
+  // Czym kanał na żywo patrzy na rzecz: dokładnie tymi okularami co spis i adres rzeczy. Obecność niesie
+  // identyfikator rzeczy, przy której ktoś siedzi, więc musi pytać o prawa tam, gdzie one stoją — w środowisku.
+  get _widac() { return (kto, id) => this.srod.rzecz(id, { dla: kto || null }) !== null; }
+
   // Zasiew środowiska: jeden na instancję, kolejne wejścia czekają na ten sam.
   _zasiew() {
     this.zasiane ??= this.srod.zasiej(ziarna({ wlasciciel: this.rdzen.wlasciciel })).catch((e) => { this.zasiane = null; throw e; });
@@ -204,7 +208,7 @@ export class Miejsce {
     const klient = para[0], serwer = para[1];
     // Przyjęcie w sposób, który pozwala obiektowi zasnąć między wiadomościami: połączenie stoi, a czas nie biegnie.
     this.ctx.acceptWebSocket(serwer);
-    przyjmijGniazdo(serwer, { kto: request.headers.get('x-kto') || null, podglad: this._podglad, akt: this.srod.ostatniNr(), gniazda: this._gniazda() });
+    przyjmijGniazdo(serwer, { kto: request.headers.get('x-kto') || null, podglad: this._podglad, akt: this.srod.ostatniNr(), gniazda: this._gniazda(), widac: this._widac });
     return { klient };
   }
 
@@ -215,15 +219,15 @@ export class Miejsce {
 
   // Wiadomość od połączenia budzi obiekt; pamięć instancji mogła zniknąć, więc wszystko, co potrzebne, jest w gnieździe.
   async webSocketMessage(ws, wiadomosc) {
-    await przyjmijWiadomosc(ws, wiadomosc, { env: this.env, gniazda: () => this._gniazda(), podglad: this._podglad, akt: () => this.srod.ostatniNr() });
+    await przyjmijWiadomosc(ws, wiadomosc, { env: this.env, gniazda: () => this._gniazda(), podglad: this._podglad, akt: () => this.srod.ostatniNr(), widac: this._widac });
   }
 
   async webSocketClose(ws) {
     try { ws.close(1000, 'do zobaczenia'); } catch { /* druga strona już zamknęła */ }
-    poZamknieciu(ws, this._gniazda(), { podglad: this._podglad });
+    poZamknieciu(ws, this._gniazda(), { podglad: this._podglad, widac: this._widac });
   }
 
   async webSocketError(ws) {
-    poZamknieciu(ws, this._gniazda(), { podglad: this._podglad });
+    poZamknieciu(ws, this._gniazda(), { podglad: this._podglad, widac: this._widac });
   }
 }

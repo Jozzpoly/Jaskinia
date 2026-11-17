@@ -159,3 +159,44 @@ test('W10. dziennik jest drugą drogą do tych samych faktów i też przechodzi 
   assert.equal(wl.zmiany.ukryte, 0, 'właściciel nie ma nic ukrytego');
   assert.ok(wl.zmiany.lista.some((z) => z.id === prywatny.rzecz), 'i widzi tę samą zmianę z nazwą');
 });
+
+test('W11. kanał na żywo: obecność nie podaje rzeczy z obszaru, którego czytelnik nie widzi', async () => {
+  // Czwarta dziura z tego samego ataku, i jedyna znaleziona POD adresem przez otwarcie dwóch połączeń naraz
+  // (17 XI 2026): obecność niesie `przy: <rzecz>`, a budowała jedną listę dla wszystkich. Właściciel siadał przy
+  // rzeczy w obszarze `widzi: wlasciciel`, a uczestnik dostawał jej identyfikator. Kanał nie pyta spisu, więc nie
+  // wystarczyło przefiltrować spisu - to ta sama zasada co przy dzienniku: każda droga do faktów jest osobną drogą.
+  const { s, prywatny, jawny } = await swiat();
+  const { obecni, rozglosObecnych } = await import('./zywe.mjs');
+  const gniazdo = (stan) => {
+    const g = { wyslane: [], zal: stan, send(t) { g.wyslane.push(JSON.parse(t)); }, close() {}, serializeAttachment(x) { g.zal = structuredClone(x); }, deserializeAttachment() { return g.zal ? structuredClone(g.zal) : null; } };
+    return g;
+  };
+  const widac = (kto, id) => s.rzecz(id, { dla: kto || null }) !== null;
+  const wl = gniazdo({ kto: 'jozz', przy: prywatny.rzecz });
+  const ag = gniazdo({ kto: 'agent-probny', przy: jawny.rzecz });
+  const gniazda = [wl, ag];
+
+  // bez okularów (tak było do 17 XI): jedna lista dla wszystkich i identyfikator leci do każdego
+  rozglosObecnych(gniazda, { podglad: true });
+  assert.ok(JSON.stringify(ag.wyslane).includes(prywatny.rzecz), 'kontrola sprawdzianu: bez okularów wyciek jest');
+
+  wl.wyslane.length = 0; ag.wyslane.length = 0;
+  rozglosObecnych(gniazda, { podglad: true, widac });
+  const u = ag.wyslane.at(-1), w = wl.wyslane.at(-1);
+  assert.ok(!JSON.stringify(u).includes(prywatny.rzecz), 'uczestnik nie dostaje identyfikatora rzeczy ze skarbca');
+  assert.deepEqual(u.lista.find((x) => x.kto === 'jozz'), { kto: 'jozz' }, 'ale widzi, że właściciel jest obecny');
+  assert.ok(u.lista.some((x) => x.kto === 'agent-probny' && x.przy === jawny.rzecz), 'rzecz z jawnego obszaru zostaje');
+  assert.ok(w.lista.some((x) => x.kto === 'jozz' && x.przy === prywatny.rzecz), 'właściciel widzi własną rzecz');
+  assert.deepEqual(obecni(gniazda).lista.length, 2, 'sama obecność jest nadal pełna: ukrywamy rzecz, nie człowieka');
+});
+
+test('W12. nowe wywołanie kanału nie zapomni okularów po cichu', async () => {
+  // Rodzeństwo W7, ten sam powód: granica trzyma tak długo, jak długo KAŻDE wywołanie ją podaje. Tu nie ma
+  // domyślnej ścieżki, która by o tym pamiętała - `widac` pominięte w nowym miejscu znaczy po cichu brak filtra.
+  const { readFileSync } = await import('node:fs');
+  const zrodlo = readFileSync(new URL('./miejsce-do.mjs', import.meta.url), 'utf8');
+  const bez = zrodlo.split('\n')
+    .map((l, i) => [i + 1, l])
+    .filter(([, l]) => /\b(przyjmijGniazdo|przyjmijWiadomosc|poZamknieciu|rozglosObecnych)\s*\(/.test(l) && !l.startsWith('import') && !l.includes('widac'));
+  assert.deepEqual(bez, [], 'wywołania kanału bez `widac` (obecność poniosłaby identyfikatory bez okularów)');
+});
