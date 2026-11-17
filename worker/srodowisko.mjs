@@ -1109,12 +1109,20 @@ export class Srodowisko {
     // Propozycja kosztuje uwagę właściciela, więc jeden uczestnik nie może ich mnożyć bez końca: jedna czekająca na
     // rzecz i najwyżej NAJWIECEJ_CZEKAJACYCH naraz (uwaga drugiej linii do PR 35: agent w pętli zalałby listę "czeka").
     if (stara) {
-      const juz = this.spis({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka', rzecz: stara.id }, limit: 1 })[0];
+      // przy ruchu z okna "ta sama propozycja" to ta sama rzecz, ten sam gość i ten sam otwierający: gość jest wspólny
+      // dla wszystkich, którzy otwierają to okno
+      const juz = this.spis({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka', rzecz: stara.id, ...(przez ? { przez } : {}) }, limit: 1 })[0];
       if (juz) return blad(409, `masz już czekającą propozycję zmiany tej rzeczy (${juz.id}); wycofaj ją (co: odrzuc) albo poczekaj na rozstrzygnięcie`, { propozycja: juz.id });
     }
-    if (this.ile({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka' } }) >= NAJWIECEJ_CZEKAJACYCH) return blad(429, `masz już ${NAJWIECEJ_CZEKAJACYCH} czekających propozycji; wycofaj którąś (co: odrzuc) albo poczekaj, aż zostaną rozstrzygnięte`);
-    // Propozycje z okien liczą się też temu, kto okna otworzył: inaczej wiele narzędzi w jednych rękach zalałoby listę.
-    if (przez && this.ile({ rodzaj: 'propozycja/1', gdzie: { przez, stan: 'czeka' } }) >= NAJWIECEJ_CZEKAJACYCH) return blad(429, `z okien otwartych przez ${przez} czeka już ${NAJWIECEJ_CZEKAJACYCH} propozycji; najpierw trzeba je rozstrzygnąć`);
+    // Jeden licznik na uczestnika: jego propozycje złożone wprost i te z okien, które otworzył, razem. Przy ruchu
+    // z okna liczy się otwierający, nie gość: gość jest wspólny dla wszystkich otwierających, więc licznik na gościa
+    // pozwalał jednemu uczestnikowi zająć limit całego narzędzia (okno właściciela dostawało 429), a dwa osobne
+    // liczniki dawały jednemu uczestnikowi dwa limity naraz (niezależny atak, 17 XI 2026).
+    const czyja = przez || kto;
+    const czeka = this.ile({ rodzaj: 'propozycja/1', gdzie: { od: czyja, stan: 'czeka' } }) + this.ile({ rodzaj: 'propozycja/1', gdzie: { przez: czyja, stan: 'czeka' } });
+    if (czeka >= NAJWIECEJ_CZEKAJACYCH) return blad(429, przez
+      ? `z ruchów uczestnika ${przez} i z okien, które otworzył, czeka już ${NAJWIECEJ_CZEKAJACYCH} propozycji; najpierw trzeba je rozstrzygnąć`
+      : `masz już ${NAJWIECEJ_CZEKAJACYCH} czekających propozycji (razem z tymi z okien, które otworzyłeś); wycofaj którąś (co: odrzuc) albo poczekaj, aż zostaną rozstrzygnięte`);
     // propozycja: leży tam, gdzie leży rzecz, której dotyczy (albo tam, gdzie miała powstać nowa)
     const propId = await idZ('propozycja', kto, op);
     const obszarProp = stara ? stara.obszar : obszar;
