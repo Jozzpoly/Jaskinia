@@ -873,7 +873,10 @@ export class Srodowisko {
     if (gosc !== null && gosc !== undefined) {
       if (!kto) return blad(401, 'okno pisze tylko wtedy, gdy ten, kto je otworzył, wszedł kluczem');
       if (typeof gosc !== 'string' || !ID.test(gosc)) return blad(400, 'gosc: identyfikator rzeczy rodzaju gosc (26 znaków)');
-      const g = this.rzecz(gosc);
+      // otwierający, który nie ma tu żadnego prawa, słyszy to wprost, zanim okno zacznie pytać o gościa
+      const bezPrawa = this._bezPrawa(kto);
+      if (bezPrawa) return bezPrawa;
+      const g = this._oczy(kto)(gosc);
       if (!g || nazwaRodzaju(g.rodzaj) !== 'gosc') return blad(404, `nie ma gościa ${gosc}`);
       if (g.odlozone) return blad(409, 'ten gość jest odłożony; odłożone narzędzie nie pisze');
       if (g.cechy.umowa !== 'okno/3') return blad(409, 'ten gość mówi umową okna, która nie zna ruchów; żeby pisał, zgłoś go z "umowa":"okno/3"');
@@ -891,6 +894,37 @@ export class Srodowisko {
   }
 
   _maRzecz = (id) => this.rzecz(id);
+
+  // --- oczy piszącego -------------------------------------------------------------------------------------------
+  // Czytanie przechodzi przez okulary czytającego (`dla`). Zapis szedł obok i pytał o istnienie oczami środowiska,
+  // które widzi wszystko, więc drzwi ruchu mówiły piszącemu to, czego nie mówiło mu czytanie: że rzecz o zgadniętym
+  // kluczu jest (z identyfikatorem i wersją), że identyfikator wskazuje coś istniejącego (odniesienie przechodziło),
+  // w którym zamkniętym obszarze leży rzecz (odmowa go nazywała). Dwa ataki drugiej linii, 17 XI 2026.
+  // Zasada: rzecz, której piszący nie widzi, jest dla zapisu tym samym, czym rzecz, której nie ma, i brzmi tak samo.
+  // Zwraca funkcję (id) => rzecz albo null, z dodatkiem `.obszar(id)`: czy piszący widzi obszar o tym identyfikatorze
+  // (null to obszar główny). Przy ruchu z okna patrzą dwie pary oczu, gościa i tego, kto okno otworzył, i rzecz
+  // istnieje dopiero wtedy, gdy widzą ją obie: narzędzie w oknie właściciela nie dowie się tego, co wie właściciel.
+  // Właściciel widzi wszystko. Automat środowiska (obserwator faktów) też pyta wprost: chodzi zwykłym ruchem i musi
+  // odświeżyć fakt także wtedy, gdy właściciel schował rzecz, a jego odpowiedzi nie wychodzą do obcych.
+  // Czego to NIE zamyka: jednego bitu przy rodzajach z kluczem. Tożsamość z klucza jest jedna na całe Miejsce, więc
+  // uczestnik z prawem zapisu, który zgadnie wartość klucza, dowie się z odmowy, że taka rzecz gdzieś jest. Nie dostanie
+  // identyfikatora, wersji ani obszaru, a każda próba, która nie trafi, zostawia rzecz albo propozycję, czyli ślad.
+  _oczy(kto, przez = null) {
+    const wprost = (k) => { const r = this.rola(k); return r === 'wlasciciel' || r === 'automat'; };
+    const patrzacy = [kto, ...(przez ? [przez] : [])].filter((k) => !wprost(k));
+    const widzi = patrzacy.length
+      ? (id) => { for (const k of patrzacy) if (this.rzecz(id, { dla: k }) === null) return null; return this.rzecz(id); }
+      : (id) => this.rzecz(id);
+    widzi.obszar = (id) => patrzacy.every((k) => { const zle = this._niewidoczneDla(k); return !zle || !zle.includes(id ?? null); });
+    return widzi;
+  }
+
+  // Kto nie ma tu żadnego prawa, słyszy to od razu i wprost, zanim zapis zacznie pytać o cokolwiek: inaczej uczestnik
+  // z odebranym wstępem dostawałby "nie ma takiej rzeczy" i szukał błędu tam, gdzie go nie ma.
+  _bezPrawa(kto, przez = null, co = 'do ruchu') {
+    for (const k of [kto, ...(przez ? [przez] : [])]) if (this.rola(k) === 'zwiedzajacy') return blad(401, this.powodBrakuPrawa(k, co));
+    return null;
+  }
   _maZapis = (id) => { const z = this.q(`SELECT rodzaj FROM zapisy WHERE id = ?`, id)[0]; return z ? z.rodzaj : null; };
 
   // Jak głęboko leży obszar (główny: 0). Zagnieżdżenie ma granicę, żeby żadne liczenie w górę nie urwało się w pół
@@ -904,7 +938,7 @@ export class Srodowisko {
 
   // Sprawdzenie treści rzeczy przed zapisem, bez pytania, kto ją zapisuje. Zwraca {ok, ksztalt, nieznane} albo błąd
   // z listą, co jest nie tak.
-  _sprawdzTresc(rodzaj, cechy, obszar, stara, odlozone = false) {
+  _sprawdzTresc(rodzaj, cechy, obszar, stara, odlozone = false, widzi = this._maRzecz) {
     // Kształt, pod którym leżą rzeczy, i obszar, w którym leżą rzeczy, nie mogą zniknąć ani stać się czymś innym:
     // rzeczy zostałyby bez opisu albo bez miejsca.
     if (stara && stara.rodzaj === 'ksztalt/1' && (rodzaj !== 'ksztalt/1' || odlozone) && this.ile({ rodzaj: stara.cechy.dla, odlozone: 'razem' }) > 0)
@@ -935,7 +969,7 @@ export class Srodowisko {
       }
     }
     if (obszar) {
-      const o = this.rzecz(obszar);
+      const o = widzi(obszar);
       if (!o || o.rodzaj !== 'obszar/1') return blad(422, `obszar ${obszar}: nie ma takiego obszaru`);
       if (o.odlozone) return blad(422, `obszar ${obszar} jest odłożony; wybierz inny albo najpierw go przywróć`);
       if (rodzaj === 'obszar/1' || (stara && stara.rodzaj === 'obszar/1')) {
@@ -947,7 +981,11 @@ export class Srodowisko {
     }
     const ksztalt = this.ksztaltDla(rodzaj);
     if (!ksztalt) return { ok: true, ksztalt: null, nieznane: Object.keys(cechy), bezKsztaltu: true };
-    const { bledy, nieznane } = sprawdzCechy(ksztalt, cechy, this._maRzecz, this._maZapis);
+    // Odniesienie, które stało w rzeczy już wcześniej, zostaje bez pytania o widoczność: agent ma móc zmienić rzecz,
+    // którą właściciel przypiął do czegoś zamkniętego. Każde NOWE odniesienie piszący musi widzieć.
+    const dawne = stara && widzi !== this._maRzecz ? new Set(odniesieniaZCech(this.ksztaltDla(stara.rodzaj), stara.cechy).map(([, cel]) => cel)) : null;
+    const maRzecz = dawne ? (id) => (dawne.has(id) ? this.rzecz(id) : widzi(id)) : widzi;
+    const { bledy, nieznane } = sprawdzCechy(ksztalt, cechy, maRzecz, this._maZapis);
     if (bledy.length) return blad(422, `rzecz rodzaju ${rodzaj} nie przeszła sprawdzenia: ` + bledy.join('; '), { bledy, ksztalt: '/rodzaj/' + rodzaj });
     if (ksztalt.klucz && stara && nazwaRodzaju(stara.rodzaj) === nazwaRodzaju(rodzaj)) {
       const sk = this.ksztaltDla(stara.rodzaj);
@@ -977,15 +1015,29 @@ export class Srodowisko {
     if (wada) return blad(400, 'cechy: ' + wada);
     const byl = this._powtorzenie(kto, c);
     if (byl) return byl;
+    const bez = this._bezPrawa(kto, przezZ(slad));
+    if (bez) return bez;
+    const widzi = this._oczy(kto, przezZ(slad));
+    // Rzecz, która z natury należy do innej (miejsce do widoku), leży zawsze w tym samym obszarze co ona. Inaczej prawo
+    // do jej zmiany liczyłoby się gdzie indziej niż prawo do rzeczy, której dotyczy: agent kładłby położenia w obszarze,
+    // w którym prowadzi sam, a widok właściciela i tak by je brał (znalezione na podglądzie 17 XI).
+    // Rzecz wskazana, której piszący nie widzi, jest dla niego rzeczą, której nie ma, i to pytanie idzie pierwsze:
+    // inaczej zajęty klucz położenia w zamkniętym widoku mówiłby mu, że widok i położenie istnieją.
+    let n = this._zNatury(rodzaj, cechy);
+    if (n && !n.brak && !widzi(cechy[n.cecha])) n = { cecha: n.cecha, brak: true };
+    if (n && n.brak) return blad(400, `cecha ${n.cecha} musi wskazywać istniejącą rzecz: od niej rzecz rodzaju ${rodzaj} bierze obszar`);
     let stara = null, id;
     if (c.rzecz) {
-      stara = this.rzecz(c.rzecz);
+      stara = widzi(c.rzecz);
       if (!stara) return blad(404, `nie ma rzeczy ${c.rzecz}`);
       id = stara.id;
     } else {
       const zKlucza = await this._idZKlucza(rodzaj, this.ksztaltDla(rodzaj), cechy);
       id = zKlucza || await idZ('rzecz', kto, c.op);
       stara = this.rzecz(id);
+      // Klucz zajęty przez rzecz, której piszący nie widzi: odmowa bez identyfikatora, wersji i obszaru, także wtedy,
+      // gdy podał wersję. Na ślepo nie da się takiej rzeczy ani poznać, ani nadpisać.
+      if (stara && zKlucza && !widzi(id)) return blad(409, 'rzecz o tym kluczu już jest, ale leży tam, dokąd nie masz wstępu: nie da się jej stąd ani zobaczyć, ani zmienić');
       // Rzecz o tym kluczu już jest: to zmiana, nie nowa rzecz, więc potrzebna jest wersja jak przy każdej zmianie.
       if (stara && zKlucza && !('wersja' in c)) return blad(409, `rzecz o tym kluczu już jest (${id}); żeby ją zmienić, podaj jej wersję z odczytu albo "wersja":"dowolna"`, { rzecz: id, wersja: stara.wersja });
       if (stara && !zKlucza) return blad(409, 'ten op założył już inną rzecz; nowa rzecz potrzebuje nowego op', { rzecz: id });
@@ -996,12 +1048,7 @@ export class Srodowisko {
     if ('obszar' in c) obszar = c.obszar;
     else if (stara) obszar = stara.obszar;
     else obszar = rola === 'wlasciciel' ? null : (this.r.meta('obszar_nowe') || null);
-    // Rzecz, która z natury należy do innej (miejsce do widoku), leży zawsze w tym samym obszarze co ona. Inaczej prawo
-    // do jej zmiany liczyłoby się gdzie indziej niż prawo do rzeczy, której dotyczy: agent kładłby położenia w obszarze,
-    // w którym prowadzi sam, a widok właściciela i tak by je brał (znalezione na podglądzie 17 XI).
-    const n = this._zNatury(rodzaj, cechy);
     if (n) {
-      if (n.brak) return blad(400, `cecha ${n.cecha} musi wskazywać istniejącą rzecz: od niej rzecz rodzaju ${rodzaj} bierze obszar`);
       if ('obszar' in c && (c.obszar ?? null) !== n.obszar) return blad(400, `rzecz rodzaju ${rodzaj} leży zawsze w obszarze rzeczy z cechy ${n.cecha}; pomiń obszar albo podaj ten sam`);
       if (stara && this._lezyPod(cechy[n.cecha], stara.id)) return blad(422, `rzecz nie może leżeć z rzeczą, która sama leży z nią (cecha ${n.cecha} zamyka koło)`);
       obszar = n.obszar;
@@ -1053,7 +1100,10 @@ export class Srodowisko {
     if ('powod' in c && typeof c.powod !== 'string') return blad(400, 'powod: napis');
     const byl = this._powtorzenie(kto, c);
     if (byl) return byl;
-    const stara = this.rzecz(c.rzecz);
+    const bez = this._bezPrawa(kto, przezZ(slad));
+    if (bez) return bez;
+    const widzi = this._oczy(kto, przezZ(slad));
+    const stara = widzi(c.rzecz);
     if (!stara) return blad(404, `nie ma rzeczy ${c.rzecz}`);
     const wersja = c.wersja === 'dowolna' ? stara.wersja : c.wersja;
     const wspolne = { stara, id: stara.id, wersja };
@@ -1071,12 +1121,17 @@ export class Srodowisko {
     if ('do' in c) {
       if (!Number.isInteger(c.do)) return blad(400, 'do: znacznik wcześniejszej wersji tej rzeczy (pole akt z jej historii)');
       cel = this.wersja(stara.id, c.do);
-      if (!cel) return blad(404, `rzecz ${stara.id} nie ma wersji o znaczniku ${c.do}`);
+      // Dawna wersja niesie obszar, w którym rzecz wtedy leżała. Wersja z obszaru, którego piszący nie widzi, nie
+      // istnieje dla niego tak samo jak przy czytaniu (`dla().wersja`): cofnięcie nie może być drogą do tego, czego
+      // czytanie nie pokazuje, ani odmową, która nazywa zamknięty obszar.
+      if (!cel || !widzi.obszar(cel.obszar)) return blad(404, `rzecz ${stara.id} nie ma wersji o znaczniku ${c.do}`);
     } else {
       if (h.length < 2) return blad(409, 'ta rzecz ma tylko jedną wersję; nie ma do czego cofnąć (żeby ją schować, użyj co: odloz)');
       const poprzednia = h.filter((x) => x.akt < stara.wersja).pop();
       cel = poprzednia ? this.wersja(stara.id, poprzednia.akt) : null;
       if (!cel) return blad(409, 'nie ma wcześniejszej wersji tej rzeczy');
+      // Że poprzednia wersja jest, mówi sama historia (numery aktów są słyszalne); jej treści i obszaru nie mówimy.
+      if (!widzi.obszar(cel.obszar)) return blad(409, 'poprzednia wersja tej rzeczy leży poza tym, do czego masz wstęp; wskaż wcześniejszą wersję znacznikiem do');
     }
     if (cel.akt === stara.wersja) return blad(409, 'to jest bieżąca wersja tej rzeczy; nie ma czego cofać');
     return this._zmien(kto, c.op, slad, { ...wspolne, co: 'cofnij', rodzaj: cel.rodzaj, obszar: cel.obszar, cechy: cel.cechy, odlozone: cel.odlozone, powod: cel.powod, zWersji: cel.akt });
@@ -1089,7 +1144,7 @@ export class Srodowisko {
     const n = this._zNatury(rodzaj, cechy);
     if (n && !n.brak) obszar = n.obszar;
     const zNatury = n ? n.cecha : null;
-    const spr = this._sprawdzTresc(rodzaj, cechy, obszar, stara, odlozone);
+    const spr = this._sprawdzTresc(rodzaj, cechy, obszar, stara, odlozone, this._oczy(kto, przezZ(slad)));
     if (!spr.ok) return co === 'cofnij' ? blad(409, 'dawna wersja nie przechodzi dzisiejszego sprawdzenia: ' + spr.blad, { bledy: spr.bledy }) : spr;
     let ocena = this.ocen(kto, { stara, rodzaj, obszar, cechy });
     // Okno nie ma więcej prawa niż ten, kto je otworzył: z dwóch ocen (gościa i otwierającego) wygrywa słabsza.
@@ -1187,18 +1242,23 @@ export class Srodowisko {
     if ('powod' in c && typeof c.powod !== 'string') return blad(400, 'powod: napis');
     const byl = this._powtorzenie(kto, c);
     if (byl) return byl;
-    const pr = this.rzecz(c.propozycja);
-    if (!pr || pr.rodzaj !== 'propozycja/1') return blad(404, `nie ma propozycji ${c.propozycja}`);
-    if (pr.cechy.stan !== 'czeka') return blad(409, `ta propozycja jest już rozstrzygnięta: ${pr.cechy.stan}`);
     const rola = this.rola(kto);
     if (rola === 'zwiedzajacy') return blad(401, this.powodBrakuPrawa(kto, 'do rozstrzygnięcia propozycji'));
+    // Propozycję z obszaru, którego rozstrzygający nie widzi, zna tylko jej autor (i ten, kto otworzył okno, z którego
+    // wyszła): może ją wycofać. Dla każdego innego brzmi jak propozycja, której nie ma.
+    const widzi = this._oczy(kto);
+    const surowa = this.rzecz(c.propozycja);
+    const swoja = !!surowa && surowa.rodzaj === 'propozycja/1' && (surowa.cechy.od === kto || surowa.cechy.przez === kto);
+    const pr = swoja ? surowa : widzi(c.propozycja);
+    if (!pr || pr.rodzaj !== 'propozycja/1') return blad(404, `nie ma propozycji ${c.propozycja}`);
+    if (pr.cechy.stan !== 'czeka') return blad(409, `ta propozycja jest już rozstrzygnięta: ${pr.cechy.stan}`);
     const t = pr.cechy.tresc && typeof pr.cechy.tresc === 'object' ? pr.cechy.tresc : {};
     const cechy = t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {};
     // Propozycja pamięta obszar z chwili, w której powstała. Rzecz, która z natury należy do innej, bierze go z tamtej
     // dzisiaj: inaczej właściciel własnym przyjęciem zakładałby rzecz tam, gdzie jej rodzic już nie leży.
     const zn = this._zNatury(pr.cechy.rodzaj, cechy);
     const obszar = zn && !zn.brak ? zn.obszar : (t.obszar ?? null);
-    const stara = pr.cechy.rzecz ? this.rzecz(pr.cechy.rzecz) : null;
+    const stara = pr.cechy.rzecz ? widzi(pr.cechy.rzecz) : null;
     // Propozycję z okna może wycofać także ten, kto okno otworzył (i tak jak autor nie może jej sam przyjąć).
     const autor = kto === pr.cechy.od || (typeof pr.cechy.przez === 'string' && kto === pr.cechy.przez);
     // Kto rozstrzyga: właściciel, albo uczestnik, który ten sam ruch mógłby zrobić sam ze skutkiem. Autor może swoją
@@ -1220,7 +1280,7 @@ export class Srodowisko {
     const id = stara ? stara.id : (typeof pr.cechy.nowa === 'string' && ID.test(pr.cechy.nowa) ? pr.cechy.nowa : await idZ('przyjeta', pr.id));
     if (!stara && this.rzecz(id)) return blad(409, 'rzecz, którą ta propozycja miała założyć, powstała w międzyczasie inną drogą; odrzuć propozycję albo poproś o nową', { rzecz: id });
     const odlozone = t.odlozone === true;
-    const spr = this._sprawdzTresc(pr.cechy.rodzaj, cechy, obszar, stara, odlozone);
+    const spr = this._sprawdzTresc(pr.cechy.rodzaj, cechy, obszar, stara, odlozone, widzi);
     if (!spr.ok) return blad(spr.status, 'propozycja nie przechodzi dzisiejszego sprawdzenia: ' + spr.blad);
     const p1 = await this.r.przygotujPolozenie({ op: c.op, rodzaj: pr.cechy.rodzaj, tresc: trescRzeczy({ obszar, cechy, odlozone, powod: typeof t.powod === 'string' ? t.powod : null, zNatury: zn ? zn.cecha : null }), glowa: 'rzecz:' + id, wersja: stara ? stara.wersja : null });
     if (!p1.ok) return p1;

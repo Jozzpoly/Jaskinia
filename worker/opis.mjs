@@ -225,6 +225,7 @@ export function coTuJest(s, opcje = {}) {
       `Nowa rzecz bez podanego obszaru ląduje w obszarze "Nowe"${obszarNowe ? ` (id ${obszarNowe})` : ''}. Rzecz dołożona do obszaru, w którym wolno tylko proponować, staje się propozycją.`,
       'W obszarze z ustawieniem porzadkowac skutek od razu mają tylko rzeczy rodzaju oznaczonego jako układ; każda inna nowa rzecz i każda zmiana treści jest propozycją.',
       'Przy zmianie i przenoszeniu liczy się obszar, w którym rzecz leży, i ten, do którego ma trafić: słabsze z dwóch praw wygrywa.',
+      'Rzeczy z obszaru, którego nie widzisz, nie ma też dla Twojego ruchu: zmiana po identyfikatorze, odniesienie do niej i położenie czegoś w takim obszarze odbijają się tak samo jak przy rzeczy albo obszarze, których nie ma. Gdy klucz nowej rzeczy jest zajęty przez rzecz, której nie widzisz, odmowa mówi tylko tyle.',
       'Tylko właściciel zmienia ze skutkiem: ustawienia obszarów, uczestników, kształty czterech rodzajów rdzenia (te, które opisują ksztalt/1, obszar/1, uczestnik/1 i propozycja/1) oraz to, czy rodzaj jest układem.',
       'Kształt każdego innego rodzaju, także zupełnie nowego, dokłada i zmienia każdy uczestnik, z takim skutkiem, na jaki pozwala obszar.',
       'Taki ruch zrobiony przez kogoś innego nie jest odrzucany: staje się propozycją do właściciela.',
