@@ -774,8 +774,12 @@
 
   // --- czytanie: całość raz, potem tylko zmiany -------------------------------------------------------------------
   const powiedzGosciom = () => { for (const o of okna.values()) if (o.chce.includes('rzeczy') && o.ramka.contentWindow) o.ramka.contentWindow.postMessage({ jaskinia: 1, type: 'changed', akt }, '*'); };
+  const OPIS_NAJCZESCIEJ_MS = 15000;
+  const RODZAJE_OPISU = ['propozycja/1', 'prosba/1', 'obszar/1', 'ksztalt/1', 'uczestnik/1', 'gosc/1', 'zdolnosc/1'];
+  let opisCzytany = 0, opisZalegly = null;
   async function odswiez() {
     const [o, s] = await Promise.all([czytaj('/api/srodowisko/opis'), czytaj('/api/srodowisko/spis')]);
+    opisCzytany = Date.now();
     // spis przychodzi kawałkami po 1000; czytamy do końca, żeby strona nie udawała, że pierwszy kawałek to wszystko
     const wszystkie = s.rzeczy;
     for (let kawalek = s; !kawalek.wszystko && wszystkie.length < 20000;) { kawalek = await czytaj('/api/srodowisko/spis?pomin=' + wszystkie.length); wszystkie.push(...kawalek.rzeczy); if (!kawalek.rzeczy.length) break; }
@@ -791,14 +795,31 @@
   async function dogon() {
     if (!opis) return odswiez();
     const od = akt;
-    const [o, s] = await Promise.all([czytaj('/api/srodowisko/opis'), czytaj('/api/srodowisko/spis?odlozone=razem&po=' + od)]);
+    const s = await czytaj('/api/srodowisko/spis?odlozone=razem&po=' + od);
     // Miejsce cofnęło się (wwóz całości) albo zmian jest więcej niż jeden kawałek: wtedy uczciwiej przeczytać wszystko.
-    if (o.miejsce.akt < od || !s.wszystko || !Number.isInteger(s.akt)) return odswiez();
+    if (!s.wszystko || !Number.isInteger(s.akt) || s.akt < od) return odswiez();
     if (s.rzeczy.length) {
       const zmienione = new Set(s.rzeczy.map((r) => r.id));
       rzeczy = [...s.rzeczy.filter((r) => !r.odlozone), ...rzeczy.filter((r) => !zmienione.has(r.id))];
     }
-    opis = o; akt = Math.min(o.miejsce.akt, s.akt);
+    // Opis Miejsca jest najdroższym czytaniem, a po każdej zmianie czytała go każda otwarta strona (dowody środowiska,
+    // fala 9, punkt D). Od razu czytamy go tylko wtedy, gdy zmieniło się to, na co ręka ma odpowiedzieć, albo to,
+    // z czego opis jest zbudowany (obszary, kształty, uczestnicy, goście, stan budowy). Przy każdej innej zmianie
+    // strona pokazuje rzeczy z różnicy od razu, a opis doczytuje najwyżej raz na kilkanaście sekund.
+    const pilne = s.rzeczy.some((r) => RODZAJE_OPISU.includes(r.rodzaj));
+    if (pilne || Date.now() - opisCzytany >= OPIS_NAJCZESCIEJ_MS) {
+      clearTimeout(opisZalegly); opisZalegly = null;
+      const o = await czytaj('/api/srodowisko/opis');
+      opisCzytany = Date.now();
+      if (o.miejsce.akt < od) return odswiez();
+      opis = o; akt = Math.min(o.miejsce.akt, s.akt);
+    } else {
+      akt = s.akt;
+      if (!opisZalegly) opisZalegly = setTimeout(() => {
+        opisZalegly = null;
+        czytaj('/api/srodowisko/opis').then((o) => { opisCzytany = Date.now(); if (o.miejsce.akt >= akt) { opis = o; rysuj(); } }).catch(() => { /* następna zmiana spróbuje znowu */ });
+      }, Math.max(500, OPIS_NAJCZESCIEJ_MS - (Date.now() - opisCzytany)));
+    }
     rysuj();
     if (akt !== od) powiedzGosciom();
   }
