@@ -130,6 +130,10 @@ export function sprawdzUstawienie(s, rodzaj, cechy, widzi) {
   if (rodzaj === 'wartosc/1') {
     const d = deklaracja(s, cechy.pokretlo);
     if (!d || !widzi(d.id)) return { blad: `nie ma pokrętła o nazwie ${JSON.stringify(cechy.pokretlo)}; zadeklarowane pokrętła: /ustawienia` };
+    // Zasięgiem jest rzecz, której wygląd albo odczucie się stroi, a nie samo ustawienie: wartość przypięta do wartości
+    // nie ma sensu, a pozwalała budować dowolnie długie łańcuchy rzeczy leżących "z natury" jedna z drugą.
+    const z = typeof cechy.zasieg === 'string' ? widzi(cechy.zasieg) : null;
+    if (z && ['wartosc', 'pokretlo', 'zestaw', 'propozycja'].includes(String(z.rodzaj).split('/')[0])) return { blad: `zasięgiem wartości nie może być rzecz rodzaju ${z.rodzaj}; zasięg to rzecz, którą się stroi: obszar, widok, okno, uczestnik, profil` };
     const w = wadaWartosci(d.cechy, cechy.wartosc, widzi);
     return w ? { blad: `wartość pokrętła ${cechy.pokretlo} (typ ${d.cechy.typ}) ${w}` } : null;
   }

@@ -217,3 +217,29 @@ test('ZO13. przez drzwi: dwie próby z ataku drugiej linii (klucz i odniesienie)
   assert.equal(doTajnej.status, 422);
   assert.equal((await doTajnej.text()).split(tajna).join('<ID>'), (await doNiczego.text()).split(NIE_MA).join('<ID>'));
 });
+
+test('ZO14. ponowienie czynności nie jest drogą obok: uczestnik z odebranym wstępem słyszy brak prawa, a cudze ponowienie przez to samo okno nie dostaje uchwytu schowanej rzeczy', async () => {
+  const { s, ok, T, jawna } = await swiat();
+  // uczestnik robi ruch, traci wstęp i ponawia ten sam ruch
+  const cialo = { op: 'zo14-dawny-ruch', co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: 'dawne słowo', dotyczy: [jawna] } };
+  ok(await s.ruch('agent-a', cialo));
+  const ucz = s.spis({ rodzaj: 'uczestnik/1', gdzie: { imie: 'agent-a' }, limit: 1 })[0];
+  ok(await s.ruch('jozz', { op: 'zo14-odbieram', co: 'odloz', rzecz: ucz.id, wersja: 'dowolna' }));
+  const ponowienie = await s.ruch('agent-a', cialo);
+  assert.equal(ponowienie.status, 401, JSON.stringify(ponowienie));
+  ok(await s.ruch('jozz', { op: 'zo14-oddaje', co: 'przywroc', rzecz: ucz.id, wersja: 'dowolna' }));
+  assert.equal((await s.ruch('agent-a', cialo)).powtorzone, true, 'z przywróconym wstępem ponowienie znowu jest ponowieniem');
+  // właściciel robi ruch z okna, chowa rzecz, a agent ponawia ten sam op przez to samo okno
+  const gosc = s.spis({ rodzaj: 'gosc/1', limit: 20 }).find((g) => g.cechy.umowa === 'okno/3');
+  const zOkna = { op: 'zo14-op-z-okna', co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: 'z okna właściciela', dotyczy: [jawna] } };
+  const pierwszy = ok(await s.ruch('jozz', zOkna, { gosc: gosc.id }));
+  const rz = s.rzecz(pierwszy.rzecz);
+  ok(await s.ruch('jozz', { op: 'zo14-chowam', co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: rz.rodzaj, obszar: T, cechy: rz.cechy }));
+  for (const [nazwa, c] of [['to samo ciało', zOkna], ['inne ciało', { ...zOkna, cechy: { tresc: 'co innego', dotyczy: [jawna] } }]]) {
+    const cudze = await s.ruch('agent-a', c, { gosc: gosc.id });
+    assert.ok(!JSON.stringify(cudze).includes(rz.id), `${nazwa}: identyfikator schowanej rzeczy nie wychodzi: ${JSON.stringify(cudze)}`);
+    assert.ok(!('rzecz' in cudze), nazwa);
+  }
+  const wlasciciela = await s.ruch('jozz', zOkna, { gosc: gosc.id });
+  assert.equal(wlasciciela.status, 409, 'narzędzie w oknie właściciela też nie widzi schowanej rzeczy, więc uchwytu nie dostaje');
+});
