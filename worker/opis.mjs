@@ -4,6 +4,7 @@
 import { TYPY, STOPNIE, USTAWIENIA } from './srodowisko.mjs';
 import { PREFIKS_PLIKU } from './obserwator.mjs';
 import { WERSJA } from './miejsce.mjs';
+import { ETAPY } from './ziarna.mjs';
 
 const dzien = (iso) => String(iso).replace('T', ' ').slice(0, 16) + ' UTC';
 const wiersze = (...w) => w.flat(9).filter((x) => x !== null && x !== undefined && x !== false).join('\n');
@@ -119,7 +120,8 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
     uczestnicy: s.pamietaj('opis:uczestnicy', () => s.spis({ rodzaj: 'uczestnik/1', limit: 500 }).map((u) => ({ imie: u.cechy.imie, rola: u.cechy.rola, cialo: u.cechy.cialo || null }))),
     zmiany: { od: odAktu, skad, pierwszy_raz: odAktu === null, lista: zm.lista, wiecej: zm.wiecej, wizyta_zapisana: wizyta && !wizyta.pierwszy_raz ? { akt: wizyta.widziane_do, kiedy: wizyta.widziane_kiedy } : null },
     czeka: { propozycje: cz.propozycje.map((p) => ({ id: p.id, od: p.cechy.od, co: p.cechy.co || 'poloz', rodzaj: p.cechy.rodzaj, obszar: p.obszar, rzecz: p.cechy.rzecz || null, kiedy: p.utworzono, wymaga: p.cechy.wymaga || null })), prosby: cz.prosby.map((p) => ({ id: p.id, tresc: p.cechy.tresc, tryb: p.cechy.tryb || 'czeka', od: p.utworzyl, kiedy: p.utworzono })) },
-    zdolnosci: s.pamietaj('opis:zdolnosci', () => s.spis({ rodzaj: 'zdolnosc/1', limit: 500 }).map((z) => ({ id: z.id, nazwa: z.cechy.nazwa, stan: z.cechy.stan, opis: z.cechy.opis, jak: z.cechy.jak || null }))),
+    zdolnosci: s.pamietaj('opis:zdolnosci', () => s.spis({ rodzaj: 'zdolnosc/1', limit: 500 }).map((z) => ({ id: z.id, nazwa: z.cechy.nazwa, stan: z.cechy.stan, opis: z.cechy.opis, jak: z.cechy.jak || null, etap: ETAPY.some((e) => e.id === z.cechy.etap) ? z.cechy.etap : 'grunt', dowod: z.cechy.dowod || null }))),
+    etapy: ETAPY,
     wyrownanie: s.wyrownano(),
     przeniesienie: { projekty_w_srodku: (liczby.find((l) => l.rodzaj === 'projekt/1') || { ile: 0 }).ile, publiczne_repozytoria: m ? { ile: m.cechy.wartosc, stan_na: m.cechy.stan_na || null, zrodlo: m.cechy.zrodlo || null } : null },
     obserwator: obserwator(s),
@@ -279,8 +281,16 @@ export function coTuJest(s, opcje = {}) {
     '7. SPIS CZASOWNIKÓW (wszystko, co da się tu zrobić; ten sam spis czyta strona i agent)',
     d.czasowniki.map((c) => `  ${c.nazwa}: ${c.opis}\n      którędy: ${c.ktoredy}\n      wejście: ${c.wejscie}   wynik: ${c.wynik}`),
     '',
-    '8. STAN BUDOWY (co środowisko umie; każda pozycja jest rzeczą rodzaju zdolnosc/1 i zmienia się ruchem)',
-    ['stoi', 'cienko', 'brak'].map((st) => d.zdolnosci.filter((z) => z.stan === st).sort((a, b) => a.nazwa.localeCompare(b.nazwa)).map((z) => `  [${stany[st]}] ${z.nazwa}: ${obetnij(z.opis, 220)}${z.jak ? `\n      ${obetnij(z.jak, 240)}` : ''}`)),
+    '8. STAN BUDOWY (co środowisko umie i czego jeszcze nie; każda pozycja jest rzeczą rodzaju zdolnosc/1 i zmienia się ruchem)',
+    'Budowa idzie etapami: grunt ma być solidny, zanim staną na nim ściany i kable; wykończenie jest na końcu; tworzenie jest celem.',
+    `Razem: stoi ${d.zdolnosci.filter((z) => z.stan === 'stoi').length}, cienko ${d.zdolnosci.filter((z) => z.stan === 'cienko').length}, brak ${d.zdolnosci.filter((z) => z.stan === 'brak').length}. "Stoi" znaczy: działa i sprawdził to ktoś inny niż budowniczy; "cienko": działa w wąskim zakresie albo bez takiego sprawdzenia; "brak": nie ma.`,
+    d.etapy.map((e) => {
+      const z = d.zdolnosci.filter((x) => x.etap === e.id);
+      if (!z.length) return null;
+      const ileW = (st) => z.filter((x) => x.stan === st).length;
+      return ['', `  ${e.nazwa.toUpperCase()}: ${e.opis}   (stoi ${ileW('stoi')}, cienko ${ileW('cienko')}, brak ${ileW('brak')})`,
+        ['stoi', 'cienko', 'brak'].map((st) => z.filter((x) => x.stan === st).sort((a, b) => a.nazwa.localeCompare(b.nazwa)).map((x) => `    [${stany[st]}] ${x.nazwa}: ${obetnij(x.opis, 220)}${x.jak ? `\n        ${obetnij(x.jak, 240)}` : ''}`))];
+    }),
     '',
     '9. GRANICE',
     'Nieodwracalne decyzje (usuwanie, publikacja, pieniądze, dostępy, przełączenie codziennego okna właściciela) należą tylko do właściciela.',

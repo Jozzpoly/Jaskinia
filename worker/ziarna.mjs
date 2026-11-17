@@ -4,7 +4,17 @@
 import { STOPNIE, UWAGI, WIDZI, UKLADA, szybkiOdcisk } from './srodowisko.mjs';
 
 const k = (nazwa, cechy) => ({ nazwa: 'ksztalt-' + nazwa, rodzaj: 'ksztalt/1', cechy });
-const zd = (nazwa, stan, opis, jak) => ({ nazwa: 'zdolnosc-' + nazwa, rodzaj: 'zdolnosc/1', cechy: { nazwa: opis.split(':')[0], stan, opis: opis.split(':').slice(1).join(':').trim(), ...(jak ? { jak } : {}) } });
+// Etapy budowy, w tej kolejności: grunt ma być solidny, zanim staną ściany; wykończenie jest na końcu; tworzenie jest
+// celem. Każda zdolność mówi, na którym etapie jest potrzebna, żeby stan budowy pokazywał też, czego brakuje i kiedy.
+export const ETAPY = [
+  { id: 'grunt', nazwa: 'Etap 1, grunt', opis: 'środowisko pod dom i jego mieszkańców: pamięć, tożsamość, prawa, drzwi, umowy i fakty, które odświeżają się same. Ma być solidny, zanim cokolwiek na nim stanie.' },
+  { id: 'sciany-i-kable', nazwa: 'Etap 2, ściany i kable', opis: 'organy jako konstrukcja (Start, okna, narzędzia), połączenia z agentami i światem, sprawdzenie, czy grunt unosi szerokie wymagania.' },
+  { id: 'wykonczenie', nazwa: 'Etap 3, wykończenie', opis: 'ręka i oko, wygląd, przytulność i treść w środku. Na końcu, po podstawach.' },
+  { id: 'tworzenie', nazwa: 'Etap 4, tworzenie', opis: 'wspólne budowanie światów w środku: to, po co jest całe Miejsce.' },
+];
+// Zdolności, które stały przed podziałem na etapy, a nie należą do gruntu.
+const ETAP_DAWNYCH = { start: 'sciany-i-kable', 'wolanie-czasownikow': 'sciany-i-kable', 'najety-mozg': 'sciany-i-kable', 'licznik-przeniesienia': 'wykonczenie' };
+const zd = (nazwa, stan, opis, jak, etap) => ({ nazwa: 'zdolnosc-' + nazwa, rodzaj: 'zdolnosc/1', cechy: { nazwa: opis.split(':')[0], stan, opis: opis.split(':').slice(1).join(':').trim(), ...(jak ? { jak } : {}), etap: etap || ETAP_DAWNYCH[nazwa] || 'grunt' } });
 
 // Przykładowy gość: jedna strona HTML, która rozmawia z gospodarzem umową okna (pokolenie 2).
 export const GOSC_LISTA = `<!doctype html>
@@ -147,6 +157,7 @@ export function ziarna({ wlasciciel }) {
         opis: { typ: 'tekst', wymagana: true },
         jak: { typ: 'tekst', opis: 'jak tego użyć albo czego brakuje' },
         dowod: { typ: 'tekst', opis: 'kto i jak to sprawdził' },
+        etap: { typ: 'wybor', wartosci: ['grunt', 'sciany-i-kable', 'wykonczenie', 'tworzenie'], opis: 'na którym etapie budowy ta zdolność jest potrzebna: grunt (środowisko pod dom i jego mieszkańców), ściany i kable (organy jako konstrukcja i połączenia), wykończenie (ręka, oko, treść), tworzenie (wspólne budowanie światów)' },
       } }),
     k('projekt', { dla: 'projekt/1', tytul: 'nazwa', opis: 'Projekt: jedno z dzieł właściciela (gra, lab, narzędzie). Nie musi mieć repozytorium.',
       cechy: {
@@ -262,6 +273,31 @@ export function ziarna({ wlasciciel }) {
     zd('wolanie-czasownikow', 'brak', 'Wołanie czasowników gościa: agent bez przeglądarki prosi otwartego gościa, żeby coś zrobił, i dostaje wynik.'),
     zd('drugie-miejsce', 'brak', 'Drugie Miejsce: osobne Miejsce obok tego (na pokaz, dla labu), odniesienia między nimi i jedno otwierane w drugim jak gość.'),
     zd('najety-mozg', 'brak', 'Mózg najęty przez Jaskinię: agent działający w środku za API właściciela, z pułapem kosztu jako ustawieniem obszaru.', 'Kierunek, nie plan na teraz. Klucz nigdy nie jest daną: zapis trzyma nazwę sekretu.'),
+    // Czego brakuje do pełnej szerokości, nazwane wprost (17 XI, po rachunku budowniczego i sądzie drugiej linii).
+    // Stan budowy ma mówić nie tylko, co stoi, ale też czego nie ma i na którym etapie jest potrzebne.
+    zd('uwaga', 'brak', 'Uwaga z danych: ustawienie obszaru mówi, czy zdarzenie ma być ciszą, skrótem, znakiem czy budzeniem; uwaga i sprawczość są osobnymi ustawieniami.', 'Ustawienie uwaga jest zapisane w każdym obszarze, ale nic go jeszcze nie czyta: wszystko, co czeka, wygląda tak samo.'),
+    zd('uczestnicy-z-danych', 'brak', 'Uczestnicy z danych: imię, rolę i klucz uczestnika dokłada właściciel ruchem, bez wdrożenia; role obejmują drugiego człowieka i agentów różnych dostawców.', 'Dziś klucze stoją w ustawieniach wdrożenia, a role są trzy (właściciel, agent, automat). Rzecz rodzaju uczestnik/1 opisuje uczestnika, ale nie daje mu dostępu.'),
+    zd('tozsamosc-po-zmianie', 'brak', 'Tożsamość, która przeżywa zmianę: rzecz zostaje sobą po zmianie nazwy u źródła, a dwie rzeczy da się połączyć albo jedną rozdzielić, z rodowodem i bez gubienia wskazań.', 'Dziś zmiana nazwy repozytorium u źródła daje nową rzecz, a stara jest odkładana (kluczem jest nazwa). Łączenia i dzielenia nie ma.'),
+    zd('ustawienia', 'brak', 'Ustawienia jako dane: wszystko, co da się stroić, ma deklarację (typ, zakres), wartość z zasięgiem i historią oraz nazwane zestawy, zmieniane w działającym Miejscu.', 'Dziś są cztery ustawienia obszaru wpisane w kod, z czego działa jedno (ile_wolno). Wszystko, co stroi się na Starcie, jest stałą w kodzie.'),
+    zd('gosc-pisze', 'brak', 'Gość, który pisze: narzędzie w oknie zakłada i zmienia rzeczy pod własnym imieniem (domyślnie jako propozycja) i czyta tylko to, co gościowi wolno.', 'Dziś gość czyta tyle, co strona, która go otworzyła, i niczego nie zmienia. Bez tego nikt poza budowniczym nie dołoży narzędzia, które coś robi.'),
+    zd('narzedzia-agenta', 'brak', 'Narzędzia Miejsca w ręku agenta: czasowniki ze spisu stoją na liście narzędzi agenta (serwer narzędzi), więc agent używa ich bez czytania opisu i bez adresu w poleceniu.', 'Dziś spis czasowników jest tekstem wpisanym w kod, a agent musi przeczytać /co-tu-jest i sam złożyć żądanie.'),
+    zd('wersje-do-uruchomienia', 'brak', 'Wersje i buildy przychodzą same: nowa wersja labu albo działający build staje się rzeczą ze znakiem nowe i wejściem do uruchomienia.', 'Dziś same przychodzą fakty o repozytoriach i gałęziach, tak świeże jak odświeżenie starej Jaskini; wersji do uruchomienia nie ma, a znak nowe nie istnieje.'),
+    zd('doreczenie-slowa', 'brak', 'Słowo dociera do agenta: słowo zostawione przy rzeczy trafia do agentów, którzy się nią zajmują, od razu albo po ich obudzeniu, a odpowiedź wraca w to samo miejsce.', 'Dziś słowo jest rzeczą przy rzeczy i widać je na stronie, ale żaden agent się o nim nie dowie, dopóki sam nie zajrzy.'),
+    zd('wygasanie', 'brak', 'Wygasanie: prośba albo propozycja, na którą nikt nie musi odpowiadać, przedawnia się sama i zostawia ślad.', 'Dziś wszystko, co czeka, czeka bez końca; propozycja do rzeczy zmienionej w międzyczasie stoi na liście, choć nie da się jej już przyjąć.'),
+    zd('pokolenia', 'cienko', 'Pokolenia obok siebie: rodzaj, gość i umowa okna mają pokolenie w nazwie, a nowe staje obok starego, bez przepisywania zapisów.', 'Kształt pod rzeczami wolno tylko poszerzać; ostrzejszy opis to następne pokolenie. Nie ma pomiaru, ile rzeczy i gości stoi jeszcze na starym, ani przełączenia jednym ruchem (dowód D4 niezrobiony).'),
+    zd('duze-tresci', 'brak', 'Duże treści poza zapisem: build, model albo asset leży w magazynie, a rzecz trzyma wskazanie z odciskiem i rozmiarem.', 'Dziś rzecz może nosić tylko adres w sieci. Nie ma ani formatu wskazania, ani magazynu.'),
+    zd('czas-wstecz', 'cienko', 'Czas wstecz: każda rzecz ma historię wersji z autorem i da się ją cofnąć do dowolnej z nich.', 'Nie da się obejrzeć całego Miejsca w stanie z wybranej chwili.'),
+    zd('spojnosc', 'cienko', 'Spójność: środowisko mówi, co w nim samym jest krzywe (rzeczy niezgodne z własnym kształtem).', 'Przebieg na żądanie: GET /api/srodowisko/spojnosc. Dwie reguły w kodzie; docelowo sprawdzian wyprowadzony z kształtów. Zbudowała i sprawdziła druga linia.'),
+    zd('okna-w-przestrzeni', 'brak', 'Okna gości w przestrzeni: narzędzie albo gra leży na Starcie obok rzeczy, przesuwa się i skaluje razem z przestrzenią, zasypia poza ekranem; okno jest rzeczą, a widok da się położyć w widoku.', 'Dziś Start otwiera jedno okno gry nad płótnem, bez umowy okna.', 'sciany-i-kable'),
+    zd('pola', 'brak', 'Pola na Starcie: strefy przestrzeni z własnym ustawieniem, kto układa, ile wolno agentom i ile uwagi, zakładane i przestawiane ręką.', 'Mechanizm obszarów stoi i działa dla położeń; na płótnie nie ma jeszcze ani jednego Pola.', 'sciany-i-kable'),
+    zd('granie-i-wersje', 'brak', 'Granie i wszystko do odpalenia: buildy, wersje najnowsze, milowe i historyczne, kilka naraz obok siebie.', 'Dziś karta repozytorium ma jedno wejście do strony projektu.', 'sciany-i-kable'),
+    zd('statystyki', 'brak', 'Statystyki: organ, który pokazuje fakty z datą i źródłem i odświeża się sam.', 'Fakty leżą w Miejscu jako rzeczy; nic ich jeszcze nie pokazuje jako liczb w czasie.', 'sciany-i-kable'),
+    zd('zywe-swiaty', 'brak', 'Żywe światy w przestrzeni: gra albo symulacja działa w oknie, da się na nią patrzeć i ingerować na żywo; żywa instancja jest osobną rzeczą niż wersja i dzieło.', 'Dziś gra otwiera się w zwykłej ramce i nic o sobie nie mówi.', 'sciany-i-kable'),
+    zd('budzenie', 'brak', 'Budzenie: wpis może obudzić wskazanego agenta albo poczekać, aż obudzi się sam; agent może obudzić agenta.', 'W Miejscu nie ma jeszcze nic; poza nim działa jeden budzik u jednego dostawcy.', 'sciany-i-kable'),
+    zd('reka-i-oko', 'brak', 'Ręka i oko Startu: grupy, zaznaczanie wielu, reakcja sąsiadów od miejsca chwytu, notatki, powiązania, szukanie na płótnie, zapisane układy, motywy.', 'Szkielet ma w całości 5 z 27 punktów podłogi poprzedniej Ściany (osąd budowniczego, nie pomiar cudzą ręką). Świadomie na końcu, po podstawach.', 'wykonczenie'),
+    zd('tresc', 'brak', 'Treść w środku: dzieła właściciela z jego znaczeniem (rodziny, powiązania, opisy, historia), wnoszone i destylowane stopniowo.', 'Świadomie odłożone: ważniejsze jest, żeby fakty odświeżały się same i poprawnie, niż żeby od razu mieć w środku wszystko.', 'wykonczenie'),
+    zd('dla-zwiedzajacych', 'brak', 'Wejście dla zwiedzających: publiczna strona z wybranymi dziełami do obejrzenia i zagrania; publikacja jest gestem właściciela.', 'Wymaga widoczności z danych.', 'wykonczenie'),
+    zd('tworzenie', 'brak', 'Tworzenie: pracownie i narzędzia, w których właściciel i agenci razem budują światy (edytory obok działającego świata, wspólny rdzeń, biblioteka).', 'Po to jest całe Miejsce. Zaczyna się, gdy grunt, ściany i wykończenie stoją.', 'tworzenie'),
     { nazwa: 'gosc-lista', rodzaj: 'gosc/1',
       cechy: async (s) => {
         // op niesie odcisk treści: gdy kod przykładu zmieni się w źródle, powstaje nowy zapis zamiast konfliktu op

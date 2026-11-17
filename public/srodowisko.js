@@ -429,9 +429,19 @@
 
     // 7. Stan budowy
     const stany = [['stoi', 'Stoi'], ['cienko', 'Cienko'], ['brak', 'Jeszcze nie ma']];
+    // Etapami: grunt ma być solidny, zanim staną ściany; wykończenie jest na końcu. Każdy etap mówi, co stoi i czego brak.
+    const etapy = Array.isArray(d.etapy) && d.etapy.length ? d.etapy : [{ id: 'grunt', nazwa: 'Stan budowy', opis: '' }];
     t.append(el('section', {}, el('h2', {}, 'Stan budowy środowiska'),
-      el('div', { klasa: 'trzy' }, stany.map(([s, napis]) => el('div', { klasa: 'kolumna ' + s }, el('h3', { tekst: napis.toUpperCase() }),
-        d.zdolnosci.filter((z) => z.stan === s).sort((a, b) => a.nazwa.localeCompare(b.nazwa)).map((z) => el('p', {}, el('b', { tekst: z.nazwa + '. ' }), el('span', { tekst: z.opis + (z.jak ? ' ' + z.jak : '') }))))))));
+      el('p', { klasa: 'ciche', tekst: 'Budowa idzie etapami: grunt ma być solidny, zanim staną na nim ściany i kable; wykończenie jest na końcu; tworzenie jest celem.' }),
+      etapy.map((e) => {
+        const z = d.zdolnosci.filter((x) => (x.etap || 'grunt') === e.id);
+        if (!z.length) return null;
+        const ileW = (s) => z.filter((x) => x.stan === s).length;
+        return el('details', { open: e.id === 'grunt' ? '' : null }, el('summary', {}, el('b', { tekst: e.nazwa }), el('span', { klasa: 'ile', tekst: ` stoi ${ileW('stoi')} · cienko ${ileW('cienko')} · brak ${ileW('brak')}` })),
+          e.opis ? el('p', { klasa: 'ciche', tekst: e.opis }) : null,
+          el('div', { klasa: 'trzy' }, stany.map(([s, napis]) => el('div', { klasa: 'kolumna ' + s }, el('h3', { tekst: napis.toUpperCase() }),
+            z.filter((x) => x.stan === s).sort((a, b) => a.nazwa.localeCompare(b.nazwa)).map((x) => el('p', {}, el('b', { tekst: x.nazwa + '. ' }), el('span', { tekst: x.opis + (x.jak ? ' ' + x.jak : '') })))))));
+      })));
   }
   function kartaProjektu(r) {
     const c = r.cechy;
