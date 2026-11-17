@@ -217,3 +217,25 @@ test('DT7. wyjście zabiera ciastko', async () => {
   assert.equal((await dane(o)).skutek, 'wyszedl');
   assert.match(o.headers.get('set-cookie'), /Max-Age=0/);
 });
+
+test('DT8. jawny sekret podglądu nie staje się sekretem prawdziwego Miejsca przez skopiowanie linii', async () => {
+  // Na podglądzie sekret sesji stoi jawnie w wrangler.jsonc, jak wszystkie klucze podglądu. Gdyby ta sama
+  // wartość zadziałała w prawdziwym Miejscu, kto ją przeczytał w repo, podpisałby sobie sesję właściciela.
+  const jawny = 'podglad-sekret-sesji-jawny-nie-dla-wlasciciela';
+  const naPodgladzie = miejsce({ SEKRET_SESJI: jawny, PODGLAD: 'tak' }).obiekt;
+  assert.equal((await dane(await naPodgladzie.fetch(zad('/api/drzwi/stan', { metoda: 'GET' })))).sekret_sesji_ustawiony, true);
+
+  const prawdziwe = miejsce({ SEKRET_SESJI: jawny, PODGLAD: 'nie' }).obiekt;
+  const s = await dane(await prawdziwe.fetch(zad('/api/drzwi/stan', { metoda: 'GET' })));
+  assert.equal(s.sekret_sesji_ustawiony, false, 'poza podglądem wartość z przedrostkiem podglad- nie jest sekretem');
+  const o = await prawdziwe.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } }));
+  assert.equal(o.status, 503);
+  assert.match((await dane(o)).blad, /SEKRET_SESJI/);
+
+  // i sesja podpisana jawnym sekretem nie jest tożsamością w prawdziwym Miejscu
+  const { ktoTo } = await import('./klucze.mjs');
+  const env = { KLUCZE: JSON.stringify({ jozz: await skrot(KLUCZ_WLASCICIELA) }), WLASCICIEL: 'jozz', SEKRET_SESJI: jawny };
+  const zCiastkiem = new Request(ADRES, { headers: { cookie: `${CIASTKO}=${await zrobSesje(jawny, 'jozz')}` } });
+  assert.equal((await ktoTo(zCiastkiem, { ...env, PODGLAD: 'tak' })).kto, 'jozz', 'na podglądzie wchodzi');
+  assert.equal((await ktoTo(zCiastkiem, { ...env, PODGLAD: 'nie' })).ok, false, 'a w prawdziwym Miejscu nie');
+});

@@ -17,6 +17,17 @@
 // podglądem gałęzi na tym koncie, a podglądy są publiczne i mają jawne klucze.
 
 export const CIASTKO = 'jaskinia_wejscie';
+
+// Sekret, którym podpisujemy sesję. Na podglądzie stoi JAWNIE w wrangler.jsonc, jak wszystkie klucze podglądu;
+// w prawdziwym Miejscu jest sekretem z ustawień Cloudflare i nigdy nie leży w pliku (zasada 12). Wartość
+// z przedrostkiem `podglad-` poza podglądem jest odrzucana, więc skopiowanie tamtej linii do prawdziwego
+// Miejsca nie zadziała po cichu - drzwi powiedzą, że nie są gotowe.
+export const sekretSesji = (env = {}) => {
+  const s = env.SEKRET_SESJI;
+  if (typeof s !== 'string' || s.length < 16) return null;
+  if (s.startsWith('podglad-') && env.PODGLAD !== 'tak') return null;
+  return s;
+};
 export const WYZWANIE_WAZNE_MS = 2 * 60 * 1000;         // dotknięcie telefonu mieści się w dwóch minutach
 export const SESJA_WAZNA_MS = 30 * 24 * 60 * 60 * 1000; // miesiąc: wejście ma być gestem na sekundę, nie co dzień
 const T = new TextEncoder();

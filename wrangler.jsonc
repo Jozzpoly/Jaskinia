@@ -48,6 +48,11 @@
       "MIEJSCE_NAZWA": "dom-2",
       // The agent trial key in plain text, shown by /co-tu-jest on Previews only, so a fresh agent can act without
       // being handed anything. It is the same public key whose hash stands in KLUCZE below.
+      // Owner's door (17 Nov 2026): the session cookie is signed with this secret. On a Preview it is PLAIN,
+      // like every Preview key; in the real Place SEKRET_SESJI is a secret set in Cloudflare and never lives in
+      // this file. The code rejects any value starting with "podglad-" outside a Preview, so copying this line
+      // into the real Place cannot work silently.
+      "SEKRET_SESJI": "podglad-sekret-sesji-jawny-nie-dla-wlasciciela",
       "KLUCZ_PROBNY_AGENTA": "podglad-agent-klucz-publiczny",
       // The owner trial key in plain text, given to the host page on Previews only (one button: enter as the trial
       // owner), so a hand can try the gestures without typing anything. Same public key as in KLUCZE below.

@@ -4,7 +4,7 @@
 // Imię `jozz` to właściciel. Sam klucz zna tylko jego posiadacz; nie trafia do repo, rozmowy ani dziennika.
 // Bez ustawienia KLUCZE Miejsce jest zamknięte i mówi to wprost.
 import { skrot, poprawneImie } from './miejsce.mjs';
-import { ciastkoZNaglowka, czytajSesje } from './drzwi.mjs';
+import { ciastkoZNaglowka, czytajSesje, sekretSesji } from './drzwi.mjs';
 
 // Właściciel: jedno imię z ustawienia Workera (ta sama domyślna wartość co w rdzeniu Miejsca).
 export const wlascicielZUstawien = (env = {}) => (typeof env.WLASCICIEL === 'string' && poprawneImie(env.WLASCICIEL) ? env.WLASCICIEL : 'jozz');
@@ -42,8 +42,9 @@ export async function ktoTo(request, env = {}) {
   // Drugie wejście: sesja z drzwi właściciela (ciastko podpisane sekretem z ustawień Workera). Niesie tylko
   // imię właściciela, bo tylko on ma poświadczenie; cudze imię w podpisanym ciastku i tak tu nie wejdzie.
   const zeton = ciastkoZNaglowka(request.headers.get('cookie'));
-  if (zeton && typeof env.SEKRET_SESJI === 'string') {
-    const sesja = await czytajSesje(env.SEKRET_SESJI, zeton).catch(() => null);
+  const sekret = sekretSesji(env);
+  if (zeton && sekret) {
+    const sesja = await czytajSesje(sekret, zeton).catch(() => null);
     if (sesja && sesja.imie === wlascicielZUstawien(env)) return { ok: true, kto: sesja.imie, skad: 'sesja' };
   }
   return { ok: false, status: 401, blad: 'potrzebny klucz: nagłówek Authorization: Bearer <klucz>, co najmniej 16 znaków (albo wejście drzwiami właściciela)' };

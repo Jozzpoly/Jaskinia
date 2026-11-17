@@ -11,7 +11,7 @@
 // (passkey Apple), więc licznik nie obroni przed powtórzeniem starego podpisu. Obroni wyzwanie, którego już nie ma.
 import { json } from './trasy.mjs';
 import { sprawdzZalozenie, sprawdzWejscie, zrobSesje, ciastkoNaglowek, ciastkoKoniec, b64uZ, b64uDo,
-  WYZWANIE_WAZNE_MS, SESJA_WAZNA_MS } from './drzwi.mjs';
+  sekretSesji, WYZWANIE_WAZNE_MS, SESJA_WAZNA_MS } from './drzwi.mjs';
 
 export const ADRES_DRZWI = '/api/drzwi/';
 const KLUCZ_WYZWANIA = (w) => 'drzwi:wyzwanie:' + w;
@@ -41,7 +41,7 @@ const adres = (m, request) => {
 
 // Czy drzwi są w ogóle gotowe. O sekrecie kod może powiedzieć TYLKO, czy jest ustawiony (zasada 12).
 const stan = (m, request) => ({
-  sekret_sesji_ustawiony: typeof m.env.SEKRET_SESJI === 'string' && m.env.SEKRET_SESJI.length >= 16,
+  sekret_sesji_ustawiony: sekretSesji(m.env) !== null,
   poswiadczen: m.srod.ile({ rodzaj: 'poswiadczenie/1' }),
   nazwa_strony: adres(m, request).nazwaStrony,
   sesja_wazna_dni: Math.round(SESJA_WAZNA_MS / 86400000),
@@ -56,8 +56,8 @@ export async function obsluzDrzwi(m, request) {
   if (krok === 'stan') return json({ ok: true, ...stan(m, request) });
   if (request.method !== 'POST') return json({ ok: false, blad: 'te drzwi otwiera się żądaniem POST' }, 405);
   if (!origin) return json({ ok: false, blad: 'Miejsce nie zna jeszcze własnego adresu; wejdź przez stronę, nie wprost do obiektu' }, 400);
-  const sekret = m.env.SEKRET_SESJI;
-  if (typeof sekret !== 'string' || sekret.length < 16) {
+  const sekret = sekretSesji(m.env);
+  if (!sekret) {
     return json({ ok: false, blad: 'drzwi właściciela nie są gotowe: nie ma ustawienia SEKRET_SESJI (co najmniej 16 znaków) w Cloudflare', ...stan(m, request) }, 503);
   }
   const c = await cialoJson(request);
