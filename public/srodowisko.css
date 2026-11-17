@@ -1,0 +1,66 @@
+/* Strona gospodarza środowiska (17 XI 2026). Próba: prosta i szczera, nie Start. */
+:root {
+  --tlo: #f4f1ea; --plyta: #fbf9f4; --tekst: #24211c; --ciche: #6b645a; --akcent: #9a5b1e; --linia: #d8d1c4;
+  --zywe: #2f8a4a; --stare: #a39a8b; --znak: #b3441e;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --tlo: #15130e; --plyta: #1e1b14; --tekst: #ece6da; --ciche: #a69d8f; --akcent: #e0a35e; --linia: #37322a; --zywe: #58c47a; --stare: #5d564b; --znak: #f08a5d; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--tlo); color: var(--tekst); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; padding-bottom: 4.5rem; }
+a { color: var(--akcent); }
+.gora { position: sticky; top: 0; z-index: 5; display: flex; gap: 1rem; align-items: baseline; justify-content: space-between; padding: .5rem .9rem; background: color-mix(in srgb, var(--tlo) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--linia); }
+.znak { font-weight: 700; color: var(--akcent); letter-spacing: .01em; }
+.proba { font-weight: 500; font-size: .78rem; color: var(--ciche); border: 1px solid var(--linia); border-radius: 99px; padding: .05rem .5rem; margin-left: .35rem; }
+.stan { font-size: .82rem; color: var(--ciche); font-variant-numeric: tabular-nums; text-align: right; }
+main { max-width: 76rem; margin: 0 auto; padding: .6rem .9rem 1rem; }
+.ciche { color: var(--ciche); }
+.uwaga { border: 1px solid var(--linia); border-left: 3px solid var(--akcent); background: var(--plyta); border-radius: .4rem; padding: .45rem .7rem; font-size: .88rem; color: var(--ciche); margin: .4rem 0 0; }
+section { margin-top: 1.1rem; }
+h2 { font-size: .78rem; letter-spacing: .07em; text-transform: uppercase; color: var(--ciche); margin: 0 0 .45rem; display: flex; gap: .5rem; align-items: baseline; }
+h2 .ile { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.siatka { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .55rem; }
+.karta { background: var(--plyta); border: 1px solid var(--linia); border-left: 4px solid var(--stare); border-radius: .5rem; padding: .55rem .65rem .5rem; display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.karta .nazwa { font-weight: 650; overflow-wrap: anywhere; }
+.karta .opis { color: var(--ciche); font-size: .86rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.karta .meta { color: var(--ciche); font-size: .76rem; margin-top: auto; display: flex; flex-wrap: wrap; gap: .1rem .6rem; align-items: center; }
+.karta .ruchy { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .25rem; }
+.nowe { color: var(--znak); font-weight: 650; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; }
+button, .guzik { font: inherit; font-size: .85rem; color: var(--tekst); background: transparent; border: 1px solid var(--linia); border-radius: .4rem; padding: .22rem .6rem; cursor: pointer; text-decoration: none; display: inline-block; }
+button:hover, .guzik:hover { border-color: var(--akcent); color: var(--akcent); }
+button.glowny { background: var(--akcent); border-color: var(--akcent); color: var(--tlo); font-weight: 600; }
+button.glowny:hover { filter: brightness(1.08); color: var(--tlo); }
+ul.lista { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--linia); }
+ul.lista li { padding: .32rem 0; border-bottom: 1px solid var(--linia); display: flex; gap: .6rem; justify-content: space-between; align-items: baseline; min-width: 0; }
+ul.lista li > :first-child { min-width: 0; overflow-wrap: anywhere; }
+ul.lista .bok { color: var(--ciche); font-size: .78rem; white-space: nowrap; }
+details { border: 1px solid var(--linia); border-radius: .45rem; background: var(--plyta); margin-bottom: .4rem; }
+details > summary { cursor: pointer; padding: .4rem .65rem; font-weight: 600; }
+details > summary .ile { color: var(--ciche); font-weight: 500; }
+details > div { padding: 0 .65rem .5rem; }
+.trzy { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: .55rem; }
+.kolumna { background: var(--plyta); border: 1px solid var(--linia); border-radius: .5rem; padding: .5rem .65rem; }
+.kolumna h3 { margin: 0 0 .3rem; font-size: .8rem; letter-spacing: .05em; }
+.kolumna.stoi h3 { color: var(--zywe); } .kolumna.cienko h3 { color: var(--akcent); } .kolumna.brak h3 { color: var(--ciche); }
+.kolumna p { margin: .3rem 0; font-size: .86rem; } .kolumna p b { font-weight: 650; } .kolumna p span { color: var(--ciche); }
+.dol { max-width: 76rem; margin: 1.4rem auto 0; padding: .6rem .9rem; border-top: 1px solid var(--linia); color: var(--ciche); font-size: .82rem; display: flex; flex-wrap: wrap; gap: .2rem .9rem; }
+
+/* okna gości: ramka w piaskownicy; zwinięte okno zostaje załadowane i wraca takie, jakie było */
+#okna .okno { position: fixed; z-index: 20; top: 3.2rem; right: .7rem; bottom: 3.6rem; width: min(52rem, calc(100vw - 1.4rem)); display: flex; flex-direction: column; background: var(--plyta); border: 1px solid var(--linia); border-radius: .6rem; box-shadow: 0 10px 40px rgba(0, 0, 0, .35); overflow: hidden; }
+#okna .okno[hidden] { display: none; }
+.okno .pasek { display: flex; align-items: center; gap: .6rem; padding: .35rem .5rem .35rem .75rem; border-bottom: 1px solid var(--linia); }
+.okno .pasek .tytul { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.okno .pasek .mowi { color: var(--ciche); font-size: .8rem; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.okno iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+@media (prefers-color-scheme: dark) { .okno iframe { background: #111; } }
+#dok { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; gap: .4rem; padding: .45rem .7rem calc(.45rem + env(safe-area-inset-bottom, 0px)); overflow-x: auto; background: color-mix(in srgb, var(--tlo) 90%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--linia); }
+#dok:empty { display: none; }
+#dok button { white-space: nowrap; }
+#dok button.widoczne { border-color: var(--akcent); color: var(--akcent); }
+@media (max-width: 40rem) {
+  #okna .okno { top: 0; right: 0; left: 0; bottom: 3.1rem; width: auto; border-radius: 0; border-width: 0 0 1px; }
+  .gora { flex-direction: column; gap: 0; align-items: flex-start; }
+  .stan { text-align: left; }
+}

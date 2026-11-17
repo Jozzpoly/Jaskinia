@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- Strona gospodarza: jedyny kod, który działa pod adresem Miejsca. Goście żyją w ramkach, w piaskownicy. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-src 'self' https:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Jaskinia: środowisko</title>
+<link rel="stylesheet" href="/srodowisko.css">
+</head>
+<body>
+<header class="gora">
+  <div class="znak">Jaskinia <span class="proba">środowisko · próba</span></div>
+  <div class="stan" id="stan">łączę…</div>
+</header>
+<main id="tresc">
+  <p class="ciche">Czytam Miejsce…</p>
+</main>
+<footer class="dol">
+  <span>To jest środowisko, nie Start. Tekstem, dla każdego agenta:</span>
+  <a href="/co-tu-jest">co tu jest</a>
+  <a href="/rzeczy">rzeczy</a>
+  <a href="/rodzaje">rodzaje</a>
+  <a href="/umowa-okna">umowa okna</a>
+  <a href="/poprzednia.html">poprzednia strona</a>
+</footer>
+<div id="okna"></div>
+<nav id="dok" aria-label="Otwarte okna"></nav>
+<script src="/srodowisko.js" defer></script>
+</body>
+</html>
