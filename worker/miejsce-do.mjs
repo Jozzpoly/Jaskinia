@@ -12,18 +12,28 @@ import { ziarna } from './ziarna.mjs';
 import { obsluzSrodowisko } from './srodowisko-http.mjs';
 import { obejdz } from './obserwator.mjs';
 import { WLASCICIEL as WLASCICIEL_GITHUBA } from './fakty.mjs';
+import { liczacySql, Budzet, naglowekKosztu } from './budzet.mjs';
 
 const MINUTA_MS = 60 * 1000;
+// Plik starej Jaskini zmienia się zwykle dwa razy na dobę: gdy koło gałęzi jest domknięte i nic się nie zmieniło,
+// zaglądamy do niego co godzinę, a nie co kilka minut.
+const SPOKOJNE_KOLO_MIN = 60;
+const ADRES_MIEJSCA = 'miejsce:adres';
 
 export class Miejsce {
   constructor(ctx, env = {}) {
     this.ctx = ctx;
     this.env = env;
+    // Każde zapytanie do bazy dolicza swoje wiersze do licznika: z niego jest koszt żądania i suma doby (budzet.mjs).
+    this.sql = liczacySql(ctx.storage.sql);
     // Kto jest właścicielem, mówi ustawienie Workera (WLASCICIEL), nie kod.
-    this.rdzen = new Rdzen(ctx.storage.sql, { wlasciciel: env.WLASCICIEL });
+    this.rdzen = new Rdzen(this.sql, { wlasciciel: env.WLASCICIEL });
     this.srod = new Srodowisko(this.rdzen);
+    // Dobowy limit zapisów tego Miejsca (BUDZET_ZAPISOW_NA_DOBE); bez ustawienia Miejsce tylko liczy.
+    this.budzet = new Budzet(this.rdzen, this.sql.licznik, { limit: env.BUDZET_ZAPISOW_NA_DOBE });
     this.zasiane = null;
     this.alarmSprawdzony = false;
+    this.host = null;
   }
 
   // Zasiew środowiska: jeden na instancję, kolejne wejścia czekają na ten sam.
@@ -32,9 +42,37 @@ export class Miejsce {
     return this.zasiane;
   }
 
-  // Obejście obserwatora faktów z ustawieniami Workera. Token tylko z env, nigdy z danych.
-  _obejdz() {
-    return obejdz(this.srod, { owner: this.env.OBSERWATOR_WLASCICIEL || WLASCICIEL_GITHUBA, token: this.env.GITHUB_DANE_TOKEN || null });
+  // Pod jakim adresem stoi to Miejsce. Alarm nie ma żądania, z którego dałoby się to odczytać, więc adres z ostatniego
+  // wejścia zostaje w zapisie (jeden zapis, gdy się zmieni).
+  _zapamietajAdres(request) {
+    let host = null;
+    try { host = new URL(request.headers.get('x-origin') || request.url).host.toLowerCase(); } catch { /* bez adresu zostaje poprzedni */ }
+    if (!host || host === this.host) return;
+    this.host = host;
+    try { if (this.rdzen.meta(ADRES_MIEJSCA) !== host) this.rdzen.ustawMeta(ADRES_MIEJSCA, host); } catch { /* adres to wygoda dla alarmu */ }
+  }
+
+  _host() {
+    if (!this.host) { try { this.host = this.rdzen.meta(ADRES_MIEJSCA) || null; } catch { /* nieznany */ } }
+    return this.host;
+  }
+
+  // Obserwator chodzi tylko tam, gdzie go wpuszczono. Każdy podgląd gałęzi ma własną bazę, a pierwsze koło faktów to
+  // kilkanaście tysięcy zapisanych wierszy ze wspólnego dobowego limitu konta: gdyby chodził na każdym podglądzie,
+  // kilka gałęzi jednego dnia zatrzymałoby zapis wszędzie. OBSERWATOR_ADRESY to początki nazw hosta po przecinku
+  // (np. "fable-srodowisko-"); bez tego ustawienia obserwator chodzi wszędzie, gdzie OBSERWATOR=tak.
+  _wolnoObserwatorowi() {
+    if (this.env.OBSERWATOR !== 'tak') return false;
+    const lista = String(this.env.OBSERWATOR_ADRESY || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+    if (!lista.length) return true;
+    const host = this._host();
+    return !!host && lista.some((poczatek) => host.startsWith(poczatek));
+  }
+
+  // Obejście obserwatora faktów z ustawieniami Workera. Token tylko z env, nigdy z danych. Adres pliku faktów starej
+  // Jaskini (drugie źródło, gdy API GitHuba odmawia) też z env; `dodatkowe` to to, co podały drzwi ręczne (np. ileRepoNaRaz).
+  _obejdz(dodatkowe = {}) {
+    return obejdz(this.srod, { owner: this.env.OBSERWATOR_WLASCICIEL || WLASCICIEL_GITHUBA, token: this.env.GITHUB_DANE_TOKEN || null, biblioteka: this.env.OBSERWATOR_BIBLIOTEKA || null, licznik: this.sql.licznik, ...dodatkowe });
   }
 
   // Co ile minut budzi się obserwator: domyślnie 30, nie rzadziej niż raz na dobę i nie częściej niż co 5 minut.
@@ -43,10 +81,10 @@ export class Miejsce {
     return Number.isFinite(n) && n > 0 ? Math.min(1440, Math.max(5, n)) : 30;
   }
 
-  // Pierwszy alarm: po zasiewie, gdy obserwator jest włączony i nikt jeszcze nie ustawił alarmu. Wszystko, co dotyka
+  // Pierwszy alarm: po zasiewie, gdy obserwator ma tu wstęp i nikt jeszcze nie ustawił alarmu. Wszystko, co dotyka
   // alarmów, jest opcjonalne: w sprawdzianach ctx.storage ma tylko sql.
   async _pierwszyAlarm() {
-    if (this.alarmSprawdzony || this.env.OBSERWATOR !== 'tak') return;
+    if (this.alarmSprawdzony || !this._wolnoObserwatorowi()) return;
     const st = this.ctx.storage;
     if (typeof st.getAlarm !== 'function' || typeof st.setAlarm !== 'function') return;
     try {
@@ -56,20 +94,44 @@ export class Miejsce {
   }
 
   // Budzenie obserwatora faktów. Błąd obejścia nie zatrzymuje budzenia: następny alarm ustawia się zawsze.
+  // Tam, gdzie obserwator nie ma wstępu, alarm gaśnie sam (nie ustawia następnego).
   async alarm() {
-    if (this.env.OBSERWATOR !== 'tak') return;
+    if (!this._wolnoObserwatorowi()) return;
+    let rzadko = false;
+    const znacznik = this.budzet.otworz();
     try {
       await this._zasiew();
-      await this._obejdz();
+      // Po dojściu do dobowego limitu zapisów obserwator czeka do jutra: fakty poczekają, wspólny budżet nie.
+      if (!this.budzet.przekroczony()) {
+        const w = await this._obejdz();
+        rzadko = !!(w && w.zrodlo === 'plik' && w.kolo_spokojne === true);
+      } else rzadko = true;
     } catch (e) {
       console.error('obserwator: obejście nie wyszło: ' + String((e && e.message) || e).slice(0, 200));
     } finally {
-      try { await this.ctx.storage?.setAlarm?.(Date.now() + this._coMinut() * MINUTA_MS); } catch { /* następne wejście ustawi alarm od nowa */ }
+      this.budzet.zamknij(znacznik);
+      const co = rzadko ? Math.max(this._coMinut(), SPOKOJNE_KOLO_MIN) : this._coMinut();
+      try { await this.ctx.storage?.setAlarm?.(Date.now() + co * MINUTA_MS); } catch { /* następne wejście ustawi alarm od nowa */ }
     }
   }
 
+  // Każde żądanie wychodzi z miarą: ile wierszy bazy przeczytało i zapisało (nagłówek x-koszt).
   async fetch(request) {
+    const znacznik = this.budzet.otworz();
+    const odp = await this._obsluz(request);
+    const koszt = this.budzet.zamknij(znacznik);
+    try { odp.headers.set('x-koszt', naglowekKosztu(koszt)); } catch { /* odpowiedź, której nagłówków nie da się zmienić, zostaje bez miary */ }
+    return odp;
+  }
+
+  async _obsluz(request) {
     const sciezka = new URL(request.url).pathname;
+    this._zapamietajAdres(request);
+    // Bezpiecznik: po dojściu do dobowego limitu zapisów Miejsce tylko czyta (budzet.mjs).
+    if (request.method !== 'GET' && this.budzet.przekroczony()) {
+      const o = this.budzet.odmowa();
+      return new Response(JSON.stringify(o, null, 2), { status: o.status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+    }
     if (sciezka === '/api/miejsce' || sciezka.startsWith('/api/miejsce/')) {
       const odp = await obsluzMiejsce(this.rdzen, request);
       // Po wwozie całości spis środowiska liczy się od nowa z głów i dziennika, a zasiew sprawdza się jeszcze raz:
@@ -89,6 +151,6 @@ export class Miejsce {
       await this.srod.zasiej(nowi.map((imie) => ({ nazwa: 'uczestnik-' + imie, rodzaj: 'uczestnik/1', cechy: { imie, rola: 'agent', opis: 'Uczestnik znany z klucza ustawionego przez właściciela.' } })));
       nowi.forEach((i) => this.znani.add(i));
     }
-    return obsluzSrodowisko(this.srod, request, { podglad: this.env.PODGLAD === 'tak', kluczProbny: this.env.KLUCZ_PROBNY_AGENTA || null, obejdz: this.env.OBSERWATOR === 'tak' ? () => this._obejdz() : null });
+    return obsluzSrodowisko(this.srod, request, { podglad: this.env.PODGLAD === 'tak', kluczProbny: this.env.KLUCZ_PROBNY_AGENTA || null, obejdz: this._wolnoObserwatorowi() ? (dodatkowe) => this._obejdz(dodatkowe) : null, budzet: this.budzet.opis() });
   }
 }

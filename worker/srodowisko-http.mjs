@@ -47,7 +47,7 @@ function filtrZAdresu(s, p) {
   return f;
 }
 
-export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbny = null, obejdz = null } = {}) {
+export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbny = null, obejdz = null, budzet = null } = {}) {
   const url = new URL(request.url);
   const kto = request.headers.get('x-kto') || null;
   const slad = request.headers.get('x-cialo');
@@ -57,7 +57,7 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
   // ?jako=<imię> to perspektywa bez dowodu, tylko na podglądzie; cokolwiek innego niż imię pomijamy, żeby nie dało
   // się tędy wpisać własnych wierszy do tekstu, który czytają agenci.
   const jako = poprawneImie(p.get('jako')) ? p.get('jako') : null;
-  const opcje = { kto, jako, od: liczba(p.get('od')), origin, podglad, kluczProbny, probnyImie: request.headers.get('x-probny-imie') || null };
+  const opcje = { kto, jako, od: liczba(p.get('od')), origin, podglad, kluczProbny, probnyImie: request.headers.get('x-probny-imie') || null, budzet };
 
   if (request.method === 'GET') {
     if (sciezka.startsWith('/gosc/')) {
@@ -113,8 +113,10 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     if (sciezka === '/api/srodowisko/obejdz') {
       if (!kto) return json({ ok: false, status: 401, blad: 'ręczne obejście wymaga klucza właściciela' });
       if (s.rola(kto) !== 'wlasciciel') return json({ ok: false, status: 403, blad: 'obserwatora faktów budzi ręcznie tylko właściciel' });
-      if (typeof obejdz !== 'function') return json({ ok: false, status: 503, blad: 'obserwator nie jest włączony w tym Miejscu (ustawienie OBSERWATOR=tak)' });
-      const w = await obejdz();
+      if (typeof obejdz !== 'function') return json({ ok: false, status: 503, blad: 'obserwator nie chodzi w tym Miejscu: nie jest włączony (ustawienie OBSERWATOR=tak) albo nie ma wstępu pod ten adres (ustawienie OBSERWATOR_ADRESY)' });
+      // ?ile=<1..50>: ile repozytoriów ma dostać sprawdzone gałęzie w tym obejściu; wartość spoza zakresu pomijamy
+      const ile = Number(p.get('ile'));
+      const w = await obejdz(Number.isInteger(ile) && ile >= 1 && ile <= 50 ? { ileRepoNaRaz: ile } : {});
       return json({ ...w, ...(w && w.ok === false ? { status: 502 } : {}) });
     }
     if (sciezka === '/api/srodowisko/widzialem') {

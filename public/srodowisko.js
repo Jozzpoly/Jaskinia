@@ -199,7 +199,8 @@
 
     // Projekty to dzieła (rodzaj projekt) i fakty o repozytoriach, które przyniósł obserwator (rodzaj repo).
     // Karta czyta jedne i drugie tak samo: nazwa, opis, gdzie zagrać, gdzie źródło, kiedy ostatnio żyło.
-    const jakoProjekt = (r) => (r.rodzaj.startsWith('repo/') ? { ...r, cechy: { ...r.cechy, zagraj: r.cechy.strona, zrodlo: r.cechy.adres, zycie: r.cechy.ostatni_push } } : r);
+    // Tytułem jest ladna_nazwa (z pliku starej Jaskini), gdy jest; opisem tożsamość (jedno zdanie, czym to jest), gdy jest.
+    const jakoProjekt = (r) => (r.rodzaj.startsWith('repo/') ? { ...r, tytul: (typeof r.cechy.ladna_nazwa === 'string' && r.cechy.ladna_nazwa) || r.tytul, cechy: { ...r.cechy, opis: (typeof r.cechy.tozsamosc === 'string' && r.cechy.tozsamosc) || r.cechy.opis, zagraj: r.cechy.strona, karta: r.cechy.karta, wejscie: r.cechy.wejscie, zrodlo: r.cechy.adres, zycie: r.cechy.ostatni_push } } : r);
     const projekty = rzeczy.filter((r) => r.rodzaj.startsWith('projekt/') || r.rodzaj.startsWith('repo/')).map(jakoProjekt).sort((a, b) => String(b.cechy.zycie || '').localeCompare(String(a.cechy.zycie || '')));
     const pr = d.przeniesienie;
     t.append(el('section', {}, el('h2', {}, 'Projekty ', el('span', { klasa: 'ile', tekst: pr.publiczne_repozytoria ? `${projekty.length} w środku na ${pr.publiczne_repozytoria.ile} publicznych repozytoriów` : `${projekty.length} w środku` })),
@@ -227,15 +228,20 @@
     if (kolor) k.style.borderLeftColor = kolor;
     k.append(el('div', { klasa: 'nazwa', tekst: r.tytul }));
     if (typeof c.opis === 'string' && c.opis) k.append(el('div', { klasa: 'opis', tekst: c.opis }));
+    // wejscie to jedno zdanie o wejściu do gry (np. czemu nie ma guzika); tekst idzie przez textContent, nigdy jako HTML
+    if (typeof c.wejscie === 'string' && c.wejscie) k.append(el('div', { klasa: 'opis ciche', tekst: c.wejscie }));
     const ruchy = el('div', { klasa: 'ruchy' });
     const swoja = odWlasciciela(r);
-    if (typeof c.zagraj === 'string' && /^https:\/\//.test(c.zagraj)) ruchy.append(el('button', { klasa: 'glowny', tekst: 'Zagraj', title: swoja ? c.zagraj : 'Adres podał ' + r.zmienil + ', nie właściciel: otworzy się bez własnej pamięci. ' + c.zagraj, klik: () => otworz({ klucz: 'p:' + r.id, tytul: r.tytul, adres: c.zagraj, piaskownica: swoja ? 'swoj' : 'obcy' }) }));
+    // gra z karta: true ma się otwierać w osobnej karcie: ramka dzieli pamięć gry i miejsce przy stole przepada
+    const wKarcie = c.karta === true && typeof c.zagraj === 'string' && /^https:///.test(c.zagraj);
+    if (wKarcie) ruchy.append(el('a', { klasa: 'guzik glowny', href: c.zagraj, target: '_blank', rel: 'noopener', title: typeof c.wejscie === 'string' && c.wejscie ? c.wejscie : null, tekst: 'Zagraj w karcie' }));
+    else if (typeof c.zagraj === 'string' && /^https:\/\//.test(c.zagraj)) ruchy.append(el('button', { klasa: 'glowny', tekst: 'Zagraj', title: swoja ? c.zagraj : 'Adres podał ' + r.zmienil + ', nie właściciel: otworzy się bez własnej pamięci. ' + c.zagraj, klik: () => otworz({ klucz: 'p:' + r.id, tytul: r.tytul, adres: c.zagraj, piaskownica: swoja ? 'swoj' : 'obcy' }) }));
     if (typeof c.zrodlo === 'string' && /^https:\/\//.test(c.zrodlo)) ruchy.append(el('a', { klasa: 'guzik', href: c.zrodlo, target: '_blank', rel: 'noopener', tekst: 'źródło' }));
     if (ruchy.childNodes.length) k.append(ruchy);
     k.append(el('div', { klasa: 'meta' }, r.wersja > widziany && widziany > 0 ? el('span', { klasa: 'nowe', tekst: 'nowe' }) : null,
       c.zycie ? el('span', { tekst: 'żyje: ' + kiedy(c.zycie) }) : el('span', { tekst: 'brak daty życia' }),
       // skąd rzecz pochodzi: kto ją dołożył i kto ostatnio zmienił; rzecz nie od właściciela jest oznaczona
-      el('span', { klasa: swoja ? null : 'nowe', tekst: swoja ? (r.utworzyl === 'obserwator' ? 'fakt z GitHuba' + (Number.isFinite(c.galezie) ? ', gałęzi: ' + c.galezie : '') : 'od właściciela') : 'dołożył ' + r.utworzyl + (r.zmienil !== r.utworzyl ? ', zmienił ' + r.zmienil : '') }),
+      el('span', { klasa: swoja ? null : 'nowe', tekst: swoja ? (r.utworzyl === 'obserwator' ? (typeof c.zrodlo_faktow === 'string' && c.zrodlo_faktow.startsWith('plik') ? 'fakt: plik starej Jaskini' : 'fakt: GitHub') + (c.stan_na ? ', ' + kiedy(c.stan_na) : '') + (Number.isFinite(c.galezie) ? ', gałęzi: ' + c.galezie : '') : 'od właściciela') : 'dołożył ' + r.utworzyl + (r.zmienil !== r.utworzyl ? ', zmienił ' + r.zmienil : '') }),
       el('a', { href: '/rzecz/' + r.id, tekst: 'szczegóły' })));
     return k;
   }

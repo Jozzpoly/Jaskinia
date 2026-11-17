@@ -30,6 +30,20 @@
       // Facts observer (17 Nov 2026): the Durable Object wakes by alarm and pulls public repo facts from GitHub. No token here:
       // the optional GITHUB_DANE_TOKEN is a secret set in Cloudflare, never in this file.
       "OBSERWATOR": "tak",
+      // Where the observer may run: beginnings of host names, comma separated. Every branch Preview has its own database, and
+      // the first round of facts costs over ten thousand written rows out of the account-wide daily limit (100,000 on
+      // the free plan), so it runs only on the trunk Preview and on the branch that builds it.
+      "OBSERWATOR_ADRESY": "fable-srodowisko-,fable-automat-faktow-",
+      // Daily cap of written database rows for one Preview Miejsce. Preview keys are public, so without a cap one looping
+      // agent (or a vandal) could spend the whole account's daily write budget through a single Preview.
+      "BUDZET_ZAPISOW_NA_DOBE": "25000",
+      // Second source (17 Nov 2026): without a token GitHub's API refuses from Cloudflare addresses (403), so the observer
+      // falls back to this public facts file. The old Jaskini's automation publishes and refreshes it, usually twice a day;
+      // its estate.generated says how old the facts are.
+      "OBSERWATOR_BIBLIOTEKA": "https://jozzpoly.github.io/Jozz-Cave-Workbench/dane/library.json",
+      // Minutes between wakeups (minimum 5) while the file's branch circle is still being walked; once the circle is closed
+      // and nothing changed, the file source waits at least 60 minutes.
+      "OBSERWATOR_CO_MIN": "5",
       "WLASCICIEL": "probny-wlasciciel",
       "MIEJSCE_NAZWA": "dom-2",
       // The agent trial key in plain text, shown by /co-tu-jest on Previews only, so a fresh agent can act without
