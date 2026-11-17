@@ -64,5 +64,20 @@ więc `przyjmijWiadomosc` nigdy się nie uruchamia. 90 × `ping` → połączeni
 → 4429. Mechanizm jest zdrowy (ping nie budzi obiektu i nie kosztuje wiersza); **fałszywe jest zdanie o nim**,
 bo w Node automatycznej odpowiedzi nie ma i sprawdzian opisuje świat, którego pod adresem nie ma.
 
+### Obecność niosła identyfikator rzeczy (17 XI 2026, znalezione pod adresem)
+
+```
+node proby/z3-kanal-na-zywo/atak-obecnosc.mjs <adres https>
+```
+
+Trzeci skrypt i trzeci powód osobnego pliku: ten **zapisuje** do Miejsca (musi zrobić zamknięty obszar i rzecz
+w nim), a `atak.mjs` z założenia nie zapisuje nic. Dwa połączenia naraz, właściciel siada przy rzeczy w obszarze
+`widzi: wlasciciel` — i przed poprawką uczestnik dostawał jej identyfikator w wiadomości `obecni`.
+
+Granica widoczności filtrowała spis, adres rzeczy, dziennik i liczniki; **kanał nie pyta spisu**, więc jej nie
+dotyczyła. Teraz `rozglosObecnych` buduje listę dla każdego czytelnika osobno i pyta o rzecz tymi samymi okularami
+co spis (`widac` podaje obiekt Miejsca; sam plik `zywe.mjs` dalej nie zna praw). Zostaje sama obecność bez rzeczy:
+że ktoś jest, słychać i tak po numerze aktu, więc ukrywanie tego byłoby udawaniem.
+
 **Warunek zburzenia tych skryptów:** gdy kanał zacznie nieść cokolwiek poza numerem aktu i obecnością, ten atak
 przestaje wystarczać i trzeba napisać nowy — ten pyta tylko o to, czy przez kanał nie przechodzi treść i imię.

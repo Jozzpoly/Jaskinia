@@ -14,7 +14,9 @@ async function swiat() {
   let t = Date.UTC(2026, 10, 17, 15, 0, 0);
   const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
   const s = new Srodowisko(r);
-  await s.zasiej(ziarna({ wlasciciel: 'jozz' }));
+  // Od 17 XI prawa bierze się z rzeczy uczestnika, nie z samego imienia: świat sprawdzianu zasiewa agenta jako rzecz,
+  // tak jak Miejsce zasiewa imiona z kluczy.
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }));
   const goscie = s.spis({ rodzaj: 'gosc/1', limit: 20 });
   const slowa = goscie.find((g) => g.cechy.nazwa === 'Słowa'), lista = goscie.find((g) => g.cechy.nazwa === 'Lista rzeczy');
   const projekt = await s.ruch('jozz', { op: 'gosc-test-projekt', co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Próbny projekt' } });
@@ -167,4 +169,22 @@ test('G10. drzwi: nagłówek X-Gosc zamienia ruch uczestnika w ruch z okna; bez 
   assert.equal(bez.status, 401);
   const pusty = await obsluzSrodowisko(s, zadanie({ 'x-kto': 'jozz', 'x-gosc': '' }, { op: 'gosc-test-g10-c', ...slowo(projekt) }));
   assert.equal(pusty.status, 400, 'pusty nagłówek nie znaczy "bez gościa": okno, które nie umie się przedstawić, nie pisze jako uczestnik');
+});
+
+test('G11. okno otwarte przez uczestnika z odebranym wstępem nie pisze; po przywróceniu pisze znowu', async () => {
+  const { s, slowa, projekt } = await swiat();
+  const ucz = s.spis({ rodzaj: 'uczestnik/1', gdzie: { imie: 'agent-a' }, limit: 1 })[0];
+  assert.ok(ucz, 'uczestnik agent-a jest rzeczą');
+  const odebranie = await s.ruch('jozz', { op: 'gosc-test-g11-odloz', co: 'odloz', rzecz: ucz.id, wersja: ucz.wersja, powod: 'odebranie wstępu' });
+  assert.equal(odebranie.ok, true, JSON.stringify(odebranie));
+  // gość dalej jest rzeczą i dalej ma swoje prawo, ale prawo okna jest słabszym z dwóch, a otwierający nie ma już żadnego
+  const bez = await s.ruch('agent-a', { op: 'gosc-test-g11-a', ...slowo(projekt) }, { gosc: slowa.id });
+  assert.equal(bez.ok, false, JSON.stringify(bez));
+  assert.equal(bez.status, 401, 'imię z kluczem, ale bez rzeczy uczestnika, nie daje oknu żadnego prawa');
+  assert.equal(s.ile({ rodzaj: 'slowo/1' }), 0);
+  assert.equal(s.ile({ rodzaj: 'propozycja/1' }), 0, 'nie powstaje też propozycja');
+  const oddanie = await s.ruch('jozz', { op: 'gosc-test-g11-przywroc', co: 'przywroc', rzecz: ucz.id, wersja: 'dowolna' });
+  assert.equal(oddanie.ok, true, JSON.stringify(oddanie));
+  const po = await s.ruch('agent-a', { op: 'gosc-test-g11-b', ...slowo(projekt) }, { gosc: slowa.id });
+  assert.equal(po.skutek, 'polozone', JSON.stringify(po));
 });

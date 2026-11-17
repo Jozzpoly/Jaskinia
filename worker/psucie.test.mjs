@@ -19,7 +19,7 @@ async function swiat() {
   let t = Date.UTC(2026, 10, 17, 2, 0, 0);
   const r = new Rdzen(sqlZNode(), { teraz: () => (t += 1000) });
   const s = new Srodowisko(r);
-  await s.zasiej(ziarna({ wlasciciel: 'jozz' }));
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-probny', 'agent-a', 'agent-b', 'agent-0', 'agent-1', 'agent-2', 'podglad'] }));
   return { r, s, nowe: r.meta('obszar_nowe'), glowny: r.meta('obszar_glowny') };
 }
 const R = (s, kto, c) => s.ruch(kto, { op: op(), ...c });
@@ -578,7 +578,7 @@ test('6g. wwóz: obszar główny zamknięty przez właściciela ("nic") po wwozi
 test('6h. wwóz: pierwsze wejście do środowiska po wwozie (miejsce-do.mjs woła zasiej zawsze) nie sieje drugi raz kształtów, obszarów i uczestników', async () => {
   const { s2 } = await poWwozie();
   const przed = s2.q(`SELECT COUNT(*) AS n FROM rzeczy`)[0].n;
-  const nowoZasiane = await s2.zasiej(ziarna({ wlasciciel: 'jozz' }));
+  const nowoZasiane = await s2.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-probny', 'agent-a', 'agent-b', 'agent-0', 'agent-1', 'agent-2', 'podglad'] }));
   assert.deepEqual(nowoZasiane, [], 'zasiew po wwozie zasiał drugi raz ' + nowoZasiane.length + ' ziaren (rzeczy: ' + przed + ' -> ' + s2.q(`SELECT COUNT(*) AS n FROM rzeczy`)[0].n + ')');
 });
 
