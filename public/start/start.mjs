@@ -409,12 +409,15 @@ function rysujPasek() {
   const repo = swiat ? swiat.projekty.filter((p) => p.fakt).length : 0;
   const dziel = swiat ? swiat.projekty.length - repo : 0;
   const co = [dziel ? lp(dziel, 'dzieło', 'dzieła', 'dzieł') : null, repo || !dziel ? lp(repo, 'repozytorium', 'repozytoria', 'repozytoriów') : null].filter(Boolean).join(' i ');
-  const obce = swiat && swiat.obce ? ` · ${lp(swiat.obce, 'położenie leży', 'położenia leżą', 'położeń leży')} poza obszarem widoku i nie jest pokazane` : '';
-  $('stan').textContent = `${co} · akt ${d.miejsce.akt} · ${ja || 'zwiedzający'} · ${drzwi.zywe ? 'na żywo' : 'bez połączenia na żywo'}${tu}${obce}`;
+  const obce = (swiat && swiat.obce ? ` · ${lp(swiat.obce, 'położenie leży', 'położenia leżą', 'położeń leży')} poza obszarem widoku i nie jest pokazane` : '')
+    + (drzwi.uciete ? ` · UCIĘTE: wczytane ${drzwi.uciete.pokazane} z ${drzwi.uciete.razem} rzeczy, reszty tu nie widać` : '');
+  $('stan').textContent = `${co} · akt ${drzwi.akt} · ${ja || 'zwiedzający'} · ${drzwi.zywe ? 'na żywo' : 'bez połączenia na żywo'}${tu}${obce}`;
   $('stan').title = drzwi.zywe ? 'Połączenie stoi: zmiany przychodzą same.' : 'Połączenie na żywo nie stoi: strona pyta o zmiany co kilka sekund.';
   // To, co czeka na właściciela (propozycje agentów, także położeń, i prośby), widać od razu; rozstrzyga się na
   // stronie gospodarza, bo szkielet nie ma jeszcze warstwy propozycji na płótnie.
-  const ileCzeka = d.czeka.propozycje.length + d.czeka.prosby.length;
+  // ile czeka na właściciela: z rzeczy, które strona ma, nie z opisu (opisu po zmianie już nie czytamy)
+  let ileCzeka = 0;
+  for (const r of drzwi.rzeczy.values()) if ((r.rodzaj === 'propozycja/1' || r.rodzaj === 'prosba/1') && r.cechy.stan === 'czeka') ileCzeka++;
   $('czeka').hidden = !ileCzeka;
   $('czeka').textContent = 'czeka: ' + ileCzeka;
   $('czeka').title = 'Propozycje i prośby, które czekają na właściciela. Rozstrzyga się je na stronie gospodarza.';

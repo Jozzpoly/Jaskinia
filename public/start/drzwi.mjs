@@ -46,6 +46,9 @@ export class Drzwi {
     for (let k = s; !k.wszystko && lista.length < 20000;) { k = await this.czytaj('/api/srodowisko/spis?pomin=' + lista.length); lista.push(...k.rzeczy); if (!k.rzeczy.length) break; }
     this.opis = o;
     this.rzeczy = new Map(lista.map((r) => [r.id, r]));
+    // Granica wejścia ma znak: gdy Miejsce jest większe niż to, co strona wzięła, mówi to wprost, zamiast pokazywać
+    // niepełny świat jak cały (gotowość na wykończenie, G8).
+    this.uciete = Number.isInteger(s.razem) && lista.length < s.razem ? { pokazane: lista.length, razem: s.razem } : null;
     this.akt = Math.min(o.miejsce.akt, Number.isInteger(s.akt) ? s.akt : o.miejsce.akt);
     this.naZmiane();
   }
@@ -54,11 +57,14 @@ export class Drzwi {
   async dogon() {
     if (!this.opis) return this.wszystko();
     const od = this.akt;
-    const [o, s] = await Promise.all([this.czytaj('/api/srodowisko/opis'), this.czytaj('/api/srodowisko/spis?odlozone=razem&po=' + od)]);
-    if (o.miejsce.akt < od || !s.wszystko || !Number.isInteger(s.akt)) return this.wszystko();
+    // Tylko różnica: rzeczy zmienione po moim akcie. Całego opisu Miejsca Start po zmianie nie czyta: to było
+    // najdroższe czytanie i szło po każdej zmianie w każdej otwartej stronie (dowody środowiska, fala 9, punkt D).
+    // To, co pasek brał z opisu, a co się zmienia (numer aktu, ile czeka), liczy się z rzeczy, które strona już ma;
+    // opis wraca przy wejściu, wyjściu i czytaniu całości.
+    const s = await this.czytaj('/api/srodowisko/spis?odlozone=razem&po=' + od);
+    if (!s.wszystko || !Number.isInteger(s.akt) || s.akt < od) return this.wszystko();
     for (const r of s.rzeczy) { if (r.odlozone) this.rzeczy.delete(r.id); else this.rzeczy.set(r.id, r); }
-    this.opis = o;
-    this.akt = Math.min(o.miejsce.akt, s.akt);
+    this.akt = s.akt;
     this.naZmiane();
   }
 
