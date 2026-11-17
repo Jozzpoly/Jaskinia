@@ -9,6 +9,7 @@ import worker from './index.mjs';
 import { sqlZNode } from './sql-node.mjs';
 import { skrot } from './miejsce.mjs';
 import { b64uZ, b64uDo, CIASTKO, zrobSesje, nazwaStronyZAdresu } from './drzwi.mjs';
+import { WYZWAN_NA_MINUTE } from './drzwi-http.mjs';
 
 const SEKRET = 'sekret-sesji-do-sprawdzianu-32-znaki';
 const KLUCZ_WLASCICIELA = 'klucz-wlasciciela-do-sprawdzianu';
@@ -134,7 +135,12 @@ test('DT3. nowego poświadczenia nie założy nikt oprócz wpuszczonego właści
     assert.equal(o.status, 403, `${kto || 'bez klucza'} nie dostaje nawet wyzwania do zakładania`);
     assert.equal((await dane(o)).ok, false);
   }
-  // a wyzwanie do wejścia dostaje każdy, bo drzwi mają wpuszczać
+  // tam, gdzie nie ma czym wejść, drzwi nie wydają nawet wyzwania: to powierzchnia do zalewania, a nie usługa
+  const puste = await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } }));
+  assert.equal(puste.status, 404);
+  // ale gdy poświadczenie jest, wyzwanie do wejścia dostaje każdy, bo drzwi mają wpuszczać
+  const z0 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+  await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: z0.wyzwanie, ...t.zaloz(z0.wyzwanie) } }));
   const we = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } })));
   assert.equal(we.ok, true);
   // i samo zapisanie też jest zamknięte, nawet z poprawnym wyzwaniem wziętym przez właściciela
@@ -159,9 +165,15 @@ test('DT4. bez ustawienia SEKRET_SESJI drzwi mówią wprost, czego brakuje, i ni
 
 test('DT5. nieznane poświadczenie brzmi tak samo jak odłożone: drzwi nie mówią, czym właściciel wchodził', async () => {
   const { obiekt } = miejsce();
-  const t = await telefon(), inny = await telefon();
-  const z1 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
-  const zap = await dane(await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: z1.wyzwanie, ...t.zaloz(z1.wyzwanie) } })));
+  const t = await telefon(), inny = await telefon(), zostaje = await telefon();
+  const zaloz = async (tel) => {
+    const z = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+    return dane(await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: z.wyzwanie, ...tel.zaloz(z.wyzwanie) } })));
+  };
+  const zap = await zaloz(t);
+  // drugie urządzenie zostaje w Miejscu, żeby drzwi dalej miały czym wpuszczać: inaczej obie próby odbiłyby się
+  // już na wyzwaniu i nie powiedziałyby nic o tym, co nas tu interesuje
+  await zaloz(zostaje);
   const rz = obiekt.srod.rzecz(zap.rzecz);
   await obiekt.srod.ruch('jozz', { op: 'drzwi-test-odloz-1', co: 'odloz', rzecz: rz.id, wersja: rz.wersja, powod: 'telefon zgubiony' });
 
@@ -175,7 +187,8 @@ test('DT5. nieznane poświadczenie brzmi tak samo jak odłożone: drzwi nie mów
   assert.deepEqual(odlozone, nieznane, 'odłożone i nieznane brzmią co do znaku tak samo');
   assert.equal(odlozone[0], 401);
   const z = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } })));
-  assert.deepEqual(z.poswiadczenia, [], 'i lista, czym można wejść, nie wymienia odłożonego');
+  assert.ok(!z.poswiadczenia.includes(t.id), 'a lista, czym można wejść, nie wymienia odłożonego');
+  assert.equal(z.poswiadczenia.length, 1, 'zostaje to drugie');
 });
 
 test('DT6. front Workera: do drzwi wolno przyjść bez niczego, a ciastko sesji jest tożsamością właściciela', async () => {
@@ -238,4 +251,41 @@ test('DT8. jawny sekret podglądu nie staje się sekretem prawdziwego Miejsca pr
   const zCiastkiem = new Request(ADRES, { headers: { cookie: `${CIASTKO}=${await zrobSesje(jawny, 'jozz')}` } });
   assert.equal((await ktoTo(zCiastkiem, { ...env, PODGLAD: 'tak' })).kto, 'jozz', 'na podglądzie wchodzi');
   assert.equal((await ktoTo(zCiastkiem, { ...env, PODGLAD: 'nie' })).ok, false, 'a w prawdziwym Miejscu nie');
+});
+
+test('DT9. bezpiecznik budżetu zatrzymuje ZAPIS poświadczenia, ale nigdy nie zamyka właścicielowi drzwi', async () => {
+  // Świadoma asymetria: dobowy limit zapisów ma zatrzymywać zmiany, a nie zamykać go poza własnym Miejscem.
+  // Wejście samo w sobie nie potrzebuje zapisu (sesja jest podpisana, nie zapamiętana); zapisem jest tylko ślad.
+  const { obiekt } = miejsce();
+  const t = await telefon();
+  const z1 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+  const zap = await dane(await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: z1.wyzwanie, ...t.zaloz(z1.wyzwanie) } })));
+
+  obiekt.budzet.przekroczony = () => true;
+  const drugi = await telefon();
+  const z2 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+  const nie = await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: z2.wyzwanie, ...drugi.zaloz(z2.wyzwanie) } }));
+  assert.ok(nie.status === 429 || nie.status === 503, `zapis poświadczenia podlega bezpiecznikowi (było ${nie.status})`);
+
+  const z3 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } })));
+  const we = await obiekt.fetch(zad('/api/drzwi/wejdz', { cialo: { wyzwanie: z3.wyzwanie, poswiadczenie: t.id, ...(await t.wejdz(z3.wyzwanie, { licznik: 7 })) } }));
+  assert.equal(we.status, 200, 'a wejście działa dalej');
+  assert.match(we.headers.get('set-cookie'), /jaskinia_wejscie=/);
+  assert.equal(obiekt.srod.rzecz(zap.rzecz).cechy.licznik, 0, 'tylko ślad wejścia odpada, bo to jest zapis');
+});
+
+test('DT10. zalewanie drzwi prośbami o wyzwanie kończy się odmową BEZ zapisu', async () => {
+  const { obiekt, kv } = miejsce();
+  const t = await telefon();
+  const z1 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+  await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: z1.wyzwanie, ...t.zaloz(z1.wyzwanie) } }));
+  const przed = kv.size;
+  let odmowy = 0, ostatni = 0;
+  for (let i = 0; i < WYZWAN_NA_MINUTE + 10; i++) {
+    const o = await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } }));
+    ostatni = o.status;
+    if (o.status === 429) odmowy++;
+  }
+  assert.ok(odmowy >= 10, `po progu drzwi odmawiają (odmów: ${odmowy}, ostatni status: ${ostatni})`);
+  assert.ok(kv.size - przed <= WYZWAN_NA_MINUTE, `odmowa nic nie zapisuje (przybyło ${kv.size - przed} wyzwań)`);
 });

@@ -14,6 +14,10 @@ import { sprawdzZalozenie, sprawdzWejscie, zrobSesje, ciastkoNaglowek, ciastkoKo
   sekretSesji, WYZWANIE_WAZNE_MS, SESJA_WAZNA_MS } from './drzwi.mjs';
 
 export const ADRES_DRZWI = '/api/drzwi/';
+// Ile wyzwań na minutę wolno wydać jednemu obiektowi Miejsca. Licznik stoi w PAMIĘCI instancji, nie w zapisie:
+// kosztuje zero, a działa dokładnie wtedy, gdy ma działać - gdy ktoś wali w drzwi, obiekt jest obudzony.
+// Po uśpieniu okno startuje od nowa i to jest w porządku: spanie znaczy, że nikt nie wali.
+export const WYZWAN_NA_MINUTE = 30;
 const KLUCZ_WYZWANIA = (w) => 'drzwi:wyzwanie:' + w;
 const CELE = ['zaloz', 'wejdz'];
 
@@ -68,6 +72,14 @@ export async function obsluzDrzwi(m, request) {
     const cel = CELE.includes(c.cel) ? c.cel : null;
     if (!cel) return json({ ok: false, blad: `cel: "zaloz" (nowe poświadczenie) albo "wejdz"` }, 400);
     if (cel === 'zaloz' && kto !== wlasciciel) return json({ ok: false, blad: 'nowe poświadczenie zakłada tylko właściciel, i tylko wtedy, gdy JUŻ jest wpuszczony (kluczem albo poprzednimi drzwiami)' }, 403);
+    // Wyzwanie do wejścia zostawia ślad w pamięci obiektu, a prosić o nie może każdy - to jest powierzchnia
+    // do zalewania. Dwa tanie progi: tam, gdzie nie ma czym wejść, nie wydajemy nic, i nie więcej niż
+    // WYZWAN_NA_MINUTE na obiekt. Oba odmawiają BEZ zapisu, więc zalewanie nic nie kosztuje Miejsca.
+    const ilePoswiadczen = m.srod.ile({ rodzaj: 'poswiadczenie/1' });
+    if (cel === 'wejdz' && ilePoswiadczen === 0) return json({ ok: false, blad: 'to Miejsce nie ma jeszcze żadnego poświadczenia: najpierw dodaj urządzenie, będąc wpuszczonym kluczem' }, 404);
+    const teraz = Date.now();
+    if (!m._drzwiOkno || teraz - m._drzwiOkno.od > 60000) m._drzwiOkno = { od: teraz, ile: 0 };
+    if (++m._drzwiOkno.ile > WYZWAN_NA_MINUTE) return json({ ok: false, blad: 'za dużo prób otwarcia drzwi w ciągu minuty; spróbuj za chwilę' }, 429);
     const w = b64uZ(crypto.getRandomValues(new Uint8Array(32)));
     await m.ctx.storage.put(KLUCZ_WYZWANIA(w), { cel, do: Date.now() + WYZWANIE_WAZNE_MS }, { expirationTtl: Math.ceil(WYZWANIE_WAZNE_MS / 1000) + 60 });
     const znane = m.srod.wszystkie({ rodzaj: 'poswiadczenie/1', gdzie: { imie: wlasciciel } }).map((p) => p.cechy.poswiadczenie);
@@ -93,6 +105,8 @@ export async function obsluzDrzwi(m, request) {
   // --- 2. założenie poświadczenia (jego ręką, raz na urządzenie) -----------------------------------------------
   if (krok === 'zapisz') {
     if (kto !== wlasciciel) return json({ ok: false, blad: 'poświadczenie zakłada tylko właściciel' }, 403);
+    // Zapis poświadczenia jest zwykłym zapisem i podlega dobowemu bezpiecznikowi jak każdy inny (budzet.mjs).
+    if (m.budzet.przekroczony()) { const o = m.budzet.odmowa(); return json({ ok: false, blad: o.blad, ...o }, o.status || 429); }
     const wz = await wezWyzwanie('zaloz');
     if (wz.blad) return json({ ok: false, blad: wz.blad }, 400);
     let clientDataJSON, authenticatorData;
@@ -136,7 +150,9 @@ export async function obsluzDrzwi(m, request) {
     });
     if (!w.ok) return json({ ok: false, blad: w.blad }, 401);
     // Ślad wejścia zapisujemy, ale nie na każdym wejściu: zapis kosztuje wiersze, a licznik zerowy nic nie zmienia.
-    if (w.licznik > (Number(rz.cechy.licznik) || 0)) {
+    // Po dojściu do dobowego limitu ŚLAD odpada, a wejście zostaje. To jest świadoma asymetria: bezpiecznik ma
+    // zatrzymywać zmiany, nigdy zamykać właścicielowi drzwi do własnego Miejsca.
+    if (w.licznik > (Number(rz.cechy.licznik) || 0) && !m.budzet.przekroczony()) {
       await m.srod.ruch(wlasciciel, { op: 'drzwi-licznik-' + rz.id.slice(0, 10) + '-' + w.licznik, co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: 'poswiadczenie/1', obszar: rz.obszar, cechy: { ...rz.cechy, licznik: w.licznik, uzyte: new Date(m.rdzen.teraz()).toISOString() } }, { slad: 'drzwi' }).catch(() => null);
     }
     const zeton = await zrobSesje(sekret, wlasciciel);

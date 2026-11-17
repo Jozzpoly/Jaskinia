@@ -119,8 +119,14 @@ if (zap.d.rzecz) {
   if (r.d && r.d.ok) {
     const u = await zad('/api/srodowisko/ruch', { op: 'drzwi-zywo-sprzatam-' + zap.d.rzecz.slice(0, 8), co: 'odloz', rzecz: zap.d.rzecz, wersja: r.d.rzecz.wersja, powod: 'udawany authenticator drugiej linii: pomiar skonczony' }, WL);
     const po = await zad('/api/drzwi/zacznij', { cel: 'wejdz' });
-    pokaz(11, 'po odlozeniu poswiadczenie przestaje byc droga wejscia', u.d && u.d.skutek === 'odlozone' && Array.isArray(po.d.poswiadczenia) && !po.d.poswiadczenia.includes(t.id),
-      `odlozenie=${u.d && (u.d.skutek || u.d.blad)}; czym mozna wejsc: ${JSON.stringify(po.d.poswiadczenia)}`);
+    // Gdy to bylo ostatnie poswiadczenie, drzwi w ogole nie wydaja wyzwania do wejscia (404) - tam, gdzie nie ma
+    // czym wejsc, nie ma po co zostawiac sladu w pamieci. Jedno i drugie znaczy to samo: ta droga zamknieta.
+    const zamkniete = po.status === 404 || (Array.isArray(po.d.poswiadczenia) && !po.d.poswiadczenia.includes(t.id));
+    pokaz(11, 'po odlozeniu poswiadczenie przestaje byc droga wejscia', u.d && u.d.skutek === 'odlozone' && zamkniete,
+      `odlozenie=${u.d && (u.d.skutek || u.d.blad)}; zacznij(wejdz): status=${po.status} ${JSON.stringify(po.d && po.d.poswiadczenia)}`);
+    const zalew = [];
+    for (let i = 0; i < 6; i++) zalew.push((await zad('/api/drzwi/zacznij', { cel: 'wejdz' })).status);
+    pokaz(12, 'proszenie o wyzwanie tam, gdzie nie ma czym wejsc, nic nie kosztuje Miejsca', zalew.every((x) => x === 404), `statusy: ${zalew.join(',')}`);
   }
 }
 console.log(`\npodsumowanie: ${ok} z ${ok + zle} trzyma`);
