@@ -349,16 +349,92 @@ export class Srodowisko {
       utworzyl: w.utworzyl, utworzono: new Date(w.utworzono).toISOString(), zmienil: w.zmienil, zmieniono: new Date(w.zmieniono).toISOString() };
   }
 
-  rzecz(id) {
+  rzecz(id, { dla = undefined } = {}) {
     if (typeof id !== 'string' || !ID.test(id)) return null;
     const w = this.q(`SELECT r.*, z.tresc FROM rzeczy r JOIN zapisy z ON z.id = r.zapis WHERE r.id = ?`, id)[0];
-    return w ? this._zWiersza(w) : null;
+    if (!w) return null;
+    // Rzecz z obszaru, którego ten czytający nie widzi, jest dla niego tym samym, czym rzecz nieistniejąca:
+    // "nie ma" i "nie dla ciebie" mają brzmieć tak samo, inaczej sam adres zdradza, że coś tam jest.
+    if (dla !== undefined) {
+      const zle = this._niewidoczneDla(dla);
+      if (zle && zle.includes(w.obszar ?? null)) return null;
+    }
+    return this._zWiersza(w);
   }
 
   // Wybór rzeczy: rodzaj (z pokoleniem albo sama nazwa), obszar, wartości cech (`gdzie`), tekst (`szukaj`) i to,
   // czy pokazywać odłożone (domyślnie nie; 'tak': tylko odłożone; 'razem': jedne i drugie).
-  _warunek({ rodzaj = null, obszar, gdzie = null, szukaj = null, odlozone = 'nie', po = null } = {}) {
+  // --- widoczność z danych (17 XI 2026, Opus Code, front B) ---------------------------------------------------
+  // Ustawienie `widzi` obszaru było do dziś nazwą bez mechanizmu: czytanie było albo całe otwarte (podgląd), albo
+  // całe zamknięte kluczem. Tutaj zaczyna znaczyć to, co mówi: `wszyscy` widzi też zwiedzający bez klucza,
+  // `uczestnicy` tylko ktoś z kluczem, `wlasciciel` tylko właściciel. Dziedziczenie bierze `ustawienie()`, więc
+  // obszar w obszarze ma to samo prawo co rodzic, dopóki nie powie inaczej.
+  //
+  // DLACZEGO PARAMETREM, A NIE DOMYŚLNIE: te same zapytania zadaje sobie samo środowisko (kształty, uczestnicy,
+  // obszary, obserwator). Gdyby filtr działał zawsze, jądro przestałoby widzieć własne rzeczy. Dlatego filtruje
+  // się tylko wtedy, gdy ktoś poda `dla`, a robi to warstwa drzwi — i pilnuje tego sprawdzian, który wylicza
+  // wszystkie trasy czytające i nie przepuszcza nowej, która o tym zapomni.
+  // Jedno miejsce, w którym warstwa drzwi zakłada okulary czytającego. Zwraca widok tego samego środowiska,
+  // w którym `spis`, `wszystkie`, `ile`, `rzecz` i `wersja` same wiedzą, dla kogo liczą; wszystko inne idzie
+  // bez zmian do oryginału, a środowisko w środku dalej widzi siebie całe.
+  // Dlaczego widok, a nie parametr przy każdej trasie: tras czytających jest kilkanaście i będą dochodzić.
+  // Parametr trzeba pamiętać za każdym razem; okulary zakłada się raz, na początku żądania.
+  dla(kto) {
+    const cel = this;
+    const zFiltrem = {
+      spis: (f = {}) => cel.spis({ ...f, dla: kto }),
+      wszystkie: (f = {}) => cel.wszystkie({ ...f, dla: kto }),
+      ile: (f = {}) => cel.ile({ ...f, dla: kto }),
+      rzecz: (id, o = {}) => cel.rzecz(id, { ...o, dla: kto }),
+      wersja: (id, akt) => (cel.rzecz(id, { dla: kto }) ? cel.wersja(id, akt) : null),
+      // "co na to wskazuje" też jest treścią: odniesienie z obszaru, którego ten ktoś nie widzi, zdradzałoby,
+      // że tam coś jest, i nawet czym się interesuje.
+      wskazujaNa: (id) => cel.wskazujaNa(id).filter((x) => cel.rzecz(x.od, { dla: kto }) !== null),
+      // Pamiętane liczby są liczone DLA KOGOŚ, odkąd czytanie zależy od tego, kto czyta. Wspólny klucz podałby
+      // zwiedzającemu liczbę policzoną dla uczestnika (albo odwrotnie) i to byłby wyciek przez licznik, nie przez listę.
+      pamietaj: (klucz, licz) => cel.pamietaj(`${klucz}|dla:${kto ?? ''}`, licz),
+      czytelnik: kto,
+    };
+    return new Proxy(cel, {
+      get(t, n, odb) {
+        if (Object.hasOwn(zFiltrem, n)) return zFiltrem[n];
+        const w = Reflect.get(t, n, t);
+        return typeof w === 'function' ? w.bind(t) : w;
+      },
+    });
+  }
+
+  _niewidoczneDla(kto) {
+    const rola = this.rola(kto);
+    if (rola === 'wlasciciel') return null;
+    const nr = this.ostatniNr();
+    if (!this._widzi || this._widzi.nr !== nr) {
+      const mapa = new Map();
+      mapa.set(null, this.ustawienie(null, 'widzi').wartosc);
+      for (const o of this.wszystkie({ rodzaj: 'obszar/1', odlozone: 'razem' })) mapa.set(o.id, this.ustawienie(o.id, 'widzi').wartosc);
+      this._widzi = { nr, mapa };
+    }
+    const wolno = (w) => (rola === 'zwiedzajacy' ? w === 'wszyscy' : w !== 'wlasciciel');
+    const zle = [...this._widzi.mapa].filter(([, w]) => !wolno(w)).map(([id]) => id);
+    return zle.length ? zle : null;
+  }
+
+  _warunek({ rodzaj = null, obszar, gdzie = null, szukaj = null, odlozone = 'nie', po = null, dla = undefined } = {}) {
     const war = [], par = [];
+    // Czytający podany wprost: rzeczy z obszarów, których nie widzi, nie trafiają nawet do liczenia.
+    if (dla !== undefined) {
+      const zle = this._niewidoczneDla(dla);
+      if (zle) {
+        const ids = zle.filter((x) => x !== null);
+        const glowny = zle.includes(null);
+        if (glowny) war.push('r.obszar IS NOT NULL');
+        if (ids.length) {
+          const pyt = ids.map(() => '?').join(', ');
+          war.push(glowny ? `r.obszar NOT IN (${pyt})` : `(r.obszar IS NULL OR r.obszar NOT IN (${pyt}))`);
+          par.push(...ids);
+        }
+      }
+    }
     let trzebaTresci = false;
     // `po`: tylko rzeczy zmienione po akcie o tym numerze (z `odlozone: 'razem'` także te, które po nim odłożono)
     if (Number.isSafeInteger(po) && po >= 0) { war.push('r.akt > ?'); par.push(po); }
@@ -407,9 +483,11 @@ export class Srodowisko {
   ile(filtr = {}) {
     // Proste pytania (rodzaj z pokoleniem, obszar, odłożone albo nie) mają odpowiedź w pamiętanym przekroju spisu:
     // opis pyta o takie liczby kilkanaście razy, a każde osobne liczenie przeglądało cały spis.
-    const { rodzaj = null, obszar, gdzie: cechy = null, szukaj = null, odlozone = 'nie', po = null } = filtr;
+    const { rodzaj = null, obszar, gdzie: cechy = null, szukaj = null, odlozone = 'nie', po = null, dla = undefined } = filtr;
+    // Pamiętany przekrój spisu nie zna widoczności (liczy wszystko), więc pytanie "ile widzi TEN czytający" idzie
+    // zwykłą drogą. Inaczej liczba zdradzałaby istnienie rzeczy, których ten ktoś nie ma prawa zobaczyć.
     const prostyRodzaj = rodzaj === null || (typeof rodzaj === 'string' && rodzaj.includes('/') && RODZAJ_LUB_NAZWA.test(rodzaj));
-    if (!cechy && !szukaj && po === null && prostyRodzaj && ['nie', 'tak', 'razem'].includes(odlozone)) {
+    if (dla === undefined && !cechy && !szukaj && po === null && prostyRodzaj && ['nie', 'tak', 'razem'].includes(odlozone)) {
       let n = 0;
       for (const w of this.przekroj()) {
         if (rodzaj !== null && w.rodzaj !== rodzaj) continue;
