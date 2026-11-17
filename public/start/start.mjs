@@ -529,7 +529,7 @@ function podPunktem(x, y) {
 plotno.addEventListener('pointerdown', (e) => {
   if (!swiat || !kam) return;
   if (e.button === 1) e.preventDefault(); // środkowy przycisk przesuwa widok, a nie włącza przewijanie przeglądarki
-  plotno.setPointerCapture(e.pointerId);
+  try { plotno.setPointerCapture(e.pointerId); } catch { /* wskaźnik bez przechwycenia dalej działa nad płótnem */ }
   const p = wPlotnie(e);
   palce.set(e.pointerId, p);
   animKam = null;
