@@ -128,3 +128,13 @@ button:disabled, textarea:disabled { opacity: .55; cursor: progress; }
   .kr-tresc .kr-tekst a { margin: 0 .1rem; }
 }
 @media (max-width: 40rem) { body:has(#dok:empty) #okna .okno.karta-rzeczy { bottom: 0; } }
+
+/* Drobny tekst na dotyku. Oko Opusa czatu zmierzyło na telefonie 138 ze 188 tekstów poniżej 14 px (najmniejszy
+   11,8 px): to wiersze pomocnicze, ale ręka je czyta. Na dotyku tekst nie schodzi poniżej 14 px, a pola mają 16 px,
+   bo mniejsze pole przeglądarka telefonu przybliża przy dotknięciu i strona skacze. */
+@media (pointer: coarse), (max-width: 40rem) {
+  body { font-size: 16px; }
+  .proba, .stan, .uwaga, h2, .karta .opis, .karta .meta, .nowe, button, .guzik, ul.lista .bok, .kolumna h3, .kolumna p, .dol,
+  .okno .pasek .mowi, .wejscie p, ul.slowa, ul.slowa .bok, .kr-tresc h4, .kr-meta, .kr-odlozona .bok, .kr-cechy dt, .kr-bylo { font-size: .875rem; }
+  input, textarea { font-size: 16px; }
+}
