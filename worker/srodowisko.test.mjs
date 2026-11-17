@@ -237,6 +237,9 @@ test('drzwi HTTP: tekst, dane, ruch i kod gościa z nagłówkiem piaskownicy', a
   assert.equal((await zap('/rzecz/' + rj.rzecz)).status, 200);
   assert.equal((await zap('/rzecz/' + '0'.repeat(26))).status, 404);
   assert.equal((await zap('/api/srodowisko/ruch', { metoda: 'POST', cialo: 'nie json' })).status, 400);
+  const zleKodowanie = await zap('/api/srodowisko/ruch', { kto: 'agent-probny', metoda: 'POST', cialo: new Uint8Array([0x7b, 0x22, 0x6f, 0x70, 0x22, 0x3a, 0x22, 0xb3, 0x22, 0x7d]) });
+  assert.equal(zleKodowanie.status, 400);
+  assert.match((await zleKodowanie.json()).blad, /nie jest w UTF-8/);
   const g = s.spis({ rodzaj: 'gosc/1' })[0];
   const kod = await zap('/gosc/' + g.cechy.kod);
   assert.equal(kod.status, 200);

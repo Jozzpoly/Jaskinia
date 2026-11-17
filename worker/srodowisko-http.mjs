@@ -14,6 +14,11 @@ const json = (o) => new Response(JSON.stringify(o, null, 2), { status: o && o.ok
 // wszystko jest publiczne; w prawdziwym Miejscu listę adresów dozwolonych w ramkach ustawi właściciel.
 export const CSP_GOSCIA = "sandbox allow-scripts allow-pointer-lock; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'";
 
+// Ciało, które nie przyszło w UTF-8, dekoduje się ze znakami zastępczymi. Bez tej odmowy śmieć wszedłby po cichu
+// (zmierzone 17 XI: curl z konsoli Windows wysłał polskie litery w innej stronie kodowej).
+const ZASTEPCZY = String.fromCharCode(0xfffd);
+const ZLE_KODOWANIE = { ok: false, status: 400, blad: 'treść nie jest w UTF-8 (są w niej znaki zastępcze): wyślij ciało żądania jako UTF-8, najprościej z pliku, np. curl --data-binary @ruch.json' };
+
 export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbny = null } = {}) {
   const url = new URL(request.url);
   const kto = request.headers.get('x-kto') || null;
@@ -50,12 +55,18 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
   }
   if (request.method === 'POST') {
     if (sciezka === '/api/srodowisko/ruch') {
+      const surowe = await request.text();
+      if (surowe.includes(ZASTEPCZY)) return json(ZLE_KODOWANIE);
       let c = null;
-      try { c = await request.json(); } catch { /* zostaje null */ }
+      try { c = JSON.parse(surowe); } catch { /* zostaje null */ }
       if (c === null) return json({ ok: false, status: 400, blad: 'ciało żądania ma być obiektem JSON (nagłówek Content-Type: application/json)' });
       return json(await s.ruch(kto, c, { slad }));
     }
-    if (sciezka === '/api/srodowisko/kod') return json(await s.kod(kto, await request.text(), { op: p.get('op'), slad }));
+    if (sciezka === '/api/srodowisko/kod') {
+      const kod = await request.text();
+      if (kod.includes(ZASTEPCZY)) return json(ZLE_KODOWANIE);
+      return json(await s.kod(kto, kod, { op: p.get('op'), slad }));
+    }
   }
   if (sciezka.startsWith('/api/')) return json({ ok: false, status: 404, blad: 'nie ma takiej ścieżki; wszystkie są opisane pod /co-tu-jest' });
   return tekst('Nie ma takiego adresu. Wszystko o tym Miejscu: /co-tu-jest\n', 404);
