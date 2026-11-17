@@ -287,7 +287,17 @@
       if (otwieram && !stanDrzwi && window.Drzwi) { await dajStanDrzwi(); rysujWejscie(); p.hidden = false; }
     };
     const pole = el('input', { type: 'password', id: 'pole-klucza', placeholder: 'Twój klucz', autocomplete: 'current-password', 'aria-label': 'Klucz uczestnika' });
-    p.append(el('p', { tekst: 'Wejście jest potrzebne tylko do zmian. Klucz zostaje w tej przeglądarce.' }),
+    // Zdanie nad guzikami mówi to, co widzi czytający, a nie to, co wie autor. Właściciel stanął 17 XI przed tym
+    // panelem i zapytał „jaki klucz, jak mam go zdobyć" - bo panel prosił o klucz, a guzik obok wpuszczał bez
+    // niego. Ślepa uliczka w narzędziu, które ma zdejmować tarcie, jest gorsza niż brak narzędzia.
+    const naPodgladzie = Boolean(d.klucz_probny_wlasciciela);
+    const drzwiCzekaja = Boolean(stanDrzwi && stanDrzwi.sekret_sesji_ustawiony && stanDrzwi.poswiadczen === 0);
+    const zdanie = naPodgladzie
+      ? (drzwiCzekaja
+        ? 'Tu nie potrzebujesz żadnego klucza: guzik „Wejdź jako właściciel próbny" wpuszcza jednym naciśnięciem. Drzwi jednym dotknięciem czekają na pierwsze urządzenie — wejdź, otwórz ten panel jeszcze raz i wybierz „Dodaj to urządzenie".'
+        : 'Tu nie potrzebujesz żadnego klucza: guzik „Wejdź jako właściciel próbny" wpuszcza jednym naciśnięciem. Pole na klucz jest dla agentów bez przeglądarki.')
+      : 'Wejście jest potrzebne tylko do zmian. Klucz zostaje w tej przeglądarce.';
+    p.append(el('p', { tekst: zdanie }),
       guzikDotkniecia(),
       d.klucz_probny_wlasciciela ? el('button', { klasa: 'glowny', tekst: 'Wejdź jako właściciel próbny', title: 'Na podglądzie klucze próbne są jawne; nic tu nie jest prywatne', klik: () => wejdz(d.klucz_probny_wlasciciela) }) : null,
       d.klucz_probny ? el('button', { tekst: 'Wejdź jako agent próbny', klik: () => wejdz(d.klucz_probny) }) : null,
