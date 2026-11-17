@@ -369,12 +369,23 @@
       ja ? null : el('p', { klasa: 'ciche', tekst: 'Rozstrzyga właściciel. Jeśli to Ty: wejdź guzikiem na górze strony.' })));
 
     // 2. Nowe od ostatniej wizyty: najnowsze pierwsze, pięć na start.
-    const swieze = rzeczy.filter((r) => r.wersja > widziany && widziany > 0).sort((a, b) => b.wersja - a.wersja);
-    if (swieze.length) {
+    // To, co przyniósł automat (obserwator faktów), to setki drobnych rzeczy naraz: w "Nowe" stają jednym zdaniem,
+    // żeby nie zasłoniły tego, co zrobił człowiek albo agent.
+    const automaty = new Set(['srodowisko', ...d.uczestnicy.filter((u) => u.rola === 'automat').map((u) => u.imie)]);
+    const wszystkieSwieze = rzeczy.filter((r) => r.wersja > widziany && widziany > 0).sort((a, b) => b.wersja - a.wersja);
+    const odAutomatow = wszystkieSwieze.filter((r) => automaty.has(r.zmienil));
+    const swieze = wszystkieSwieze.filter((r) => !automaty.has(r.zmienil));
+    const zdanieOAutomatach = () => {
+      const wg = new Map();
+      for (const r of odAutomatow) { const m = wg.get(r.zmienil) || new Map(); const n = r.rodzaj.split('/')[0]; m.set(n, (m.get(n) || 0) + 1); wg.set(r.zmienil, m); }
+      return 'Automaty przyniosły albo zmieniły ' + lp(odAutomatow.length, 'rzecz', 'rzeczy', 'rzeczy') + ': ' + [...wg].map(([kto, m]) => kto + ' (' + [...m].map(([n, ile]) => ile + ' ' + n).join(', ') + ')').join('; ') + '.';
+    };
+    if (wszystkieSwieze.length) {
       const widac = pokazWszystkieNowe ? swieze : swieze.slice(0, 5);
       t.append(el('section', {}, el('h2', {}, 'Nowe od Twojej ostatniej wizyty ', el('span', { klasa: 'ile', tekst: String(swieze.length) }),
         el('button', { tekst: 'widziałem', klik: () => { widziany = akt; localStorage.setItem(PAMIEC, String(akt)); rysuj(); } })),
         el('ul', { klasa: 'lista' }, widac.map((r) => el('li', {}, el('a', { href: '/rzecz/' + r.id, tekst: r.tytul }), el('span', { klasa: 'bok', tekst: `${r.rodzaj} · ${r.zmienil} · ${kiedy(r.zmieniono)}` })))),
+        odAutomatow.length ? el('p', { klasa: 'ciche', tekst: zdanieOAutomatach() }) : null,
         swieze.length > 5 ? el('div', { klasa: 'ruchy' }, el('button', { tekst: pokazWszystkieNowe ? 'pokaż mniej' : 'pokaż pozostałe (' + (swieze.length - 5) + ')', 'aria-expanded': pokazWszystkieNowe ? 'true' : 'false', klik: () => { pokazWszystkieNowe = !pokazWszystkieNowe; rysuj(); } })) : null));
     }
 
@@ -402,9 +413,17 @@
     for (const r of rzeczy) { if (r.rodzaj.startsWith('projekt/') || r.rodzaj.startsWith('repo/') || r.rodzaj.startsWith('gosc/') || r.rodzaj.startsWith('zdolnosc/')) continue; if (!reszta.has(r.rodzaj)) reszta.set(r.rodzaj, []); reszta.get(r.rodzaj).push(r); }
     t.append(el('section', {}, el('h2', {}, 'Pozostałe rzeczy'),
       [...reszta].sort((a, b) => a[0].localeCompare(b[0])).map(([rodzaj, lista]) => {
-        const det = el('details', { open: rozwiniete.has(rodzaj) }, el('summary', {}, rodzaj + ' ', el('span', { klasa: 'ile', tekst: String(lista.length) })),
-          el('div', {}, el('ul', { klasa: 'lista' }, lista.map((r) => el('li', {}, el('a', { href: '/rzecz/' + r.id, tekst: r.tytul }), el('span', { klasa: 'bok', tekst: `${r.zmienil} · ${kiedy(r.zmieniono)}` }))))));
-        det.addEventListener('toggle', () => { if (det.open) rozwiniete.add(rodzaj); else rozwiniete.delete(rodzaj); });
+        // Lista rodzaju powstaje dopiero po rozwinięciu i ma najwyżej 300 pozycji: przy setkach faktów budowanie jej
+        // przy każdym przerysowaniu (a przerysowanie idzie po każdej zmianie w Miejscu) było większością pracy strony.
+        const srodek = el('div', {});
+        const wypelnij = () => {
+          if (srodek.childNodes.length) return;
+          srodek.append(el('ul', { klasa: 'lista' }, lista.slice(0, 300).map((r) => el('li', {}, el('a', { href: '/rzecz/' + r.id, tekst: r.tytul }), el('span', { klasa: 'bok', tekst: `${r.zmienil} · ${kiedy(r.zmieniono)}` })))));
+          if (lista.length > 300) srodek.append(el('p', { klasa: 'ciche' }, 'Pokazane pierwsze 300 z ' + lista.length + '. Wszystkie tekstem: ', el('a', { href: '/rzeczy?rodzaj=' + encodeURIComponent(rodzaj), target: '_blank', rel: 'noopener', tekst: '/rzeczy?rodzaj=' + rodzaj })));
+        };
+        const det = el('details', { open: rozwiniete.has(rodzaj) }, el('summary', {}, rodzaj + ' ', el('span', { klasa: 'ile', tekst: String(lista.length) })), srodek);
+        if (rozwiniete.has(rodzaj)) wypelnij();
+        det.addEventListener('toggle', () => { if (det.open) { rozwiniete.add(rodzaj); wypelnij(); } else rozwiniete.delete(rodzaj); });
         return det;
       })));
 
