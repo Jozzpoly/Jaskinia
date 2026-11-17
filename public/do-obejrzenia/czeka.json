@@ -1,38 +1,14 @@
 {
- "wersja": 1,
- "opis": "Rzeczy, które czekają na ruch właściciela. Powstało 15 XI 2026, bo powiedział, że prośby agentów przepadają mu w natłoku rozmów, a nie ma tradycji przewijania ścian tekstu. Wpis schodzi stąd tylko wtedy, gdy on odpowie albo gdy agent go wycofa z powodem. Pole sprawdzone mówi, kiedy agent ostatni raz potwierdził, że wpis jest jeszcze aktualny - nie kiedy powstał.",
- "zebrane_z": "prywatna pamięć wspólna i repozytoria, nie z historii rozmów - wszystko, o co proszono wyłącznie w czacie przed 15 XI, może tu nie być",
- "czeka": [
-  {
-   "nr": 3,
-   "co": "Runda z Fable o fundament — odpalasz sam, kiedy zechcesz (jego okno do 16 XI)",
-   "dlaczego_ty": "Sam powiedziałeś, że paczkę odpalisz osobiście. Jako podagenta do planowania i podważania używamy go już my.",
-   "jesli_nic": "Nic się nie psuje — Twoimi słowami: „Przepadnie fable nic się nie dzieje”. Projekt pierwszej cegły fundamentu robi już Fable jako nasz podagent.",
-   "od": "2026-11-14",
-   "kto": "Opus Code i Opus czatu",
-   "adres": "/zlecenia/2026-11-15-fable-fundament",
-   "waga": "opcjonalne",
-   "sprawdzone": "2026-11-15"
-  },
-  {
-   "nr": 4,
-   "co": "Cztery stare szkice w nowej Jaskini: #1, #5, #6, #9 - czekają na Twoje tak albo na rundę z Fable",
-   "dlaczego_ty": "Twoja własna zasada z 14 XI: PR, który mówi, że sam jest dowodem albo decyzją o fundamencie, scalamy tylko po Twoim słowie. PR #1 mówi o sobie dokładnie to.",
-   "jesli_nic": "Zostają otwarte i nic się nie psuje. Wnoszą razem jedenaście testów oznaczonych jako wiadomo, że jeszcze nie działa - po scaleniu stałyby na głównej gałęzi jako zielone, choć opisują rzeczy niedziałające.",
-   "od": "2026-11-04",
-   "kto": "Opus Code i Opus czatu",
-   "adres": "https://github.com/Jozzpoly/Jaskinia/pull/1",
-   "waga": "kiedys",
-   "sprawdzone": "2026-11-15",
-   "dowod": "Próbne scalenie każdego z dzisiejszą główną gałęzią: 102/0, 104/0, 105/0, 105/0, bez konfliktów."
-  }
- ],
- "odlozone_przez_ciebie": [
-  {
-   "co": "Dług z pieniędzmi i dostępem: otwarte Workers AI w trzech starych workerach i stare klucze dostawcy w jednym z labów",
-   "twoja_decyzja": "Sam odłożyłeś to na później, dla tańszego modelu - to jest zapisane i nie jest przypomnieniem.",
-   "od": "2026-11-13",
-   "sprawdzone": "2026-11-15"
-  }
- ]
+  "wersja": 1,
+  "opis": "Rzeczy, które czekają na ruch właściciela. Powstało 15 XI 2026, bo powiedział, że prośby agentów przepadają mu w natłoku rozmów, a nie ma tradycji przewijania ścian tekstu. Wpis schodzi stąd tylko wtedy, gdy on odpowie albo gdy agent go wycofa z powodem. Pole sprawdzone mówi, kiedy agent ostatni raz potwierdził, że wpis jest jeszcze aktualny - nie kiedy powstał.",
+  "zebrane_z": "prywatna pamięć wspólna i repozytoria, nie z historii rozmów - wszystko, o co proszono wyłącznie w czacie przed 15 XI, może tu nie być",
+  "czeka": [],
+  "odlozone_przez_ciebie": [
+    {
+      "co": "Dług z pieniędzmi i dostępem: otwarte Workers AI w trzech starych workerach i stare klucze dostawcy w jednym z labów",
+      "twoja_decyzja": "Sam odłożyłeś to na później, dla tańszego modelu - to jest zapisane i nie jest przypomnieniem.",
+      "od": "2026-11-13",
+      "sprawdzone": "2026-11-15"
+    }
+  ]
 }
