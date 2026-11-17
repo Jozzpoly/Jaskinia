@@ -296,8 +296,14 @@ test('Z12. pamięć numeru aktu i liczb: po każdym ruchu, odłożeniu, wwozie i
   assert.equal(s.ile({ rodzaj: 'slowo/1', odlozone: 'tak' }), 1, 'pytanie o odłożone idzie do bazy, nie do pamiętanych liczb');
   assert.equal(s.ile({ rodzaj: 'slowo' }), przed, 'sama nazwa rodzaju bez pokolenia też idzie do bazy');
   assert.throws(() => s.liczby().push({ rodzaj: 'x/1', ile: 1 }), 'pamiętanych liczb nie da się zmienić w miejscu');
-  // liczby z pamiętanego przekroju zgadzają się z tym, co daje czytanie spisu, dla każdego prostego pytania
+  // liczby z pamiętanego przekroju zgadzają się z tym, co daje czytanie spisu, dla każdego prostego pytania,
+  // także po przeniesieniu rzeczy do innego obszaru i po przywróceniu odłożonej (przekrój idzie za każdym zapisem)
   const obszarNowe = r.meta('obszar_nowe');
+  const b = await slowo(s, 'zywe-test-z12-b', 'drugie');
+  const przen = await s.ruch('jozz', { op: 'zywe-test-z12-przenies', co: 'poloz', rzecz: b.rzecz, wersja: s.rzecz(b.rzecz).wersja, rodzaj: 'slowo/1', obszar: obszarNowe, cechy: s.rzecz(b.rzecz).cechy });
+  assert.equal(przen.ok, true, JSON.stringify(przen));
+  const przywr = await s.ruch('jozz', { op: 'zywe-test-z12-przywroc', co: 'przywroc', rzecz: a.rzecz, wersja: s.rzecz(a.rzecz).wersja });
+  assert.equal(przywr.ok, true, JSON.stringify(przywr));
   for (const f of [{}, { odlozone: 'tak' }, { odlozone: 'razem' }, { obszar: null }, { obszar: obszarNowe }, { obszar: obszarNowe, odlozone: 'razem' }, { rodzaj: 'zdolnosc/1' }, { rodzaj: 'slowo/1', odlozone: 'razem' }, { rodzaj: 'slowo/1', obszar: null, odlozone: 'tak' }, { rodzaj: 'nie-ma/1' }]) {
     assert.equal(s.ile(f), s.wszystkie(f).length, 'pytanie ' + JSON.stringify(f));
   }
