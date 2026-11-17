@@ -19,7 +19,7 @@
 import { poprawneImie, skrot } from './miejsce.mjs';
 import { PRZEDROSTEK_GOSCIA } from './klucze.mjs';
 import { opKlienta } from './ksztalty.mjs';
-import { sprawdzUstawienie } from './ustawienia.mjs';
+import { sprawdzUstawienie, POKRETLO_ZESTAWOW } from './ustawienia.mjs';
 
 export const SRODOWISKO = 'srodowisko-1';
 export const CZYTELNIK_PODGLADU = 'podglad'; // imię czytającego bez klucza na podglądzie; uczestnikiem jest tylko tam
@@ -58,6 +58,8 @@ export const USTAWIENIA = { ile_wolno: STOPNIE, uwaga: UWAGI, widzi: WIDZI, ukla
 export const DOMYSLNE = { ile_wolno: 'proponowac', uwaga: 'znak', widzi: 'uczestnicy', uklada: 'reka' };
 export const ROLE = ['wlasciciel', 'agent', 'automat'];
 // Rodzaje, których kształt i rzeczy trzymają całość w ryzach: zmienia je tylko właściciel.
+// Rodzaje, które środowisko rozumie samo: kształt ich następnego pokolenia też ustala tylko właściciel.
+const RODZAJE_SRODOWISKA = ['ksztalt', 'obszar', 'uczestnik', 'propozycja', 'poswiadczenie', 'pokretlo', 'wartosc', 'zestaw'];
 const KSZTALTY_RDZENIA = ['ksztalt/1', 'obszar/1', 'uczestnik/1', 'propozycja/1'];
 // Ile propozycji jednego uczestnika może czekać naraz: lista "czeka na właściciela" ma zostać listą, nie zalewem.
 export const NAJWIECEJ_CZEKAJACYCH = 20;
@@ -147,7 +149,7 @@ export function wadaSurowej(w, glebokosc = 0) {
 function sprawdzWartosc(def, w, sciezka, maRzecz, maZapis) {
   const typ = typCechy(def);
   switch (typ) {
-    case 'tekst': return typeof w === 'string' && w.length <= 200000 ? null : `${sciezka}: ma być napisem`;
+    case 'tekst': return typeof w !== 'string' ? `${sciezka}: ma być napisem` : (w.length <= 200000 ? null : `${sciezka}: napis ma ${w.length} znaków, a może mieć najwyżej 200000`);
     case 'liczba': return typeof w === 'number' && Number.isFinite(w) ? null : `${sciezka}: ma być liczbą`;
     case 'tak-nie': return typeof w === 'boolean' ? null : `${sciezka}: ma być true albo false`;
     case 'czas': return poprawnyCzas(w) ? null : `${sciezka}: ma być istniejącą chwilą w zapisie ISO 8601 (np. 2026-11-17T02:30:00Z albo 2026-11-17)`;
@@ -316,7 +318,12 @@ export class Srodowisko {
     // Spis sprzed tabeli przekroju: liczymy ją raz z tego, co już leży.
     else if (!sql.exec(`SELECT 1 AS jest FROM przekroj LIMIT 1`).toArray().length && sql.exec(`SELECT 1 AS jest FROM rzeczy LIMIT 1`).toArray().length) this._zbudujPrzekroj();
     // Spis sprzed chwili, w której obszar rzeczy z regułą lezy_z zaczął wynikać z rzeczy wskazanej: wyrównujemy go raz.
-    if (rdzen.meta('spis:lezy_z') !== '2') { this.wyrownajZNatury(); rdzen.ustawMeta('spis:lezy_z', '2'); }
+    // '3' (17 XI 2026): obszar z natury liczony po całym łańcuchu, a wartość włączająca zestawy wskazuje je w odniesieniach.
+    if (rdzen.meta('spis:lezy_z') !== '3') {
+      for (const rz of this.wszystkie({ rodzaj: 'wartosc/1', odlozone: 'razem' })) this._odniesienia(rz.id, rz.rodzaj, rz.cechy, this.ksztaltDla(rz.rodzaj));
+      this.wyrownajZNatury();
+      rdzen.ustawMeta('spis:lezy_z', '3');
+    }
   }
 
   _zbudujPrzekroj() {
@@ -717,6 +724,20 @@ export class Srodowisko {
       }
     }
     if (rodzaj === 'ksztalt/1' || byl('ksztalt/1')) {
+      // Tożsamość z klucza nie zależy od pokolenia, więc kształt innego pokolenia rodzaju, który już ma kształt, nie może
+      // bez właściciela zmienić tego, gdzie leżą rzeczy, czy są układem ani z czego liczy się ich tożsamość: inaczej
+      // agent zakładał wartosc/2 bez reguły leżenia i zajmował identyfikator wartości całego Miejsca (niezależny atak, 17 XI).
+      const nowyDla = rodzaj === 'ksztalt/1' && typeof cechy.dla === 'string' ? cechy.dla : null;
+      if (nowyDla && !KSZTALTY_RDZENIA.includes(nowyDla)) {
+        const nazwa = nazwaRodzaju(nowyDla);
+        if (RODZAJE_SRODOWISKA.includes(nazwa)) return `rodzaj ${nazwa} należy do środowiska; kształt jego następnego pokolenia ustala tylko właściciel`;
+        for (const [r, k] of this.ksztalty()) {
+          if (r === nowyDla || nazwaRodzaju(r) !== nazwa) continue;
+          const a = k.cechy;
+          if ((a.lezy_z || null) !== (cechy.lezy_z || null) || (a.uklad === true) !== (cechy.uklad === true) || JSON.stringify(a.klucz || null) !== JSON.stringify(cechy.klucz || null))
+            return `kształt ${nowyDla} zmienia względem ${r} to, gdzie leżą rzeczy, czy są układem albo z czego liczy się ich tożsamość; to ustala tylko właściciel`;
+        }
+      }
       const dla = [rodzaj === 'ksztalt/1' ? cechy.dla : null, byl('ksztalt/1') ? stara.cechy.dla : null];
       const rdz = dla.find((d) => KSZTALTY_RDZENIA.includes(d));
       if (rdz) return `kształt rodzaju ${rdz} zmienia tylko właściciel`;
@@ -725,6 +746,12 @@ export class Srodowisko {
       if (((byl('ksztalt/1') && stara.cechy.lezy_z) || null) !== ((rodzaj === 'ksztalt/1' && cechy.lezy_z) || null)) return 'to, od której rzeczy rodzaj bierze obszar, ustala tylko właściciel';
     }
     return null;
+  }
+
+  // Czynne wartości, które włączają zestaw `id` w swoim zasięgu (odniesienie zapisuje _odniesienia): ich rodzaj i obszar.
+  _wlaczajaZestaw(id) {
+    return this.q(`SELECT r.rodzaj, r.obszar FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ? AND o.cecha = 'wartosc' AND r.odlozone = 0`, id)
+      .filter((v) => v.rodzaj === 'wartosc/1');
   }
 
   // Ocena zmiany: skutek, propozycja albo odmowa. `stara` to rzecz przed zmianą (albo null, gdy powstaje nowa),
@@ -749,6 +776,16 @@ export class Srodowisko {
         const p = this._prawoWObszarze(rz, o);
         if (p.tryb === 'odmowa') return p;
         if (p.tryb === 'propozycja' && wynik.tryb === 'skutek') wynik = { ...p, powod: `${p.powod}; razem z tą rzeczą przenoszą się rzeczy rodzaju ${rz}, które leżą tam, gdzie ona` };
+      }
+    }
+    // Zestaw (motyw, preset) zmienia wygląd wszędzie tam, gdzie jest włączony, więc jego zmiana, odłożenie i przeniesienie
+    // podlegają także prawu każdego zasięgu, który go włącza: słabsze prawo wygrywa. Inaczej ten, kto prowadzi w obszarze
+    // zestawu, zmieniałby ze skutkiem wygląd zasięgu, w którym może tylko proponować, a przyjęcie propozycji "włącz ten
+    // zestaw" zatwierdzałoby treść, którą potem dałoby się podmienić (niezależny atak, 17 XI 2026). Kucie na żywo
+    // zostaje tam, gdzie zestaw i zasięg mają to samo prawo. Powód nie nazywa zasięgu: może leżeć tam, gdzie piszący nie widzi.
+    if (stara && stara.rodzaj === 'zestaw/1' && wynik.tryb === 'skutek') {
+      for (const v of this._wlaczajaZestaw(stara.id)) {
+        if (this._prawoWObszarze(v.rodzaj, v.obszar ?? null).tryb !== 'skutek') { wynik = { tryb: 'propozycja', powod: 'ten zestaw jest włączony w zasięgu, w którym Twoja zmiana nie miałaby skutku od razu, więc zmiana samego zestawu też jest propozycją' }; break; }
       }
     }
     const z = this._zastrzezone(rodzaj, cechy, stara);
@@ -833,21 +870,58 @@ export class Srodowisko {
     return wynik;
   }
 
+  // Obszar, który wynika rzeczy z natury, liczony po całym łańcuchu aż do rzeczy, która własny obszar niesie w zapisie.
+  // Rzecz bez reguły, sierota albo koło zostają przy obszarze ze spisu (sierotę i tak nazwie sprawdzian spójności).
+  // Rzeczy na kole (A leży z B, B leży z A) zostają każda przy swoim obszarze ze spisu, niezależnie od tego, od której
+  // zaczęto liczyć: wyrównanie i sprawdzian spójności muszą dawać ten sam wynik.
+  _obszarZNatury(rz, pamiec = new Map()) {
+    const o = this._lancuchNatury(rz, pamiec, []);
+    return o !== null && typeof o === 'object' ? (rz.obszar ?? null) : o;
+  }
+
+  // Zwraca obszar (napis albo null dla głównego) albo {kolo: id}, gdy droga wróciła do rzeczy `id`, która jest w toku.
+  _lancuchNatury(rz, pamiec, droga) {
+    if (pamiec.has(rz.id)) return pamiec.get(rz.id);
+    const wlasny = rz.obszar ?? null;
+    const k = this.ksztaltDla(rz.rodzaj);
+    if (!k || typeof k.lezy_z !== 'string') return wlasny;
+    if (droga.includes(rz.id)) return { kolo: rz.id };
+    if (droga.length > 512) return wlasny;
+    const cel = rz.cechy ? rz.cechy[k.lezy_z] : null;
+    if (typeof cel !== 'string' || !ID.test(cel)) return wlasny;
+    let dom = pamiec.get('#' + cel);
+    if (dom === undefined) { dom = this.rzecz(cel); pamiec.set('#' + cel, dom); }
+    if (!dom) return wlasny;
+    let obszar;
+    if (dom.rodzaj === 'obszar/1') {
+      let glowny = pamiec.get('@glowny');
+      if (glowny === undefined) { glowny = this.r.meta('obszar_glowny') || null; pamiec.set('@glowny', glowny); }
+      obszar = dom.id === glowny ? null : dom.id;
+    } else {
+      droga.push(rz.id);
+      const o = this._lancuchNatury(dom, pamiec, droga);
+      droga.pop();
+      if (o !== null && typeof o === 'object') { pamiec.set(rz.id, wlasny); return o.kolo === rz.id ? wlasny : o; }
+      obszar = o;
+    }
+    pamiec.set(rz.id, obszar);
+    return obszar;
+  }
+
   // Wyrównanie spisu z regułą lezy_z: każda rzecz rodzaju, który z natury leży z inną rzeczą, dostaje w spisie obszar
   // tamtej. Potrzebne dla spisu sprzed tej reguły i po odbudowie z dziennika. Zwraca, ile rzeczy zmieniło obszar.
   wyrownajZNatury({ slad = true } = {}) {
     const rodzaje = [...this.ksztalty()].filter(([, k]) => k && k.cechy && typeof k.cechy.lezy_z === 'string').map(([r]) => r);
+    // Obszar liczy się po całym łańcuchu (rzecz wskazana może sama leżeć z natury z inną), z pamięcią, więc głębokość
+    // łańcucha nie ma znaczenia. Wersja z ograniczoną liczbą obiegów zostawiała po odbudowie spisu głębokie łańcuchy
+    // w obszarze głównym, także te, które leżały w obszarze zamkniętym (niezależny atak, 17 XI 2026).
     let razem = 0;
-    for (let obieg = 0; rodzaje.length && obieg < 8; obieg++) {
-      let ruszone = 0;
-      for (const rodzaj of rodzaje) for (const rz of this.wszystkie({ rodzaj, odlozone: 'razem' })) {
-        const n = this._zNatury(rz.rodzaj, rz.cechy);
-        if (!n || n.brak || n.obszar === (rz.obszar ?? null)) continue;
-        this._przenies(rz.id, rz.rodzaj, rz.obszar ?? null, !!rz.odlozone, n.obszar);
-        ruszone++;
-      }
-      razem += ruszone;
-      if (!ruszone) break;
+    const pamiec = new Map();
+    for (const rodzaj of rodzaje) for (const rz of this.wszystkie({ rodzaj, odlozone: 'razem' })) {
+      const ma = this._obszarZNatury(rz, pamiec);
+      if (ma === (rz.obszar ?? null)) continue;
+      this._przenies(rz.id, rz.rodzaj, rz.obszar ?? null, !!rz.odlozone, ma);
+      razem++;
     }
     // Wyrównanie nie zmienia żadnego zapisu, więc bez tego śladu nikt by się o nim nie dowiedział (uwaga drugiej linii:
     // naprawialiśmy ciszę, nie wolno naprawić jej czymś, co samo milczy). Opis pod adresem mówi to jednym zdaniem.
@@ -1267,6 +1341,8 @@ export class Srodowisko {
     this.r.sql.exec(`DELETE FROM odniesienia WHERE od = ?`, id);
     const odn = odniesieniaZCech(ksztalt, cechy);
     if (rodzaj === 'propozycja/1' && typeof cechy.rzecz === 'string' && ID.test(cechy.rzecz) && !odn.some(([, c]) => c === cechy.rzecz)) odn.push(['rzecz', cechy.rzecz]);
+    // Wartość, która włącza zestawy w zasięgu, wskazuje je: zmiana zestawu musi wiedzieć, w których zasięgach działa.
+    if (rodzaj === 'wartosc/1' && cechy.pokretlo === POKRETLO_ZESTAWOW && Array.isArray(cechy.wartosc)) for (const z of cechy.wartosc) if (typeof z === 'string' && ID.test(z)) odn.push(['wartosc', z]);
     const byly = new Set();
     for (const [cecha, cel] of odn) {
       if (byly.has(cecha + '|' + cel)) continue;
@@ -1437,8 +1513,14 @@ export class Srodowisko {
         if (!rz) continue;
         const taSama = rz.rodzaj === z.rodzaj && (rz.obszar ?? null) === (obszar ?? null) && JSON.stringify(rz.cechy) === JSON.stringify(cechy);
         if (taSama) { this.r.ustawMeta('ziarno-odcisk:' + z.nazwa, odcisk); continue; }
-        if (rz.zmienil !== AUTOMAT || rz.odlozone) continue; // ktoś zmienił ją ręką: jego zmiana wygrywa
-        await zapisz(z, id, cechy, obszar, `zasiew-${z.nazwa}-${odcisk}`, rz.wersja);
+        // Zasiew ustępuje ręce: rzecz, którą sam założył, a potem ktoś zmienił albo odłożył, zostaje po zmianie. Nie
+        // ustępuje rzeczy, którą pod kluczem ziarna założył ktoś inny niż właściciel i której właściciel nigdy nie
+        // ruszył: agent zajmował tak z góry nazwę pokrętła, które kod dopiero zasieje, i podstawiał własną deklarację
+        // (niezależny atak, 17 XI 2026). Taka rzecz wraca do treści i miejsca z ziarna; obca wersja zostaje w historii.
+        const zajeta = rz.utworzyl !== AUTOMAT && rz.utworzyl !== this.wlasciciel && rz.zmienil !== this.wlasciciel
+          && !this.historia(id).some((h) => h.kto === this.wlasciciel);
+        if (!zajeta && (rz.zmienil !== AUTOMAT || rz.odlozone)) continue; // ktoś zmienił ją ręką: jego zmiana wygrywa
+        await zapisz(z, id, cechy, obszar, zajeta ? `zasiew-${z.nazwa}-${odcisk}-po-${rz.wersja}` : `zasiew-${z.nazwa}-${odcisk}`, rz.wersja);
         this.r.ustawMeta('ziarno-odcisk:' + z.nazwa, odcisk);
         zrobione.push(z.nazwa + ' (odświeżone)');
         continue;

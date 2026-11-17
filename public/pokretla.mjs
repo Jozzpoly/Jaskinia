@@ -29,11 +29,26 @@ export const POKRETLA = [
   { nazwa: 'start.cien.przesuniecie_px', typ: 'liczba', domyslna: 8, zakres: { od: 0, do: 40, krok: 1 }, twarde: { od: -400, do: 400 }, jednostka: 'px', grupa: 'Odczucie / Ciągnięta karta', opis: 'O ile cień jest przesunięty w dół spod karty niesionej w ręce.' },
 ];
 
+// Czy wartość pasuje do deklaracji z tablicy (tylko typy, których tablica dziś używa; każdy inny odpada).
+const pasuje = (d, w) => {
+  const wKlamrze = () => !d.twarde || ((d.twarde.od === undefined || w >= d.twarde.od) && (d.twarde.do === undefined || w <= d.twarde.do));
+  switch (d.typ) {
+    case 'kolor': return typeof w === 'string' && /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(w);
+    case 'liczba': return typeof w === 'number' && Number.isFinite(w) && wKlamrze();
+    case 'czas': return typeof w === 'number' && Number.isFinite(w) && w >= 0 && wKlamrze();
+    case 'wybor': return Array.isArray(d.wartosci) && d.wartosci.includes(w);
+    case 'tak-nie': return typeof w === 'boolean';
+    case 'tekst': return typeof w === 'string' && w.length <= 2000;
+    default: return false;
+  }
+};
+
 // Pokrętła w ręku twarzy: wartości domyślne z tablicy, nad nimi to, co przyszło z Miejsca. Twarz pyta `w(nazwa)` i nie
 // wie, skąd wartość. W trybie bezpiecznym zostają same wartości domyślne (wyjście z każdego zepsutego wyglądu).
 export class Pokretla {
   constructor({ bezpiecznie = false, naZmiane = () => {} } = {}) {
     this.domyslne = new Map(POKRETLA.map((p) => [p.nazwa, p.domyslna]));
+    this.typy = new Map(POKRETLA.map((p) => [p.nazwa, p]));
     this.zMiejsca = new Map();
     this.bezpiecznie = bezpiecznie;
     this.naZmiane = naZmiane;
@@ -55,8 +70,10 @@ export class Pokretla {
   // Odpowiedź drzwi /api/srodowisko/ustawienia: { wartosci: { nazwa: { wartosc, … } }, akt }. Zwraca, czy coś się zmieniło.
   przyjmij(odp) {
     if (!odp || typeof odp.wartosci !== 'object' || !odp.wartosci) return false;
+    // Twarz bierze z Miejsca tylko to, co sama zna, i tylko w typie ze swojej tablicy: wartość, która do niego nie
+    // pasuje (np. po podmianie deklaracji w Miejscu), nie dochodzi do rysowania; zostaje wartość domyślna.
     const nowe = new Map();
-    for (const [n, x] of Object.entries(odp.wartosci)) if (x && 'wartosc' in x) nowe.set(n, x.wartosc);
+    for (const [n, x] of Object.entries(odp.wartosci)) if (x && 'wartosc' in x && this.typy.has(n) && pasuje(this.typy.get(n), x.wartosc)) nowe.set(n, x.wartosc);
     let zmiana = nowe.size !== this.zMiejsca.size;
     if (!zmiana) for (const [n, w] of nowe) if (JSON.stringify(this.zMiejsca.get(n)) !== JSON.stringify(w)) { zmiana = true; break; }
     this.zMiejsca = nowe;

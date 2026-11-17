@@ -282,6 +282,8 @@ export function coTuJest(s, opcje = {}) {
     '',
     '5e. Ustawienia: wygląd i odczucie są danymi. Pokrętło (pokretlo/1) to deklaracja, wartość (wartosc/1) obowiązuje w zasięgu, zestaw (zestaw/1) to motyw albo preset.',
     '  Wszystkie pokrętła z wartościami i sposobem zmiany: /ustawienia. Zmiana wartości to zwykły ruch poloz; odłożenie wartości wraca do odziedziczonej, cofnij do poprzedniej.',
+    '  Zestaw działa wszędzie, gdzie jest włączony, więc jego zmiana i odłożenie podlegają także prawu tych zasięgów: kto w którymś może tylko proponować, ten zmianę zestawu też tylko proponuje.',
+    '  Zasięgiem wartości jest rzecz, którą się stroi (obszar, widok, okno, uczestnik, profil), nigdy inne ustawienie.',
     '  Gość, który żyje pod własnym adresem (np. gra): zamiast "kod" podaj "adres":"https://…".',
     '',
     'e) Propozycje: {"op":"…","co":"przyjmij","propozycja":"<id>"} albo {"op":"…","co":"odrzuc","propozycja":"<id>","powod":"…"}. Kto może: punkt 4.',
