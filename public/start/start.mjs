@@ -51,8 +51,9 @@ const drzwi = new Drzwi({ naZmiane: poZmianie, naStan: rysujPasek });
 
 // --- kolory z motywu (zmienne CSS), przeliczane przy zmianie jasny/ciemny --------------------------------------------
 let K = {};
-const rgb = (hex) => { const m = /^#?([0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(hex.trim()); const n = m ? parseInt(m[1], 16) : 0x808080; return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
-const mieszaj = (a, b, ile) => { const A = rgb(a), B = rgb(b), k = Math.max(0, Math.min(1, ile)); return `rgb(${Math.round(A[0] + (B[0] - A[0]) * k)}, ${Math.round(A[1] + (B[1] - A[1]) * k)}, ${Math.round(A[2] + (B[2] - A[2]) * k)})`; };
+// Barwa jako [r, g, b, krycie]: krycie z dwóch ostatnich cyfr zapisu #rrggbbaa, bez nich 1.
+const rgb = (hex) => { const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex.trim()); const n = m ? parseInt(m[1], 16) : 0x808080; return [(n >> 16) & 255, (n >> 8) & 255, n & 255, m && m[2] ? parseInt(m[2], 16) / 255 : 1]; };
+const mieszaj = (a, b, ile) => { const A = rgb(a), B = rgb(b), k = Math.max(0, Math.min(1, ile)), kanal = (i) => Math.round(A[i] + (B[i] - A[i]) * k), krycie = A[3] + (B[3] - A[3]) * k; return krycie >= 0.999 ? `rgb(${kanal(0)}, ${kanal(1)}, ${kanal(2)})` : `rgba(${kanal(0)}, ${kanal(1)}, ${kanal(2)}, ${Math.round(krycie * 1000) / 1000})`; };
 function wczytajKolory() {
   const cs = getComputedStyle(document.documentElement);
   for (const n of ['tlo', 'plyta', 'tekst', 'ciche', 'akcent', 'linia', 'zywe', 'stare', 'znak']) K[n] = cs.getPropertyValue('--' + n).trim() || '#808080';
