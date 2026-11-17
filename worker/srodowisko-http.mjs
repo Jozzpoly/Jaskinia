@@ -4,6 +4,7 @@
 // nie da się wejść inaczej niż przez Workera.
 import { coTuJest, opisDane, listaRzeczy, listaRodzajow, stronaRodzaju, stronaRzeczy, umowaOkna } from './opis.mjs';
 import { sprawdzSpojnosc } from './spojnosc.mjs';
+import { policzUstawienia, stronaUstawien } from './ustawienia.mjs';
 import { poprawneImie } from './miejsce.mjs';
 import { CZYTELNIK_PODGLADU } from './srodowisko.mjs';
 
@@ -80,6 +81,7 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     }
     if (sciezka === '/co-tu-jest') return tekst(coTuJest(w, opcje));
     if (sciezka === '/umowa-okna') return tekst(umowaOkna());
+    if (sciezka === '/ustawienia') return tekst(stronaUstawien(w, { dla: p.get('dla') || null, origin }));
     if (sciezka === '/rodzaje') return tekst(listaRodzajow(w));
     if (sciezka.startsWith('/rodzaj/')) {
       let rodzaj = null;
@@ -90,6 +92,8 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     if (sciezka.startsWith('/rzecz/')) { const t = stronaRzeczy(w, sciezka.slice(7), { kto: opcje.kto || (podglad ? opcje.jako : null) }); return t === null ? tekst('Nie ma takiej rzeczy. Lista wszystkich: /rzeczy\n', 404) : tekst(t); }
     if (sciezka === '/api/srodowisko/opis') return json({ ok: true, ...opisDane(w, opcje) });
     if (sciezka === '/api/srodowisko/puls') return json({ ok: true, akt: w.ostatniNr() });
+    // Ustawienia policzone dla zasięgu, oczami czytającego: jedno żądanie daje twarzy wszystkie wartości pokręteł.
+    if (sciezka === '/api/srodowisko/ustawienia') return json(policzUstawienia(w, { dla: p.get('dla') || null, nakladki: (p.get('nakladki') || '').split(',').filter(Boolean), deklaracje: p.get('deklaracje') === 'tak' }));
     if (sciezka === '/api/srodowisko/spis') {
       const filtr = filtrZAdresu(w, p);
       const pomin = liczba(p.get('pomin')) || 0;

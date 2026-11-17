@@ -19,6 +19,7 @@
 import { poprawneImie, skrot } from './miejsce.mjs';
 import { PRZEDROSTEK_GOSCIA } from './klucze.mjs';
 import { opKlienta } from './ksztalty.mjs';
+import { sprawdzUstawienie } from './ustawienia.mjs';
 
 export const SRODOWISKO = 'srodowisko-1';
 export const CZYTELNIK_PODGLADU = 'podglad'; // imię czytającego bez klucza na podglądzie; uczestnikiem jest tylko tam
@@ -766,8 +767,13 @@ export class Srodowisko {
     const k = this.ksztaltDla(rodzaj);
     if (!k || typeof k.lezy_z !== 'string') return undefined;
     const wskazana = cechy ? cechy[k.lezy_z] : null;
-    const dom = typeof wskazana === 'string' && ID.test(wskazana) ? this.q(`SELECT obszar FROM rzeczy WHERE id = ?`, wskazana)[0] : null;
-    return dom ? { cecha: k.lezy_z, obszar: dom.obszar ?? null } : { cecha: k.lezy_z, brak: true };
+    const dom = typeof wskazana === 'string' && ID.test(wskazana) ? this.q(`SELECT id, rodzaj, obszar FROM rzeczy WHERE id = ?`, wskazana)[0] : null;
+    if (!dom) return { cecha: k.lezy_z, brak: true };
+    // Gdy rzecz wskazana sama jest obszarem, rzecz leży W NIM, a nie obok niego: wartość ustawienia, której zasięgiem
+    // jest obszar, podlega prawu tego obszaru (w szkicu agent stroi sam, w głównym proponuje). Obszar główny jest
+    // rzeczą, ale to, co w nim leży, ma obszar pusty.
+    if (dom.rodzaj === 'obszar/1') return { cecha: k.lezy_z, obszar: dom.id === this.r.meta('obszar_glowny') ? null : dom.id };
+    return { cecha: k.lezy_z, obszar: dom.obszar ?? null };
   }
 
   // Czy idąc od rzeczy `od` w górę po regule lezy_z dojdzie się do rzeczy `szukana` (wtedy powstałoby koło).
@@ -797,6 +803,9 @@ export class Srodowisko {
 
   // Rzeczy, które z natury leżą z rzeczą `id`, idą do jej nowego obszaru; potem ich własne zależne, i tak dalej.
   _pociagnij(id, obszar, widziane = new Set([id])) {
+    // To, co z natury leży z obszarem, leży w nim samym: gdy obszar zmienia rodzica, jego wnętrze zostaje, gdzie było.
+    const sam = this.q(`SELECT rodzaj FROM rzeczy WHERE id = ?`, id)[0];
+    if (sam && sam.rodzaj === 'obszar/1') return;
     for (const w of this.q(`SELECT o.od, o.cecha, r.rodzaj, r.obszar, r.odlozone FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ?`, id)) {
       if (widziane.has(w.od)) continue;
       const k = this.ksztaltDla(w.rodzaj);
@@ -811,6 +820,8 @@ export class Srodowisko {
   _rodzajeZaleznych(id, widziane = new Set([id]), glebokosc = 0) {
     const wynik = new Set();
     if (glebokosc > 8) return wynik;
+    const sam = this.q(`SELECT rodzaj FROM rzeczy WHERE id = ?`, id)[0];
+    if (sam && sam.rodzaj === 'obszar/1') return wynik; // wnętrze obszaru nie idzie za nim (zob. _pociagnij)
     for (const w of this.q(`SELECT o.od, o.cecha, r.rodzaj FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ?`, id)) {
       if (widziane.has(w.od)) continue;
       const k = this.ksztaltDla(w.rodzaj);
@@ -992,6 +1003,10 @@ export class Srodowisko {
       if (sk && JSON.stringify(sk.klucz || null) === JSON.stringify(ksztalt.klucz) && ksztalt.klucz.some((n) => JSON.stringify(stara.cechy[n]) !== JSON.stringify(cechy[n])))
         return blad(422, `cechy ${ksztalt.klucz.join(', ')} są kluczem, czyli tożsamością tej rzeczy; inna wartość klucza to inna rzecz`);
     }
+    // Pokrętła, wartości i zestawy: kształt mówi, jakie mają cechy, a to, czy wartość pasuje do deklaracji pokrętła,
+    // umie sprawdzić tylko środowisko (worker/ustawienia.mjs).
+    const wada = sprawdzUstawienie(this, rodzaj, cechy, widzi);
+    if (wada) return blad(422, wada.blad, wada.bledy ? { bledy: wada.bledy } : {});
     return { ok: true, ksztalt, nieznane };
   }
 
@@ -1004,6 +1019,10 @@ export class Srodowisko {
   }
 
   async _poloz(kto, c, slad) {
+    // Wartość pokrętła bez podanego zasięgu dotyczy całego Miejsca: zasięgiem jest obszar główny. Dopisujemy go tu,
+    // przed wszystkim innym, żeby ponowienie tej samej czynności dawało tę samą treść.
+    if (c.rodzaj === 'wartosc/1' && c.cechy && typeof c.cechy === 'object' && !Array.isArray(c.cechy) && (c.cechy.zasieg === undefined || c.cechy.zasieg === null) && this.r.meta('obszar_glowny'))
+      c = { ...c, cechy: { ...c.cechy, zasieg: this.r.meta('obszar_glowny') } };
     const { rodzaj, cechy } = c;
     if (typeof rodzaj !== 'string' || !RODZAJ.test(rodzaj)) return blad(400, 'rodzaj: nazwa z pokoleniem, np. projekt/1 (małe litery, cyfry, kropka, - i _, potem /numer)');
     if (!cechy || typeof cechy !== 'object' || Array.isArray(cechy)) return blad(400, 'cechy: obiekt z cechami rzeczy, np. {"nazwa": "…"}');
@@ -1384,8 +1403,11 @@ export class Srodowisko {
       const obszar = z.obszar ? (this.r.meta('ziarno:' + z.obszar) || null) : null;
       const odcisk = szybkiOdcisk(JSON.stringify([z.rodzaj, obszar, cechy]));
       let id = this.r.meta(klucz);
+      // Ziarno rodzaju, który ma klucz, dostaje tożsamość z klucza: inaczej ta sama rzecz dołożona potem ręką albo
+      // przez narzędzie powstałaby drugi raz, pod innym identyfikatorem.
+      const zKlucza = z.rodzaj === 'ksztalt/1' ? null : await this._idZKlucza(z.rodzaj, this.ksztaltDla(z.rodzaj), cechy);
       if (!id) {
-        const stale = await idZ('ziarno', z.nazwa);
+        const stale = zKlucza || await idZ('ziarno', z.nazwa);
         id = this.rzecz(stale) ? stale : this._znajdzZiarno(z, cechy);
         if (id) this.r.ustawMeta(klucz, id);
       }
@@ -1402,7 +1424,7 @@ export class Srodowisko {
         zrobione.push(z.nazwa + ' (odświeżone)');
         continue;
       }
-      id = await idZ('ziarno', z.nazwa);
+      id = zKlucza || await idZ('ziarno', z.nazwa);
       await zapisz(z, id, cechy, obszar, 'zasiew-' + z.nazwa, null);
       this.r.ustawMeta(klucz, id);
       this.r.ustawMeta('ziarno-odcisk:' + z.nazwa, odcisk);

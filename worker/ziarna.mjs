@@ -2,6 +2,8 @@
 // To są DANE, nie kod: po zasianiu każdą z tych rzeczy zmienia się ruchem, a zasiew jej nie nadpisze.
 // Kolejność ma znaczenie: najpierw kształt kształtu, potem kształty, potem rzeczy tych rodzajów.
 import { STOPNIE, UWAGI, WIDZI, UKLADA, szybkiOdcisk } from './srodowisko.mjs';
+import { TYPY_POKRETEL, POKRETLO_ZESTAWOW } from './ustawienia.mjs';
+import { POKRETLA } from '../public/pokretla.mjs';
 
 const k = (nazwa, cechy) => ({ nazwa: 'ksztalt-' + nazwa, rodzaj: 'ksztalt/1', cechy });
 // Etapy budowy, w tej kolejności: grunt ma być solidny, zanim staną ściany; wykończenie jest na końcu; tworzenie jest
@@ -302,6 +304,37 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
         y: { typ: 'liczba', wymagana: true },
         skala: { typ: 'liczba', opis: 'mnożnik wielkości z ręki, od 0.4 do 4; bez niej 1' },
       } }),
+    k('pokretlo', { dla: 'pokretlo/1', tytul: 'nazwa', klucz: ['nazwa'], opis: 'Pokrętło: deklaracja jednej rzeczy, którą da się stroić (kolor, czas ruchu, próg gestu). Mówi, jak się nazywa, jakiego jest typu, jaką ma wartość domyślną i co zmienia. Dokłada je każdy: twarz, narzędzie w oknie, agent. Wartości i wszystkie pokrętła naraz: /ustawienia.',
+      cechy: {
+        nazwa: { typ: 'tekst', wymagana: true, opis: 'od dwóch do sześciu członów rozdzielonych kropką, np. wyglad.kolor.tlo; nazwa jest tożsamością pokrętła' },
+        typ: { typ: 'wybor', wymagana: true, wartosci: Object.keys(TYPY_POKRETEL), opis: 'typ wartości; co każdy znaczy: /ustawienia' },
+        domyslna: { typ: 'dowolne', wymagana: true, opis: 'wartość, dopóki nikt pokrętła nie ruszył' },
+        opis: { typ: 'tekst', wymagana: true, opis: 'jedno zdanie o tym, co pokrętło zmienia; czyta je ręka i agent' },
+        grupa: { typ: 'tekst', opis: 'gdzie stoi w oknie ustawień, np. Wygląd / Paleta jasna' },
+        zakres: { typ: 'dowolne', opis: 'zakres suwaka {od, do, krok} dla liczby i czasu; podpowiedź, nie granica' },
+        twarde: { typ: 'dowolne', opis: 'twarda klamra {od, do} dla liczby i czasu; chroni tylko przed rozpadem, wartość poza nią jest odrzucana' },
+        wartosci: { typ: 'lista', z: 'tekst', opis: 'dozwolone wartości przy typie wybor' },
+        jednostka: { typ: 'tekst', opis: 'np. px albo ×; czas jest zawsze w milisekundach' },
+        zrodlo: { typ: 'tekst', opis: 'kto zadeklarował: twarz, narzędzie albo tablica pokręteł w kodzie' },
+      } }),
+    k('wartosc', { dla: 'wartosc/1', tytul: 'pokretlo', klucz: ['pokretlo', 'zasieg'], uklad: true, lezy_z: 'zasieg', opis: 'Wartość pokrętła w zasięgu. Zasięgiem jest dowolna rzecz: obszar (główny znaczy całe Miejsce), widok, okno, uczestnik, profil. Jedna wartość na parę pokrętło i zasięg, więc każda zmiana jest nową wersją z autorem, a cofnięcie wraca poprzednią. Leży tam, gdzie jej zasięg (gdy zasięgiem jest obszar: w nim), więc prawo do strojenia jest prawem obszaru.',
+      cechy: {
+        pokretlo: { typ: 'tekst', wymagana: true, opis: 'nazwa zadeklarowanego pokrętła' },
+        zasieg: { typ: 'rzecz', wymagana: true, opis: 'rzecz, dla której wartość obowiązuje; pominięta przy zapisie znaczy obszar główny, czyli całe Miejsce' },
+        wartosc: { typ: 'dowolne', wymagana: true, opis: 'wartość zgodna z typem pokrętła' },
+      } }),
+    k('zestaw', { dla: 'zestaw/1', tytul: 'nazwa', opis: 'Zestaw: nazwany komplet wartości pokręteł, czyli motyw albo preset. Włącza się go w zasięgu wartością pokrętła srodowisko.zestawy (lista zestawów; późniejszy wygrywa). Zmiana zestawu dociera od razu wszędzie, gdzie jest włączony.',
+      cechy: {
+        nazwa: { typ: 'tekst', wymagana: true },
+        opis: { typ: 'tekst' },
+        po_co: { typ: 'wybor', wartosci: ['motyw', 'preset', 'inne'], opis: 'motyw (wygląd), preset (odczucie, zachowanie) albo inne; tylko do porządku w oknie ustawień' },
+        wartosci: { typ: 'dowolne', wymagana: true, opis: 'obiekt {nazwa pokrętła: wartość}; każda wartość jest sprawdzana jak wartość wprost' },
+      } }),
+    k('profil', { dla: 'profil/1', tytul: 'nazwa', opis: 'Profil: nazwany zasięg ustawień bez własnej treści, np. to urządzenie albo ten sposób pracy. Wartości przypięte do profilu obowiązują tę twarz, która poda go jako nakładkę (ustawienia?nakladki=<id>).',
+      cechy: {
+        nazwa: { typ: 'tekst', wymagana: true },
+        opis: { typ: 'tekst' },
+      } }),
     k('rodzina', { dla: 'rodzina/1', tytul: 'nazwa', klucz: ['znak'], opis: 'Rodzina projektów: pytanie, wokół którego krąży kilka repozytoriów. Fakt przyniesiony przez obserwatora ze starej Jaskini.',
       cechy: {
         znak: { typ: 'tekst', wymagana: true, opis: 'krótki identyfikator rodziny w pliku faktów starej Jaskini, np. zywe; z niego liczy się tożsamość rzeczy' },
@@ -355,6 +388,9 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
     { nazwa: 'uczestnik-obserwator', rodzaj: 'uczestnik/1', cechy: { imie: 'obserwator', rola: 'automat', opis: 'Przynosi fakty z GitHuba (publiczne repozytoria i ich gałęzie) albo, gdy GitHub odmawia, z pliku faktów starej Jaskini. Nikt nie ma jego klucza: imię jest zastrzeżone, więc z zewnątrz nie da się pod nim robić ruchów.' } },
     zd('rzeczy', 'stoi', 'Rzeczy z tożsamością i historią: każda rzecz ma identyfikator niezależny od nazwy i repozytorium, adres /rzecz/<id> i zapis każdej zmiany z autorem.'),
     zd('ksztalty', 'stoi', 'Rodzaj jako dana: nowy rodzaj rzeczy dokłada się ruchem (rzecz rodzaju ksztalt/1); sprawdzanie jest przy zapisie, nieznana cecha zostaje zachowana.'),
+    // Pierwsze pokrętła: jedna tablica (public/pokretla.mjs), z której twarz bierze wartości domyślne, a zasiew rzeczy.
+    { nazwa: 'pokretlo-' + POKRETLO_ZESTAWOW, rodzaj: 'pokretlo/1', cechy: { nazwa: POKRETLO_ZESTAWOW, typ: 'zestawy', domyslna: [], grupa: 'Zestawy', opis: 'Które zestawy (motywy, presety) są włączone w tym zasięgu; późniejszy na liście wygrywa. Lista nie dziedziczy się: każdy zasięg włącza swoje.', zrodlo: 'środowisko' } },
+    ...POKRETLA.map((d) => ({ nazwa: 'pokretlo-' + d.nazwa, rodzaj: 'pokretlo/1', cechy: { ...d, zrodlo: 'tablica pokręteł (public/pokretla.mjs)' } })),
     zd('trasa', 'stoi', 'Trasa: jedno żądanie do drzwi i rzecz jest w Miejscu, widać ją w spisie i zostaje.'),
     zd('samowyjasnianie', 'stoi', 'Samowyjaśnianie pod adresem: /co-tu-jest mówi gołym tekstem, co tu jest, co się zmieniło, co komu wolno i jak coś dołożyć; powstaje z danych.'),
     zd('obszary', 'cienko', 'Obszary i prawo do skutku z danych: ten sam ruch daje skutek, propozycję albo odmowę zależnie od ustawienia obszaru.', 'Działa ile_wolno, liczone w obszarze, w którym rzecz leży, i w tym, do którego trafia, oraz widzi (osobna zdolność: widocznosc). Ustawienia uwaga i uklada są zapisane, ale nic jeszcze z nich nie wynika. Wszyscy agenci mają w obszarze to samo prawo.'),
@@ -385,7 +421,7 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
     // Stan budowy ma mówić nie tylko, co stoi, ale też czego nie ma i na którym etapie jest potrzebne.
     zd('uwaga', 'brak', 'Uwaga z danych: ustawienie obszaru mówi, czy zdarzenie ma być ciszą, skrótem, znakiem czy budzeniem; uwaga i sprawczość są osobnymi ustawieniami.', 'Ustawienie uwaga jest zapisane w każdym obszarze, ale nic go jeszcze nie czyta: wszystko, co czeka, wygląda tak samo.'),
     zd('tozsamosc-po-zmianie', 'brak', 'Tożsamość, która przeżywa zmianę: rzecz zostaje sobą po zmianie nazwy u źródła, a dwie rzeczy da się połączyć albo jedną rozdzielić, z rodowodem i bez gubienia wskazań.', 'Dziś zmiana nazwy repozytorium u źródła daje nową rzecz, a stara jest odkładana (kluczem jest nazwa). Łączenia i dzielenia nie ma.'),
-    zd('ustawienia', 'brak', 'Ustawienia jako dane: wszystko, co da się stroić, ma deklarację (typ, zakres), wartość z zasięgiem i historią oraz nazwane zestawy, zmieniane w działającym Miejscu.', 'Dziś są cztery ustawienia obszaru wpisane w kod, z czego działa jedno (ile_wolno). Wszystko, co stroi się na Starcie, jest stałą w kodzie.'),
+    zd('ustawienia', 'cienko', 'Ustawienia jako dane: wszystko, co da się stroić, ma deklarację (typ, zakres), wartość z zasięgiem i historią oraz nazwane zestawy, zmieniane w działającym Miejscu.', 'Pokrętło (pokretlo/1) to deklaracja z typem, wartością domyślną, zakresem suwaka i twardą klamrą; wartość (wartosc/1) obowiązuje w zasięgu, którym jest dowolna rzecz, i leży tam, gdzie zasięg, więc prawo do strojenia jest prawem obszaru; zestaw (zestaw/1) to motyw albo preset włączany w zasięgu; profil (profil/1) to nakładka dla urządzenia albo sposobu pracy. Liczenie idzie od najbliższego zasięgu w górę do Miejsca, a wartość niezgodna z deklaracją nie dochodzi do twarzy. Wszystko naraz: /ustawienia i /api/srodowisko/ustawienia. Pierwsze pokrętła (palety, krój, czasy ruchu, próg przeciągania, cień) biorą się z jednej tablicy w kodzie. Czego nie ma: okna ustawień z suwakami dla ręki (jest tylko prosty panel na stronie gospodarza), kroju jako pliku (rzecz nosi tylko nazwę kroju z urządzenia), reguły układu i drabiny przedstawień jako danych, zasięgu osoby dla właściciela. Cztery ustawienia obszaru (ile_wolno, uwaga, widzi, uklada) zostają cechami obszaru. Format (ustawienia-1) nie przeszedł jeszcze ataku linii wyglądu.'),
     zd('gosc-pisze', 'cienko', 'Gość, który pisze: narzędzie w oknie zakłada i zmienia rzeczy pod własnym imieniem (domyślnie jako propozycja) i czyta tylko to, co gościowi wolno.', 'Ruch z okna (umowa okno/3) zapisuje się pod imieniem gosc-<id>, a ten, kto otworzył okno, stoi przy nim jako kontekst. Gość ma w obszarze tyle prawa co agent i nigdy więcej niż otwierający. Nie ma jeszcze zgody dla wskazanego narzędzia we wskazanym obszarze, a czyta dalej tyle, co strona, która go otworzyła.'),
     zd('narzedzia-agenta', 'brak', 'Narzędzia Miejsca w ręku agenta: czasowniki ze spisu stoją na liście narzędzi agenta (serwer narzędzi), więc agent używa ich bez czytania opisu i bez adresu w poleceniu.', 'Dziś spis czasowników jest tekstem wpisanym w kod, a agent musi przeczytać /co-tu-jest i sam złożyć żądanie.'),
     zd('wersje-do-uruchomienia', 'brak', 'Wersje i buildy przychodzą same: nowa wersja labu albo działający build staje się rzeczą ze znakiem nowe i wejściem do uruchomienia.', 'Dziś same przychodzą fakty o repozytoriach i gałęziach, tak świeże jak odświeżenie starej Jaskini; wersji do uruchomienia nie ma, a znak nowe nie istnieje.'),

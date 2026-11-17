@@ -60,9 +60,13 @@ export function sprawdzSpojnosc(s, { ile = DOMYSLNIE_ILE, pomin = 0, rodzaj = nu
         if (!dom) {
           rodziny.lezy_z++;
           niezgodne.push(zgloszenie(rz, 'lezy_z', `cecha ${nazwa} nie wskazuje istniejącej rzeczy, a od niej rzecz tego rodzaju bierze obszar`));
-        } else if ((dom.obszar ?? null) !== (rz.obszar ?? null)) {
-          rodziny.lezy_z++;
-          niezgodne.push(zgloszenie(rz, 'lezy_z', `leży w obszarze ${rz.obszar ?? 'głównym'}, a rzecz z cechy ${nazwa} (${dom.id}) leży w ${dom.obszar ?? 'głównym'}; kształt mówi, że mają leżeć razem`));
+        } else {
+          // rzecz wskazująca obszar leży W NIM (obszar główny: to, co w nim leży, ma obszar pusty); każda inna leży obok
+          const ma = dom.rodzaj === 'obszar/1' ? (dom.id === s.r.meta('obszar_glowny') ? null : dom.id) : (dom.obszar ?? null);
+          if (ma !== (rz.obszar ?? null)) {
+            rodziny.lezy_z++;
+            niezgodne.push(zgloszenie(rz, 'lezy_z', `leży w obszarze ${rz.obszar ?? 'głównym'}, a z cechy ${nazwa} (${dom.id}) wynika obszar ${ma ?? 'główny'}; kształt mówi, że rzecz leży tam, gdzie rzecz wskazana (a gdy wskazany jest obszar: w nim)`));
+          }
         }
       }
 
