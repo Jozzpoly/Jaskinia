@@ -108,7 +108,7 @@
       ramka);
     const guzik = el('button', { tekst: tytul, klik: () => pokaz(id, sekcja.hidden) });
     okna.set(id, { klucz, ramka, sekcja, guzik, tyt, mowi, gosc, chce: [], nazwa: tytul, slad: sladOkna, zapisy: 0, propozycje: 0 });
-    ramka.addEventListener('load', () => ramka.contentWindow && ramka.contentWindow.postMessage({ jaskinia: 1, type: 'hi', v: 2, umowy: ['okno/2', 'okno/3'] }, '*'));
+    ramka.addEventListener('load', () => { if (!ramka.contentWindow) return; ramka.contentWindow.postMessage({ jaskinia: 1, type: 'hi', v: 2, umowy: ['okno/2', 'okno/3'], umie: ['look'] }, '*'); powiedzWyglad(okna.get(id)); });
     $('okna').append(sekcja);
     $('dok').append(guzik);
     pokaz(id, true);
@@ -368,6 +368,7 @@
     zachowaj(null, () => { t.textContent = ''; rysujTresc(t, d, czekaIle); });
     // Otwarta karta czyta swoją rzecz od nowa tylko wtedy, gdy Miejsce poszło dalej: inaczej niczego jej nie ruszamy.
     if (kr.id && kr.akt !== akt) odswiezKarte();
+    odswiezUstawienia();
   }
   function rysujTresc(t, d, czekaIle) {
     if (d.miejsce.podglad) t.append(el('p', { klasa: 'uwaga', tekst: 'Podgląd: wszystko tutaj jest publiczne do czytania i niczego prywatnego tu nie ma. To jest środowisko, w którym Jaskinia ma rosnąć; Start stoi obok jako szkielet (guzik Start u góry).' }));
@@ -681,6 +682,95 @@
     otworzKarte(id, kr.id ? null : a);
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && kr.id && !e.defaultPrevented) zamknijKarte(); });
+
+  // --- pokrętła: wygląd i odczucie są danymi w Miejscu (public/pokretla.mjs, drzwi /api/srodowisko/ustawienia) -------
+  // Ta strona bierze z nich palety i krój, mówi je narzędziom w oknach (wiadomość look: przy otwarciu i po każdej
+  // zmianie, w biegu) i daje ręce prosty panel: każde zadeklarowane pokrętło z polem według typu. Adres z ?bezpiecznie
+  // zostawia wygląd domyślny.
+  let P = null, modulPokretel = null, ust = null, odciskUstawien = null, pytamOUstawienia = false;
+  const bezpiecznie = new URLSearchParams(location.search).has('bezpiecznie');
+  const systemCiemny = () => matchMedia('(prefers-color-scheme: dark)').matches;
+  function wygladDlaOkna() {
+    const kolory = {};
+    for (const n of modulPokretel.KOLORY) kolory[n] = String(P.kolor(n, systemCiemny()));
+    return { jaskinia: 1, type: 'look', v: 1, ciemny: P.ciemna(systemCiemny()), kolory, kroj: String(P.w('wyglad.kroj.rodzina')), ruch: Number(P.w('wyglad.ruch.natezenie')) };
+  }
+  function powiedzWyglad(o) { if (P && o && o.ramka.contentWindow) o.ramka.contentWindow.postMessage(wygladDlaOkna(), '*'); }
+  function zastosujWyglad() {
+    if (!P) return;
+    const st = document.documentElement.style;
+    for (const n of modulPokretel.KOLORY) st.setProperty('--' + n, String(P.kolor(n, systemCiemny())));
+    st.setProperty('color-scheme', P.ciemna(systemCiemny()) ? 'dark' : 'light');
+    document.body.style.fontFamily = String(P.w('wyglad.kroj.rodzina'));
+    for (const o of okna.values()) powiedzWyglad(o);
+  }
+  const odciskUst = () => { let ile = 0, ostatnia = 0; for (const r of rzeczy) if (modulPokretel.RODZAJE_USTAWIEN.includes(r.rodzaj)) { ile++; if (r.wersja > ostatnia) ostatnia = r.wersja; } return ile + ':' + ostatnia + ':' + (klucz ? 1 : 0); };
+  async function odswiezUstawienia() {
+    if (!P || !opis || pytamOUstawienia) return;
+    pytamOUstawienia = true;
+    try {
+      for (let obieg = 0; obieg < 3; obieg++) {
+        const odcisk = odciskUst();
+        if (odcisk === odciskUstawien) break;
+        ust = await czytaj('/api/srodowisko/ustawienia?deklaracje=tak');
+        odciskUstawien = odcisk;
+        if (!bezpiecznie) P.przyjmij(ust);
+        rysujUstawienia();
+      }
+    } catch { /* bez ustawień z Miejsca strona zostaje przy wyglądzie, który ma */ } finally { pytamOUstawienia = false; }
+  }
+  // Panel dla ręki: jedno miejsce, które stroi wszystko, co ktokolwiek zadeklarował. Zapis idzie przy puszczeniu
+  // suwaka albo zatwierdzeniu pola (jedna zmiana to jeden zapis), a "wróć" odkłada wartość, czyli oddaje odziedziczoną.
+  const PROSTE = ['kolor', 'liczba', 'czas', 'wybor', 'tak-nie', 'tekst'];
+  function poleUstawienia(d, x) {
+    const ustaw = (w) => ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, wartosc: w } }, 'Ustawione: ' + d.nazwa + '.');
+    const cechy = { 'aria-label': d.nazwa, disabled: klucz ? null : true };
+    let pole;
+    if (d.typ === 'kolor') { pole = el('input', { type: 'color', value: String(x.wartosc).slice(0, 7), ...cechy }); pole.addEventListener('change', () => ustaw(pole.value)); }
+    else if (d.typ === 'liczba' || d.typ === 'czas') {
+      const z = d.zakres || {};
+      // pole liczbowe ma własną nazwę: niżej `pole` staje się parą suwak i liczba, a słuchacze mają czytać liczbę
+      const liczbowe = el('input', { type: 'number', value: String(x.wartosc), step: z.krok ? String(z.krok) : 'any', ...cechy });
+      liczbowe.addEventListener('change', () => { const w = Number(liczbowe.value); if (liczbowe.value !== '' && Number.isFinite(w)) ustaw(w); });
+      pole = liczbowe;
+      if (Number.isFinite(z.od) && Number.isFinite(z.do)) {
+        const suwak = el('input', { type: 'range', min: String(z.od), max: String(z.do), step: z.krok ? String(z.krok) : 'any', value: String(x.wartosc), 'aria-label': d.nazwa + ' (suwak)', disabled: klucz ? null : true });
+        suwak.addEventListener('input', () => { liczbowe.value = suwak.value; });
+        suwak.addEventListener('change', () => ustaw(Number(suwak.value)));
+        pole = el('span', { klasa: 'ust-para' }, suwak, liczbowe, d.jednostka ? el('span', { klasa: 'bok', tekst: d.jednostka }) : (d.typ === 'czas' ? el('span', { klasa: 'bok', tekst: 'ms' }) : null));
+      }
+    } else if (d.typ === 'wybor') { pole = el('select', cechy, (d.wartosci || []).map((w) => el('option', { value: w, selected: w === x.wartosc ? true : null, tekst: w }))); pole.addEventListener('change', () => ustaw(pole.value)); }
+    else if (d.typ === 'tak-nie') { pole = el('input', { type: 'checkbox', checked: x.wartosc === true ? true : null, ...cechy }); pole.addEventListener('change', () => ustaw(pole.checked)); }
+    else { pole = el('input', { type: 'text', value: String(x.wartosc), ...cechy }); pole.addEventListener('change', () => ustaw(pole.value)); }
+    return pole;
+  }
+  function rysujUstawienia() {
+    const pudlo = $('ustawienia');
+    if (!pudlo || !ust || !Array.isArray(ust.deklaracje)) return;
+    const otwarte = new Set([...pudlo.querySelectorAll('details[open]')].map((x) => x.dataset.grupa));
+    const grupy = new Map();
+    for (const d of ust.deklaracje) { const g = d.grupa || 'Inne'; if (!grupy.has(g)) grupy.set(g, []); grupy.get(g).push(d); }
+    const wiersz = (d) => {
+      const x = ust.wartosci[d.nazwa] || { wartosc: d.domyslna, skad: 'domyslna' };
+      const skad = x.skad === 'wartosc' ? 'ustawione' : x.skad === 'zestaw' ? 'z zestawu ' + x.zestaw : 'domyślne';
+      return el('li', { klasa: 'ust-wiersz' },
+        el('div', { klasa: 'ust-opis' }, el('code', { tekst: d.nazwa }), el('span', { klasa: 'bok', tekst: ' ' + skad }), el('p', { tekst: d.opis })),
+        el('div', { klasa: 'ust-pole' }, PROSTE.includes(d.typ) ? poleUstawienia(d, x) : el('a', { href: '/ustawienia', tekst: 'typ ' + d.typ + ': zmiana ruchem, opis pod /ustawienia' }),
+          x.skad === 'wartosc' && klucz ? el('button', { tekst: 'wróć', title: 'Odłóż tę wartość: wraca odziedziczona albo domyślna', klik: () => ruch({ co: 'odloz', rzecz: x.rzecz, wersja: 'dowolna', powod: 'powrót do wartości odziedziczonej' }, 'Wróciła wartość odziedziczona: ' + d.nazwa + '.') }) : null));
+    };
+    pudlo.textContent = '';
+    pudlo.append(el('h2', {}, 'Ustawienia: wygląd i odczucie ', el('span', { klasa: 'ile', tekst: String(ust.deklaracje.length) })),
+      el('p', { klasa: 'bok', tekst: (klucz ? 'Zmiana to zapis w Miejscu z Twoim imieniem; widać ją od razu tu, na Starcie i w oknach narzędzi.' : 'Żeby stroić, wejdź (guzik "Wejdź" na górze).') + (bezpiecznie ? ' Tryb bezpieczny: ta strona pokazuje wygląd domyślny.' : '') + ' Wyjście z zepsutego wyglądu: adres z ?bezpiecznie.' }),
+      ...[...grupy].map(([g, lista]) => { const det = el('details', { open: otwarte.has(g) ? true : null }, el('summary', {}, g + ' ', el('span', { klasa: 'ile', tekst: String(lista.length) })), el('ul', { klasa: 'lista ust' }, lista.map(wiersz))); det.dataset.grupa = g; return det; }));
+    pudlo.hidden = false;
+  }
+  import('/pokretla.mjs').then((m) => {
+    modulPokretel = m;
+    P = new m.Pokretla({ bezpiecznie, naZmiane: zastosujWyglad });
+    zastosujWyglad();
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', zastosujWyglad);
+    odswiezUstawienia();
+  }).catch(() => { /* bez tablicy pokręteł strona zostaje przy stylu z pliku */ });
 
   // --- czytanie: całość raz, potem tylko zmiany -------------------------------------------------------------------
   const powiedzGosciom = () => { for (const o of okna.values()) if (o.chce.includes('rzeczy') && o.ramka.contentWindow) o.ramka.contentWindow.postMessage({ jaskinia: 1, type: 'changed', akt }, '*'); };

@@ -18,6 +18,17 @@ export const ETAPY = [
 const ETAP_DAWNYCH = { start: 'sciany-i-kable', 'wolanie-czasownikow': 'sciany-i-kable', 'najety-mozg': 'sciany-i-kable', 'licznik-przeniesienia': 'wykonczenie' };
 const zd = (nazwa, stan, opis, jak, etap) => ({ nazwa: 'zdolnosc-' + nazwa, rodzaj: 'zdolnosc/1', cechy: { nazwa: opis.split(':')[0], stan, opis: opis.split(':').slice(1).join(':').trim(), ...(jak ? { jak } : {}), etap: etap || ETAP_DAWNYCH[nazwa] || 'grunt' } });
 
+// Wygląd od gospodarza (wiadomość look): narzędzie ubiera się w motyw Miejsca w biegu, bez przeładowania.
+// Ten kawałek wchodzi do obu przykładowych gości; cudze narzędzie może go skopiować z /umowa-okna.
+const GOSC_WYGLAD = `function ubierz(m) {
+  const k = m.kolory || {}, s = document.documentElement.style;
+  s.setProperty('color-scheme', m.ciemny ? 'dark' : 'light');
+  if (k.tlo) document.body.style.background = k.tlo;
+  if (k.tekst) document.body.style.color = k.tekst;
+  if (k.akcent) s.setProperty('accent-color', k.akcent);
+  if (typeof m.kroj === 'string') document.body.style.fontFamily = m.kroj;
+}`;
+
 // Przykładowy gość: jedna strona HTML, która rozmawia z gospodarzem umową okna (pokolenie 2).
 export const GOSC_LISTA = `<!doctype html>
 <html lang="pl">
@@ -55,12 +66,14 @@ function czytaj(what, wiecej) {
     setTimeout(() => { if (czekaja.delete(id)) nie(new Error('gospodarz nie odpowiedział')); }, 8000);
   });
 }
+${GOSC_WYGLAD}
 addEventListener('message', (e) => {
   const m = e.data;
   if (e.source !== gospodarz || !m || m.jaskinia !== 1) return;
   if (m.type === 'hi') { powiedz({ type: 'hello', name: 'Lista rzeczy', version: '1', wants: ['rzeczy'] }); pokaz(); }
   else if (m.type === 'result') { const c = czekaja.get(m.id); if (c) { czekaja.delete(m.id); if (m.ok) c.tak(m.data); else c.nie(new Error(m.error)); } }
   else if (m.type === 'changed') pokaz();
+  else if (m.type === 'look') ubierz(m);
 });
 async function pokaz() {
   const stan = document.getElementById('stan');
@@ -137,12 +150,14 @@ const czytaj = (what, wiecej) => zapytaj('read', { what, ...wiecej }, 8000);
 const rusz = (move) => zapytaj('move', { move }, 15000);
 const stan = document.getElementById('stan'), wynik = document.getElementById('wynik');
 const ile = (n) => n + (n === 1 ? ' słowo' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? ' słowa' : ' słów'));
+${GOSC_WYGLAD}
 addEventListener('message', (e) => {
   const m = e.data;
   if (e.source !== gospodarz || !m || m.jaskinia !== 1) return;
   if (m.type === 'hi') { powiedz({ type: 'hello', name: 'Słowa', version: '1', wants: ['rzeczy'] }); pokaz(); }
   else if (m.type === 'result') { const c = czekaja.get(m.id); if (c) { czekaja.delete(m.id); if (m.ok) c.tak(m.data); else c.nie(new Error(m.error)); } }
   else if (m.type === 'changed') pokaz();
+  else if (m.type === 'look') ubierz(m);
 });
 async function pokaz() {
   try {

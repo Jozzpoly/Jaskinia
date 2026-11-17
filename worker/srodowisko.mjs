@@ -1072,7 +1072,10 @@ export class Srodowisko {
       if (stara && this._lezyPod(cechy[n.cecha], stara.id)) return blad(422, `rzecz nie może leżeć z rzeczą, która sama leży z nią (cecha ${n.cecha} zamyka koło)`);
       obszar = n.obszar;
     }
-    return this._zmien(kto, c.op, slad, { co: 'poloz', stara, id, rodzaj, obszar, cechy, odlozone: stara ? !!stara.odlozone : false, powod: stara && stara.odlozone ? stara.powod : null, wersja: stara ? (c.wersja === 'dowolna' ? stara.wersja : c.wersja) : null });
+    // Ustawienie wartości pokrętła zawsze czyni ją czynną: odłożenie wartości znaczy "wróć do odziedziczonej", więc
+    // ponowne ustawienie musi ją przywrócić, inaczej ręka ustawiałaby coś, co nie ma skutku.
+    const czynna = rodzaj === 'wartosc/1';
+    return this._zmien(kto, c.op, slad, { co: 'poloz', stara, id, rodzaj, obszar, cechy, odlozone: stara && !czynna ? !!stara.odlozone : false, powod: stara && stara.odlozone && !czynna ? stara.powod : null, wersja: stara ? (c.wersja === 'dowolna' ? stara.wersja : c.wersja) : null });
   }
 
   // Ponowienie tej samej czynności (ten sam uczestnik, ten sam op): oddajemy to, co stało się za pierwszym razem,

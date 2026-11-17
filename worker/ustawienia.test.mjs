@@ -9,6 +9,7 @@ import { sqlZNode } from './sql-node.mjs';
 import { Srodowisko, idZ } from './srodowisko.mjs';
 import { ziarna } from './ziarna.mjs';
 import { obsluzSrodowisko } from './srodowisko-http.mjs';
+import { umowaOkna } from './opis.mjs';
 import { sprawdzSpojnosc } from './spojnosc.mjs';
 import { policzUstawienia, POKRETLO_ZESTAWOW, FORMAT_USTAWIEN, wadaWartosci, wadyDeklaracji } from './ustawienia.mjs';
 import { POKRETLA, Pokretla } from '../public/pokretla.mjs';
@@ -245,4 +246,22 @@ test('U11. przez drzwi: jedno żądanie daje twarzy wszystkie wartości, a stron
   const bezpieczny = new Pokretla({ bezpiecznie: true });
   bezpieczny.przyjmij(d);
   assert.notEqual(bezpieczny.w('wyglad.kolor.akcent'), '#445566', 'tryb bezpieczny nie bierze wartości z Miejsca');
+});
+
+test('U12. ustawienie wartości po jej odłożeniu znowu działa; umowa okna i przykładowi goście znają wiadomość z wyglądem', async () => {
+  const { s, ok, wartosc, licz } = await swiat();
+  const a = ok(await wartosc('jozz', 'ust-u12-a', 'wyglad.kolor.akcent', '#111111'));
+  ok(await s.ruch('jozz', { op: 'ust-u12-odloz', co: 'odloz', rzecz: a.rzecz, wersja: 'dowolna' }));
+  assert.equal(licz('agent-a').wartosci['wyglad.kolor.akcent'].skad, 'domyslna');
+  ok(await wartosc('jozz', 'ust-u12-b', 'wyglad.kolor.akcent', '#222222', { wersja: 'dowolna' }));
+  assert.equal(licz('agent-a').wartosci['wyglad.kolor.akcent'].wartosc, '#222222', 'ponowne ustawienie przywraca wartość, inaczej ręka ustawiałaby coś bez skutku');
+  assert.ok(!s.rzecz(a.rzecz).odlozone);
+  assert.match(umowaOkna(), /look +\{ciemny, kolory/);
+  const goscie = s.spis({ rodzaj: 'gosc/1', limit: 20 });
+  assert.ok(goscie.length >= 2);
+  for (const g of goscie) {
+    const kod = s.kodGoscia(g.cechy.kod);
+    assert.match(kod, /m\.type === 'look'/, g.cechy.nazwa);
+    assert.match(kod, /function ubierz/, g.cechy.nazwa);
+  }
 });
