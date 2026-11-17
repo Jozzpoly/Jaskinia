@@ -42,6 +42,6 @@ export class Miejsce {
       await this.srod.zasiej(nowi.map((imie) => ({ nazwa: 'uczestnik-' + imie, rodzaj: 'uczestnik/1', cechy: { imie, rola: 'agent', opis: 'Uczestnik znany z klucza ustawionego przez właściciela.' } })));
       nowi.forEach((i) => this.znani.add(i));
     }
-    return obsluzSrodowisko(this.srod, request, { podglad: this.env.PODGLAD === 'tak', kluczProbny: this.env.KLUCZ_PROBNY_AGENTA || null });
+    return obsluzSrodowisko(this.srod, request, { podglad: this.env.PODGLAD === 'tak', kluczProbny: this.env.KLUCZ_PROBNY_AGENTA || null, kluczProbnyWlasciciela: this.env.KLUCZ_PROBNY_WLASCICIELA || null });
   }
 }

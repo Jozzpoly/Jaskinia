@@ -71,7 +71,7 @@ function zmiany(s, od, limit = 40) {
 }
 
 // Dane, z których powstaje i tekst, i odpowiedź JSON (jedno źródło dla człowieka i agenta).
-export function opisDane(s, { kto = null, jako = null, od = null, origin = '', podglad = false, kluczProbny = null, probnyImie = null } = {}) {
+export function opisDane(s, { kto = null, jako = null, od = null, origin = '', podglad = false, kluczProbny = null, probnyImie = null, kluczProbnyWlasciciela = null } = {}) {
   const ostatni = s.ostatniNr();
   const widzKto = kto || (podglad && jako ? jako : null);
   const rola = s.rola(widzKto);
@@ -100,6 +100,9 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
     przeniesienie: { projekty_w_srodku: (liczby.find((l) => l.rodzaj === 'projekt/1') || { ile: 0 }).ile, publiczne_repozytoria: m ? { ile: m.cechy.wartosc, stan_na: m.cechy.stan_na || null, zrodlo: m.cechy.zrodlo || null } : null },
     czasowniki: czasowniki(s),
     klucz_probny: podglad ? kluczProbny : null,
+    // Tylko na podglądzie, gdzie klucze próbne i tak są jawne: strona może dać jeden guzik "wejdź jako właściciel
+    // próbny", żeby ręka mogła spróbować gestów bez wpisywania czegokolwiek. W prawdziwym Miejscu tego pola nie ma.
+    klucz_probny_wlasciciela: podglad ? kluczProbnyWlasciciela : null,
     probny_imie: podglad ? probnyImie : null,
     zalatwione: { prosby: s.ile({ rodzaj: 'prosba/1', gdzie: { stan: 'zalatwiona' } }), propozycje_przyjete: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'przyjeta' } }), propozycje_odrzucone: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'odrzucona' } }), propozycje_wycofane: s.ile({ rodzaj: 'propozycja/1', gdzie: { stan: 'wycofana' } }) },
     odlozone: s.ile({ odlozone: 'tak' }),

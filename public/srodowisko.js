@@ -15,12 +15,43 @@
     for (const d of dzieci.flat()) if (d !== null && d !== undefined && d !== false) e.append(d);
     return e;
   };
+  // Klucz uczestnika zostaje w pamięci tej przeglądarki, pod adresem Miejsca. Goście w ramkach go nie widzą:
+  // kod z Miejsca nie ma własnego adresu, a obce strony mają inny.
+  const KLUCZ = 'jaskinia:srodowisko:klucz';
+  let klucz = localStorage.getItem(KLUCZ) || '';
+  const naglowki = (dod = {}) => ({ accept: 'application/json', ...(klucz ? { authorization: 'Bearer ' + klucz } : {}), ...dod });
   const czytaj = async (sciezka) => {
-    const o = await fetch(sciezka, { headers: { accept: 'application/json' }, cache: 'no-store' });
+    let o = await fetch(sciezka, { headers: naglowki(), cache: 'no-store' });
+    // Klucz, którego Miejsce już nie zna, nie może zamknąć strony: zapominamy go i czytamy jak zwiedzający.
+    if (o.status === 401 && klucz) { klucz = ''; localStorage.removeItem(KLUCZ); komunikat('Ten klucz nie jest już znany w tym Miejscu. Wejdź jeszcze raz.', true); o = await fetch(sciezka, { headers: naglowki(), cache: 'no-store' }); }
     const d = await o.json().catch(() => null);
     if (!o.ok || !d || d.ok === false) throw new Error((d && (d.blad || d.error)) || 'odpowiedź ' + o.status);
     return d;
   };
+  // Zdanie o tym, co się właśnie stało (albo dlaczego się nie stało): zawsze widoczne, znika samo.
+  function komunikat(tekst, zly = false) {
+    const k = $('komunikat');
+    if (!k) return;
+    k.textContent = tekst || '';
+    k.className = zly ? 'komunikat zly' : 'komunikat';
+    k.hidden = !tekst;
+    clearTimeout(komunikat.zegar);
+    if (tekst) komunikat.zegar = setTimeout(() => { k.hidden = true; }, zly ? 12000 : 5000);
+  }
+  let licznikOp = 0;
+  const nowyOp = () => 'reka-' + Date.now().toString(36) + '-' + (++licznikOp).toString(36) + Math.random().toString(36).slice(2, 8);
+  // Jeden ruch ręki przez te same drzwi, którymi chodzą agenci. Odpowiedź drzwi mówi po polsku, co się stało.
+  async function ruch(cialo, dobrze) {
+    if (!klucz) { komunikat('Żeby coś zmienić, najpierw wejdź: guzik "Wejdź" na górze strony.', true); return null; }
+    try {
+      const o = await fetch('/api/srodowisko/ruch', { method: 'POST', headers: naglowki({ 'content-type': 'application/json', 'x-cialo': 'strona gospodarza' }), body: JSON.stringify({ op: nowyOp(), ...cialo }) });
+      const d = await o.json().catch(() => null);
+      if (!o.ok || !d || d.ok === false) { komunikat((d && d.blad) || 'Drzwi odpowiedziały: ' + o.status, true); return null; }
+      komunikat(d.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (d.powod || 'czeka na rozstrzygnięcie') + ').' : (dobrze || 'Zrobione.'));
+      await odswiez();
+      return d;
+    } catch (blad) { komunikat('Nie udało się połączyć: ' + blad.message, true); return null; }
+  }
   const kiedy = (iso) => {
     const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
     if (!Number.isFinite(min)) return '';
@@ -172,10 +203,60 @@
     } catch { /* bez referrera czekamy na jego pierwsze slowo */ }
   }
 
+  // --- wejście: kim jestem na tej stronie -----------------------------------------------------------------------
+  function wejdz(nowy) {
+    klucz = String(nowy || '').trim();
+    if (klucz) localStorage.setItem(KLUCZ, klucz); else localStorage.removeItem(KLUCZ);
+    $('wejscie-panel').hidden = true;
+    return odswiez().then(() => komunikat(klucz ? 'Jesteś jako ' + (opis.czytasz_jako.imie || '?') + ' (' + opis.czytasz_jako.rola + ').' : 'Wyszedłeś. Czytasz jako zwiedzający.'), (blad) => komunikat('Nie udało się wejść: ' + blad.message, true));
+  }
+  function rysujWejscie() {
+    const d = opis, p = $('wejscie-panel'), g = $('wejscie');
+    const imie = d.czytasz_jako.imie;
+    g.textContent = klucz && imie ? imie + ' · wyjdź' : 'Wejdź';
+    p.textContent = '';
+    if (klucz && imie) { g.onclick = () => wejdz(''); return; }
+    g.onclick = () => { p.hidden = !p.hidden; };
+    const pole = el('input', { type: 'password', id: 'pole-klucza', placeholder: 'Twój klucz', autocomplete: 'current-password', 'aria-label': 'Klucz uczestnika' });
+    p.append(el('p', { tekst: 'Wejście jest potrzebne tylko do zmian. Klucz zostaje w tej przeglądarce.' }),
+      d.klucz_probny_wlasciciela ? el('button', { klasa: 'glowny', tekst: 'Wejdź jako właściciel próbny', title: 'Na podglądzie klucze próbne są jawne; nic tu nie jest prywatne', klik: () => wejdz(d.klucz_probny_wlasciciela) }) : null,
+      d.klucz_probny ? el('button', { tekst: 'Wejdź jako agent próbny', klik: () => wejdz(d.klucz_probny) }) : null,
+      el('div', { klasa: 'rzad' }, pole, el('button', { tekst: 'Wejdź kluczem', klik: () => wejdz(pole.value) })));
+  }
+  const jestemWlascicielem = () => Boolean(opis && klucz && opis.czytasz_jako.rola === 'wlasciciel');
+  const rzeczO = (id) => rzeczy.find((r) => r.id === id) || null;
+  // Małe pole z jednym guzikiem: rozwija się pod wierszem albo kartą, wysyła i zwija się samo.
+  function pole(napis, podpowiedz, wyslij) {
+    const tekst = el('textarea', { rows: '2', placeholder: podpowiedz, 'aria-label': podpowiedz });
+    const pudlo = el('div', { klasa: 'pole', hidden: true }, tekst, el('button', { klasa: 'glowny', tekst: napis, klik: async () => { const w = tekst.value.trim(); if (!w) return; if (await wyslij(w)) { tekst.value = ''; pudlo.hidden = true; } } }));
+    return { pudlo, pokaz: () => { pudlo.hidden = !pudlo.hidden; if (!pudlo.hidden) tekst.focus(); } };
+  }
+  const slowaPrzy = (id) => rzeczy.filter((r) => r.rodzaj.startsWith('slowo/') && Array.isArray(r.cechy.dotyczy) && r.cechy.dotyczy.includes(id)).sort((a, b) => String(b.utworzono).localeCompare(String(a.utworzono)));
+  // Słowo przy rzeczy: uwaga albo pomysł zostawiony dokładnie tam, gdzie dotyczy, a nie w rozmowie.
+  function slowoPrzy(r) {
+    const sa = slowaPrzy(r.id);
+    const p = pole('Zostaw słowo', 'Twoje słowo przy tej rzeczy', (w) => ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [r.id] } }, 'Słowo zostawione przy: ' + r.tytul));
+    return [el('div', { klasa: 'ruchy' }, el('button', { tekst: sa.length ? 'słowo (' + sa.length + ')' : 'słowo', title: 'Zostaw słowo przy tej rzeczy', klik: p.pokaz })),
+      p.pudlo,
+      sa.length ? el('ul', { klasa: 'slowa' }, sa.slice(0, 3).map((s) => el('li', {}, el('span', { tekst: s.cechy.tresc }), el('span', { klasa: 'bok', tekst: s.utworzyl + ' · ' + kiedy(s.utworzono) })))) : null];
+  }
+  const STOPNIE = [['nic', 'nic'], ['proponowac', 'proponować'], ['porzadkowac', 'porządkować'], ['prowadzic', 'prowadzić']];
+  const CO_ZNACZY = { nic: 'ruchy agentów są odrzucane', proponowac: 'każdy ruch agenta czeka na Ciebie jako propozycja', porzadkowac: 'agenci układają sami, a zmianę treści proponują', prowadzic: 'agenci dokładają i zmieniają sami' };
+  // Ile wolno agentom w obszarze: cztery guziki, bieżący jest zaznaczony. Zmiana jest zwykłym ruchem na rzeczy obszaru.
+  function wierszObszaru(x) {
+    const teraz = x.ustawienia.ile_wolno.wartosc;
+    const rz = x.id ? rzeczO(x.id) : null;
+    return el('li', { klasa: 'obszar' },
+      el('div', {}, el('b', { tekst: x.nazwa }), el('span', { klasa: 'bok', tekst: ' · ' + lp(x.ile, 'rzecz', 'rzeczy', 'rzeczy') + ' · agentom wolno: ' + teraz + ' (' + CO_ZNACZY[teraz] + ')' })),
+      rz ? el('div', { klasa: 'wybor', role: 'group', 'aria-label': 'Ile wolno agentom w obszarze ' + x.nazwa }, STOPNIE.map(([w, napis]) => el('button', { klasa: w === teraz ? 'wybrany' : null, 'aria-pressed': w === teraz ? 'true' : 'false', tekst: napis, title: CO_ZNACZY[w],
+        klik: () => { if (w !== teraz) ruch({ co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: rz.rodzaj, cechy: { ...rz.cechy, ile_wolno: w } }, 'W obszarze ' + x.nazwa + ' agentom wolno teraz: ' + napis + '.'); } }))) : null);
+  }
+
   function rysuj() {
     const t = $('tresc');
     t.textContent = '';
     const d = opis;
+    rysujWejscie();
     $('stan').textContent = `${lp(d.razem, 'rzecz', 'rzeczy', 'rzeczy')} · akt ${d.miejsce.akt} · ${d.czytasz_jako.imie || 'zwiedzający'}`;
     if (d.miejsce.podglad) t.append(el('p', { klasa: 'uwaga', tekst: 'Podgląd: wszystko tutaj jest publiczne do czytania i niczego prywatnego tu nie ma. To jest środowisko, w którym Jaskinia ma rosnąć; Start jeszcze nie istnieje.' }));
 
@@ -184,13 +265,38 @@
     ostatniStan = { rzeczy: ileRzeczy, czeka: czekaIle, akt: (d.miejsce && d.miejsce.akt) || 0,
       tekst: ileRzeczy + ' rzeczy' + (czekaIle ? ', ' + czekaIle + ' czeka na Ciebie' : '') };
     powiedzStan();
+    const ja = jestemWlascicielem();
+    // Co propozycja chce zrobić, jednym zdaniem: nazwa rzeczy, której dotyczy, a przy nowej jej przyszła nazwa.
+    const coProponuje = (p) => {
+      const pr = rzeczO(p.id), stara = p.rzecz ? rzeczO(p.rzecz) : null;
+      const tresc = pr && pr.cechy.tresc && pr.cechy.tresc.cechy ? pr.cechy.tresc.cechy : {};
+      const nazwa = tresc.nazwa || tresc.imie || tresc.tresc || tresc.dla || '';
+      const czyn = { odloz: 'odłożyć', przywroc: 'przywrócić', cofnij: 'cofnąć do wcześniejszej wersji' }[p.co];
+      if (stara) return (czyn ? czyn + ': ' : 'zmienić: ') + stara.tytul + (!czyn && nazwa && nazwa !== stara.tytul ? ' → ' + String(nazwa).slice(0, 80) : '');
+      return 'dołożyć (' + p.rodzaj + ')' + (nazwa ? ': ' + String(nazwa).slice(0, 80) : '');
+    };
     if (czekaIle) t.append(el('section', {}, el('h2', {}, 'Czeka na właściciela ', el('span', { klasa: 'ile', tekst: String(czekaIle) })),
-      el('ul', { klasa: 'lista' },
-        d.czeka.prosby.map((p) => el('li', {}, el('a', { href: '/rzecz/' + p.id, tekst: p.tresc }), el('span', { klasa: 'bok', tekst: `prośba od ${p.od} · ${kiedy(p.kiedy)}` }))),
-        d.czeka.propozycje.map((p) => el('li', {}, el('a', { href: '/rzecz/' + p.id, tekst: `${p.rzecz ? 'zmiana rzeczy' : 'nowa rzecz'} rodzaju ${p.rodzaj}` }),
-          // propozycja, która zmienia prawa albo uczestników, ma inną wagę niż zmiana nazwy: mówi to od razu
-          p.wymaga === 'wlasciciel' ? el('span', { klasa: 'nowe', tekst: 'zmienia prawa albo uczestników' }) : null,
-          el('span', { klasa: 'bok', tekst: `propozycja od ${p.od} · ${kiedy(p.kiedy)}` }))))));
+      el('ul', { klasa: 'lista czeka' },
+        d.czeka.prosby.map((p) => {
+          const rz = rzeczO(p.id);
+          const odp = pole('Odpowiedz', 'Twoja odpowiedź', (w) => rz && ruch({ co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: rz.rodzaj, cechy: { ...rz.cechy, odpowiedz: w, stan: 'zalatwiona' } }, 'Odpowiedź zapisana przy prośbie.'));
+          return el('li', {}, el('div', {}, el('a', { href: '/rzecz/' + p.id, tekst: p.tresc }), el('span', { klasa: 'bok', tekst: ` prośba od ${p.od} · ${kiedy(p.kiedy)}` }), odp.pudlo),
+            ja && rz ? el('div', { klasa: 'ruchy' }, el('button', { klasa: 'glowny', tekst: 'Odpowiedz', klik: odp.pokaz })) : null);
+        }),
+        d.czeka.propozycje.map((p) => {
+          const odm = pole('Odrzuć z powodem', 'Dlaczego nie (zostanie przy propozycji)', (w) => ruch({ co: 'odrzuc', propozycja: p.id, powod: w }, 'Propozycja odrzucona.'));
+          return el('li', {}, el('div', {}, el('a', { href: '/rzecz/' + p.id, tekst: coProponuje(p) }),
+            // propozycja, która zmienia prawa albo uczestników, ma inną wagę niż zmiana nazwy: mówi to od razu
+            p.wymaga === 'wlasciciel' ? el('span', { klasa: 'nowe', tekst: ' zmienia prawa albo uczestników' }) : null,
+            el('span', { klasa: 'bok', tekst: ` propozycja od ${p.od} · ${kiedy(p.kiedy)}` }), odm.pudlo),
+            ja ? el('div', { klasa: 'ruchy' }, el('button', { klasa: 'glowny', tekst: 'Przyjmij', klik: () => ruch({ co: 'przyjmij', propozycja: p.id }, 'Propozycja przyjęta.') }),
+              el('button', { tekst: 'Odrzuć', klik: () => ruch({ co: 'odrzuc', propozycja: p.id }, 'Propozycja odrzucona.') }), el('button', { tekst: 'z powodem', klik: odm.pokaz })) : null);
+        })),
+      ja ? null : el('p', { klasa: 'ciche', tekst: 'Rozstrzyga właściciel. Jeśli to Ty: wejdź guzikiem na górze strony.' })));
+
+    t.append(el('section', {}, el('h2', {}, 'Obszary: ile wolno agentom'),
+      el('ul', { klasa: 'lista obszary' }, d.obszary.map(wierszObszaru)),
+      ja ? null : el('p', { klasa: 'ciche', tekst: 'Ustawienie zmienia właściciel; ruch kogoś innego staje się propozycją do niego.' })));
 
     const swieze = rzeczy.filter((r) => r.wersja > widziany && widziany > 0);
     if (swieze.length) t.append(el('section', {}, el('h2', {}, 'Nowe od Twojej ostatniej wizyty ', el('span', { klasa: 'ile', tekst: String(swieze.length) }),
@@ -234,6 +340,7 @@
       // skąd rzecz pochodzi: kto ją dołożył i kto ostatnio zmienił; rzecz nie od właściciela jest oznaczona
       el('span', { klasa: swoja ? null : 'nowe', tekst: swoja ? 'od właściciela' : 'dołożył ' + r.utworzyl + (r.zmienil !== r.utworzyl ? ', zmienił ' + r.zmienil : '') }),
       el('a', { href: '/rzecz/' + r.id, tekst: 'szczegóły' })));
+    k.append(...slowoPrzy(r).filter(Boolean));
     return k;
   }
   // Rzecz "od właściciela": on ją dołożył i on ostatnio zmienił. Każdą inną mógł dołożyć albo zmienić agent.
@@ -246,6 +353,7 @@
     k.style.borderLeftColor = 'var(--akcent)';
     k.append(el('div', { klasa: 'ruchy' }, kod || adres ? el('button', { klasa: 'glowny', tekst: 'Otwórz', klik: () => otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul } }) }) : el('span', { klasa: 'ciche', tekst: 'bez kodu i adresu' })),
       el('div', { klasa: 'meta' }, r.wersja > widziany && widziany > 0 ? el('span', { klasa: 'nowe', tekst: 'nowe' }) : null, el('span', { tekst: `dołożył ${r.utworzyl} · ${kiedy(r.utworzono)}` }), el('a', { href: '/rzecz/' + r.id, tekst: 'szczegóły' })));
+    k.append(...slowoPrzy(r).filter(Boolean));
     return k;
   }
 

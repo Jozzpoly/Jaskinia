@@ -64,9 +64,34 @@ details > div { padding: 0 .65rem .5rem; }
   .gora { flex-direction: column; gap: 0; align-items: flex-start; }
   .stan { text-align: left; }
 }
-/* Dotyk: cel palca nie mniejszy niż 44 px (zmierzone 17 XI na 375 px: guzik miał 29 px wysokości). */
-@media (pointer: coarse) {
-  button, .guzik { min-height: 44px; padding: .6rem .95rem; display: inline-flex; align-items: center; }
-  details > summary { padding: .7rem .65rem; }
+/* Ręka na stronie: wejście, zdanie o skutku, pole słowa, wybór ustawienia obszaru. */
+.gora { align-items: center; }
+#wejscie { margin-left: auto; white-space: nowrap; }
+.wejscie { max-width: 76rem; margin: .5rem auto 0; padding: .6rem .9rem; border: 1px solid var(--linia); border-left: 3px solid var(--akcent); border-radius: .4rem; background: var(--plyta); display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.wejscie[hidden] { display: none; }
+.wejscie p { margin: 0; flex-basis: 100%; color: var(--ciche); font-size: .86rem; }
+.rzad { display: flex; gap: .4rem; flex-wrap: wrap; flex: 1; min-width: 14rem; }
+input, textarea { font: inherit; color: var(--tekst); background: var(--tlo); border: 1px solid var(--linia); border-radius: .4rem; padding: .5rem .6rem; min-height: 44px; flex: 1; min-width: 10rem; }
+.komunikat { position: sticky; top: 3rem; z-index: 6; max-width: 76rem; margin: .4rem auto 0; padding: .5rem .9rem; border-radius: .4rem; background: var(--zywe); color: var(--tlo); font-weight: 600; }
+.komunikat.zly { background: var(--znak); }
+.komunikat[hidden] { display: none; }
+.pole { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .35rem; }
+.pole[hidden] { display: none; }
+ul.slowa { list-style: none; margin: .2rem 0 0; padding: 0; font-size: .84rem; border-top: 1px dashed var(--linia); }
+ul.slowa li { padding: .25rem 0; display: flex; gap: .5rem; justify-content: space-between; align-items: baseline; }
+ul.slowa .bok { color: var(--ciche); font-size: .74rem; white-space: nowrap; }
+ul.lista.czeka li, ul.lista.obszary li { flex-direction: column; align-items: stretch; gap: .35rem; }
+ul.lista.czeka .ruchy, .wybor { display: flex; gap: .4rem; flex-wrap: wrap; }
+.wybor button.wybrany { background: var(--akcent); border-color: var(--akcent); color: var(--tlo); font-weight: 600; }
+ul.lista .bok { white-space: normal; }
+
+/* Dotyk: cel palca nie mniejszy niż 44 px. Zmierzone 17 XI: guzik miał 29 px, a po pierwszej poprawce nadal 59 ze 102
+   celów było za małych (pomiar Opusa czatu na emulowanym telefonie): odnośniki w listach, w kartach i w stopce. */
+@media (pointer: coarse), (max-width: 40rem) {
+  button, .guzik { min-height: 44px; min-width: 44px; padding: .6rem .95rem; display: inline-flex; align-items: center; justify-content: center; }
+  details > summary { padding: .7rem .65rem; min-height: 44px; }
   ul.lista li { padding: .6rem 0; }
+  ul.lista li a, .karta .meta a, .dol a { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; padding: 0 .15rem; }
+  .karta .meta { gap: 0 .8rem; }
+  .dol { gap: 0 1.1rem; }
 }

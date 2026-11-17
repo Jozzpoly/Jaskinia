@@ -516,3 +516,10 @@ test('propozycje nie zalewają listy: jedna czekająca na rzecz i najwyżej dwad
   assert.match(tekst, /propozycja od agent-b \[ZMIENIA PRAWA ALBO UCZESTNIKÓW: przyjmuje tylko właściciel\]/);
   assert.match(tekst, /nie daje nikomu klucza/);
 });
+
+test('klucz próbny właściciela wychodzi do strony tylko na podglądzie', async () => {
+  const { s } = await swiat();
+  assert.equal(opisDane(s, { podglad: true, kluczProbnyWlasciciela: 'jawny-klucz-wlasciciela' }).klucz_probny_wlasciciela, 'jawny-klucz-wlasciciela');
+  assert.equal(opisDane(s, { podglad: false, kluczProbnyWlasciciela: 'jawny-klucz-wlasciciela' }).klucz_probny_wlasciciela, null);
+  assert.doesNotMatch(coTuJest(s, { podglad: true, kluczProbny: 'k-agenta', kluczProbnyWlasciciela: 'jawny-klucz-wlasciciela' }), /jawny-klucz-wlasciciela/, 'tekst dla agentów podaje tylko klucz agenta');
+});
