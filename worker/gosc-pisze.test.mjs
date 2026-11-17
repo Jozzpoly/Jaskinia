@@ -47,6 +47,8 @@ test('G2. ruch z okna zapisuje się pod imieniem gościa; ten, kto otworzył okn
   const drugi = await s.ruch('jozz', { op: 'gosc-test-g2-b', ...slowo(projekt, 'drugie') }, { gosc: slowa.id, slad: 'okno gościa' });
   assert.equal(s.historia(drugi.rzecz)[0].cialo, 'okno:jozz');
   assert.equal(s.rola(aktor), 'gosc');
+  // tekst pod adresem mówi, które to narzędzie, zamiast samego identyfikatora
+  assert.match(coTuJest(s, { origin: 'https://proba.example' }), /gosc-[a-z0-9]{26} \(narzędzie "Słowa"\) dołożył: Słowo z narzędzia/);
 });
 
 test('G3. tam, gdzie wolno tylko proponować, ruch z okna jest propozycją, także w oknie właściciela; właściciel przyjmuje ją własną ręką', async () => {

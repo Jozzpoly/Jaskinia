@@ -95,6 +95,7 @@ const GOSC_SLOWA = `<!doctype html>
   body { margin: 0; padding: 12px 14px; font: 15px/1.45 system-ui, sans-serif; }
   h1 { font-size: 1.05rem; margin: 0 0 2px; }
   #stan { margin: 0 0 10px; opacity: .75; font-size: .9rem; }
+  #wynik { margin: 0; font-size: .9rem; min-height: 1.3em; }
   #nowe { display: grid; gap: 6px; margin: 0 0 12px; }
   select, textarea, button { font: inherit; font-size: 16px; padding: 6px 8px; }
   textarea { min-height: 3.4rem; }
@@ -111,6 +112,7 @@ const GOSC_SLOWA = `<!doctype html>
   <select id="przy" aria-label="Przy której rzeczy"></select>
   <textarea id="tresc" aria-label="Twoje słowo" placeholder="Słowo przy tej rzeczy"></textarea>
   <button type="button" id="zostaw">Zostaw słowo</button>
+  <p id="wynik" role="status"></p>
 </div>
 <ul id="lista"></ul>
 <script>
@@ -131,7 +133,8 @@ function zapytaj(typ, wiecej, ms) {
 }
 const czytaj = (what, wiecej) => zapytaj('read', { what, ...wiecej }, 8000);
 const rusz = (move) => zapytaj('move', { move }, 15000);
-const stan = document.getElementById('stan');
+const stan = document.getElementById('stan'), wynik = document.getElementById('wynik');
+const ile = (n) => n + (n === 1 ? ' słowo' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? ' słowa' : ' słów'));
 addEventListener('message', (e) => {
   const m = e.data;
   if (e.source !== gospodarz || !m || m.jaskinia !== 1) return;
@@ -156,24 +159,26 @@ async function pokaz() {
       const li = document.createElement('li');
       li.textContent = s.cechy.tresc + ' ';
       const m = document.createElement('small');
-      m.textContent = 'przy: ' + (s.cechy.dotyczy || []).map((id) => tytuly.get(id) || id.slice(0, 6)).join(', ') + ' · ' + s.utworzyl;
+      // autor: narzędzie stoi w dzienniku pod imieniem gosc-<id swojej rzeczy>, więc pokazujemy jego nazwę
+      const autor = s.utworzyl.startsWith('gosc-') && tytuly.get(s.utworzyl.slice(5)) ? 'narzędzie ' + tytuly.get(s.utworzyl.slice(5)) : s.utworzyl;
+      m.textContent = 'przy: ' + (s.cechy.dotyczy || []).map((id) => tytuly.get(id) || id.slice(0, 6)).join(', ') + ' · ' + autor;
       li.append(m); lista.append(li);
     }
-    stan.textContent = slowa.razem + ' słów w Miejscu';
-    powiedz({ type: 'state', text: slowa.razem + ' słów' });
+    stan.textContent = ile(slowa.razem) + ' w Miejscu';
+    powiedz({ type: 'state', text: ile(slowa.razem) });
   } catch (err) { stan.textContent = 'Nie udało się przeczytać: ' + err.message; }
 }
 // Zwykły guzik, nie formularz: w piaskownicy gościa formularze są wyłączone, więc zdarzenie submit by nie przyszło.
 document.getElementById('zostaw').addEventListener('click', async () => {
   const tresc = document.getElementById('tresc'), przy = document.getElementById('przy').value;
-  if (!tresc.value.trim() || !przy) { stan.textContent = 'Wybierz rzecz i wpisz słowo.'; return; }
+  if (!tresc.value.trim() || !przy) { wynik.textContent = 'Wybierz rzecz i wpisz słowo.'; return; }
   try {
     const w = await rusz({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: tresc.value.trim(), dotyczy: [przy] } });
     tresc.value = '';
-    await pokaz();
-    // zdanie o skutku po odświeżeniu listy, żeby lista go nie zamazała
-    stan.textContent = w.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (w.powod || 'czeka na właściciela') + ').' : 'Zapisane pod imieniem tego narzędzia.';
-  } catch (err) { stan.textContent = 'Nie zapisało się: ' + err.message; }
+    // zdanie o skutku ma własne miejsce: lista odświeża się sama po każdej zmianie i nie może go zamazać
+    wynik.textContent = w.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (w.powod || 'czeka na właściciela') + ').' : 'Zapisane pod imieniem tego narzędzia.';
+    pokaz();
+  } catch (err) { wynik.textContent = 'Nie zapisało się: ' + err.message; }
 });
 powiedz({ type: 'hello', name: 'Słowa', version: '1', wants: ['rzeczy'] });
 </script>

@@ -9,6 +9,8 @@ import { ETAPY } from './ziarna.mjs';
 const dzien = (iso) => String(iso).replace('T', ' ').slice(0, 16) + ' UTC';
 const wiersze = (...w) => w.flat(9).filter((x) => x !== null && x !== undefined && x !== false).join('\n');
 // Ilu gości mówi którym pokoleniem umowy okna: pierwszy pomiar tego, czy stare pokolenie jest jeszcze używane.
+// Imię aktora do przeczytania: ruch z okna stoi w dzienniku pod imieniem gosc-<id>, więc obok podajemy, które to narzędzie.
+const ktoJest = (s, kto) => { if (typeof kto === 'string' && kto.startsWith('gosc-')) { const g = s.rzecz(kto.slice(5)); if (g) return `${kto} (narzędzie "${obetnij(s.tytul(g), 40)}")`; } return kto; };
 const umowyWUzyciu = (goscie) => { const m = new Map(); for (const g of goscie) { const u = g.umowa || 'bez umowy'; m.set(u, (m.get(u) || 0) + 1); } return [...m].sort().map(([u, n]) => `${u}: ${n}`).join(', '); };
 const obetnij = (s, n = 110) => { s = String(s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
@@ -88,7 +90,7 @@ function zmiany(s, od, limit = 40) {
   const wiecej = akty.length > limit;
   return { wiecej, lista: akty.slice(0, limit).map((a) => {
     const rz = s.rzecz(a.glowa.slice(6));
-    return { akt: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), co: a.z_zapisu ? 'zmienił' : 'dołożył', id: a.glowa.slice(6), rodzaj: rz ? rz.rodzaj : '?', tytul: rz ? s.tytul(rz) : '?' };
+    return { akt: a.nr, kto: a.kto, kto_opis: ktoJest(s, a.kto), kiedy: new Date(a.kiedy).toISOString(), co: a.z_zapisu ? 'zmienił' : 'dołożył', id: a.glowa.slice(6), rodzaj: rz ? rz.rodzaj : '?', tytul: rz ? s.tytul(rz) : '?' };
   }) };
 }
 
@@ -201,7 +203,7 @@ export function coTuJest(s, opcje = {}) {
         `Żeby następnym razem zobaczyć tylko to, co zmieniło się od tej chwili, wróć pod adres: /co-tu-jest?od=${d.miejsce.akt}`]
       : [`Od aktu ${d.zmiany.od} (${d.zmiany.skad}): ${d.zmiany.lista.length ? ile(d.zmiany.lista.length, 'zmiana', 'zmiany', 'zmian') + (d.zmiany.wiecej ? ' albo więcej (pokazuję najnowsze)' : '') : 'nic się nie zmieniło'}.`,
         `Następnym razem: /co-tu-jest?od=${d.miejsce.akt}`],
-    d.zmiany.lista.map((z) => `  akt ${z.akt}, ${dzien(z.kiedy)}, ${z.kto} ${z.co}: ${obetnij(z.tytul, 70)} [${z.rodzaj}] -> /rzecz/${z.id}`),
+    d.zmiany.lista.map((z) => `  akt ${z.akt}, ${dzien(z.kiedy)}, ${z.kto_opis || z.kto} ${z.co}: ${obetnij(z.tytul, 70)} [${z.rodzaj}] -> /rzecz/${z.id}`),
     '',
     '4. CO CI WOLNO I GDZIE',
     R === 'wlasciciel' && 'Jesteś właścicielem: każdy Twój ruch ma skutek, w każdym obszarze. Tylko Ty zmieniasz ustawienia obszarów, uczestników i kształty rdzenia.',
@@ -389,7 +391,7 @@ export function stronaRzeczy(s, id, { kto = null } = {}) {
     rz.odlozone ? `Ta rzecz jest odłożona${rz.powod ? ': ' + obetnij(rz.powod, 300) : ''}. Listy jej nie pokazują; wraca ruchem co: przywroc.` : null,
     `leży w obszarze: ${ob ? `${s.tytul(ob)} (id ${ob.id})` : 'główny'}; tam ile_wolno agentom: ${s.ustawienie(rz.obszar, 'ile_wolno').wartosc}`,
     jestObszarem ? `sama jest obszarem: rzeczom, które w niej leżą, daje ile_wolno agentom: ${s.ustawienie(rz.id, 'ile_wolno').wartosc}; leży w niej ${s.ile({ obszar: rz.id })} rzeczy (/rzeczy?obszar=${rz.id})` : null,
-    `dołożył: ${rz.utworzyl}, ${dzien(rz.utworzono)}   ostatnio zmienił: ${rz.zmienil}, ${dzien(rz.zmieniono)}`,
+    `dołożył: ${ktoJest(s, rz.utworzyl)}, ${dzien(rz.utworzono)}   ostatnio zmienił: ${ktoJest(s, rz.zmienil)}, ${dzien(rz.zmieniono)}`,
     '',
     'CECHY',
     Object.keys(rz.cechy).length ? Object.entries(rz.cechy).map(([n, w]) => `  ${n}${k && !(n in (k.cechy || {})) ? ' [cecha spoza kształtu]' : ''}: ${obetnij(wart(w), 2000)}`) : '  (żadnych)',
