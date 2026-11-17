@@ -1,0 +1,65 @@
+{
+ "wersja": 1,
+ "opis": "Rzeczy Jozza, które da się otworzyć i ruszyć od razu, bez zadania. Powstało 15 XI 2026, bo zmierzyliśmy, że osiem jego projektów działa pod adresem, a drzwi Jaskini nie prowadziły do żadnego z nich.",
+ "status": "Spis tymczasowy, brudnopis. Ma zniknąć, gdy powstanie Przegląd ze Ścianą w jednym - to jego pierwszy filar z 15 XI 16:02, a granie, buildy i wersje milowe należą tam, nie do osobnej listy na drzwiach.",
+ "zrodlo_opisow": "Każdy adres otwarty po kolei 15 XI 2026 między 04:00 a 04:15 i opisany z tego, co pokazał - nie z plików w repozytorium. Pole telefon mówi tylko tyle, co strona sama o sobie deklaruje w treści albo czym okazuje się jej kod: meta viewport, obsługa dotyku, odczyt liczby palców. Żadnej z nich nikt nie sprawdził kciukiem; sprawdzony jest tylko układ tej strony na szerokości 375 pikseli (15 XI 16:20, bez przewijania w bok).",
+ "czego_tu_nie_ma": "Rzeczy, które mają gotowe wejście, ale nie mają adresu: Splot, Mini Feniks, Riftworks, edytor rigów, piaskownica pojazdów i gra wieloosobowa Tysiąc. Nie zgadujemy za nie.",
+ "wejscia": [
+  {
+   "nazwa": "Samochód z prawdziwą fizyką",
+   "adres": "https://jozzpoly.github.io/JV-Box3D-Web-Public/",
+   "co_to_jest": "Jedziesz. Gaz, hamulec, bieg do przodu i do tyłu, prędkościomierz, analogowa kierownica i pedały, pełny ekran.",
+   "telefon": "tak",
+   "skad_wiem": "Przyciski gazu i hamulca są na ekranie, strona ma meta viewport i obsługuje zdarzenia wskaźnika.",
+   "sprawdzone": "2026-11-15"
+  },
+  {
+   "nazwa": "Postać, którą się biega i skacze",
+   "adres": "https://jozzpoly.github.io/Box3d-Character-Controler/",
+   "co_to_jest": "Embodied Player Laboratory: postać w fizyce, dziesięć ruchomych brył, sprint, skok, reset.",
+   "telefon": "tak",
+   "skad_wiem": "Strona sama pisze o sobie: sterowanie dotykowe włączone.",
+   "sprawdzone": "2026-11-15"
+  },
+  {
+   "nazwa": "Warsztat statków voxelowych",
+   "adres": "https://jozzpoly.github.io/voxel-aeronautics-workshop/",
+   "co_to_jest": "Budujesz statek z części: rdzeń, kadłub, rama, silniki, silnik wektorowy, balon, skrzydło, ster, żyroskop, paliwo. Do tego telemetria i misja.",
+   "telefon": "nie",
+   "skad_wiem": "Strona mówi wprost, że telefon i sterowanie dotykiem są poza zakresem projektu.",
+   "sprawdzone": "2026-11-15"
+  },
+  {
+   "nazwa": "Edytor maszyn i materii",
+   "adres": "https://jozzpoly.github.io/PROJECT-ANVIL-Machine-Matter-Physical-Fabric-Laboratory/",
+   "co_to_jest": "Składasz mechanizm i puszczasz go w ruch: materia, łożyska, moment obrotowy, cofanie i ponawianie.",
+   "telefon": "nieznane",
+   "skad_wiem": "Strona ma meta viewport, ale w jej kodzie nie ma ani jednej obsługi dotyku. Obsługa to przyciski, więc klikanie palcem ma szansę działać; składania palcem nikt nie przewidział.",
+   "sprawdzone": "2026-11-15"
+  },
+  {
+   "nazwa": "Świat, w którym wolno psuć",
+   "adres": "https://jozzpoly.github.io/ReflexBrain-Lab/",
+   "co_to_jest": "Jedyna z tych stron napisana po polsku i wprost do Ciebie: zrób coś światu i zobacz, co zostanie. Przeciągasz obiekt, wrzucasz go pod obcy proces, odcinasz aktorowi pamięć.",
+   "telefon": "nieznane",
+   "skad_wiem": "W kodzie nie ma obsługi dotyku, a cała zabawa polega na przeciąganiu obiektu. Na telefonie może się po prostu nie dać - sprawdź, zanim się nastawisz.",
+   "sprawdzone": "2026-11-15"
+  },
+  {
+   "nazwa": "Towarzysz i jego decyzje",
+   "adres": "https://jozzpoly.github.io/Companion-Brain-Lab/",
+   "co_to_jest": "Cztery sceny: otwarte pole, filar, drzwi, zderzenie czołowe. Puszczasz krok po kroku i widzisz, co towarzysz wziął pod uwagę, zanim się ruszył.",
+   "telefon": "tak",
+   "skad_wiem": "W kodzie strony jest trzynaście miejsc obsługujących dotyk, odczyt liczby palców i zdarzenia wskaźnika, do tego sto osiemdziesiąt sześć wzmianek o dotyku i telefonie. Ktoś ją pisał z myślą o kciuku.",
+   "sprawdzone": "2026-11-15"
+  },
+  {
+   "nazwa": "Czysty substrat ruchu",
+   "adres": "https://jozzpoly.github.io/Combat-Lab/",
+   "co_to_jest": "Goła podłoga i sonda, którą się jeździ. Bez walki i bez organizmu - tyle, ile zostało po sprzątnięciu wszystkiego innego.",
+   "telefon": "nie",
+   "skad_wiem": "Sterowanie opisane na stronie jako WASD i strzałki.",
+   "sprawdzone": "2026-11-15"
+  }
+ ]
+}
