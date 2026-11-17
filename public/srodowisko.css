@@ -64,3 +64,9 @@ details > div { padding: 0 .65rem .5rem; }
   .gora { flex-direction: column; gap: 0; align-items: flex-start; }
   .stan { text-align: left; }
 }
+/* Dotyk: cel palca nie mniejszy niż 44 px (zmierzone 17 XI na 375 px: guzik miał 29 px wysokości). */
+@media (pointer: coarse) {
+  button, .guzik { min-height: 44px; padding: .6rem .95rem; display: inline-flex; align-items: center; }
+  details > summary { padding: .7rem .65rem; }
+  ul.lista li { padding: .6rem 0; }
+}
