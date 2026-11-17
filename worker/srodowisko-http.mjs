@@ -3,6 +3,7 @@
 // Worker ustalił wykonawcę z klucza i podał go w x-kto (pusty: zwiedzający bez klucza); z zewnątrz do Durable Object
 // nie da się wejść inaczej niż przez Workera.
 import { coTuJest, opisDane, listaRzeczy, listaRodzajow, stronaRodzaju, stronaRzeczy, umowaOkna } from './opis.mjs';
+import { sprawdzSpojnosc } from './spojnosc.mjs';
 import { poprawneImie } from './miejsce.mjs';
 
 const TEKST = { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
@@ -93,6 +94,11 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     if (sciezka === '/api/srodowisko/wersja') {
       const w = s.wersja(p.get('id') || '', liczba(p.get('akt')));
       return w ? json({ ok: true, wersja: w }) : json({ ok: false, status: 404, blad: 'nie ma takiej wersji; znaczniki wersji (pole akt) stoją w historii rzeczy: /api/srodowisko/rzecz?id=<id>' });
+    }
+    // Sprawdzian spójności: co w Miejscu nie zgadza się ze swoim własnym kształtem. Tylko do czytania; widzi go ten
+    // sam, kto widzi spis (dziś widoczność jest całością, nie per obszar — to zostaje do zrobienia osobno).
+    if (sciezka === '/api/srodowisko/spojnosc') {
+      return json({ ok: true, ...sprawdzSpojnosc(s, { ile: liczba(p.get('ile')) || undefined, pomin: liczba(p.get('pomin')) || 0, rodzaj: p.get('rodzaj') || null, najwyzej: liczba(p.get('najwyzej')) || undefined }) });
     }
     if (sciezka === '/api/srodowisko/ksztalty') return json({ ok: true, ksztalty: [...s.ksztalty().values()].map((k) => ({ ...k.cechy, rzecz: k.id, wersja: k.wersja })) });
   }
