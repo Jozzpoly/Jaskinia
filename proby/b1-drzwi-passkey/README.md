@@ -57,6 +57,19 @@ droga chodzi pod adresem: `/api/drzwi/stan`, `zacznij`, `zapisz`, `wejdz`, `wyjd
 droga **przez prawdziwe trasy**, z udawanym telefonem — bo jednego dnia mechaniczna zmiana w trasie
 wywracała `/api/srodowisko/wersja` na każdym żądaniu przy zielonych sprawdzianach funkcji).
 
+I jest trzeci plik, `zywo.mjs`: **cała ceremonia pod żywym adresem**, z tym samym udawanym telefonem.
+
+```
+node proby/b1-drzwi-passkey/zywo.mjs <adres podglądu>
+```
+
+Serwer nie wie i nie ma prawa wiedzieć, czy po drugiej stronie jest przeglądarka: sprawdza podpis, `origin`
+z `clientDataJSON` i skrót nazwy strony. Udawany telefon podaje wszystkie trzy, więc to jest pełna ceremonia,
+a nie atrapa — jedenaście próśb, w tym pięć takich, które **muszą** się nie udać: zakładanie bez klucza,
+ten sam podpis dwa razy, podpis zrobiony na obcej stronie, poświadczenie założone dla domeny nadrzędnej
+i wejście poświadczeniem odłożonym. Po sobie sprząta: udawane poświadczenie zostaje odłożone, żeby nie
+zostało w Miejscu jako droga wejścia.
+
 Ten plik zostaje: pytanie 2 nadal nie ma odpowiedzi od jego telefonu, a falsyfikator jest jedynym miejscem,
 w którym to pytanie stoi na osobno, a nie jako zdanie w opisie zdolności.
 
