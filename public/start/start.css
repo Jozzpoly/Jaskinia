@@ -70,12 +70,19 @@ button[hidden], .guzik[hidden] { display: none; }
 .lista { position: absolute; left: -9999px; top: 0; width: 1px; height: 1px; overflow: hidden; }
 .lista a:focus { position: fixed; left: .6rem; top: 3.2rem; z-index: 50; width: auto; height: auto; background: var(--plyta); border: 2px solid var(--akcent); border-radius: .4rem; padding: .4rem .7rem; }
 
+.krotki { display: none; }
 @media (pointer: coarse), (max-width: 40rem) {
   body { font-size: 14px; }
-  button, .guzik { min-height: 44px; min-width: 44px; padding: .5rem .8rem; }
-  .suwak { flex: 1 1 100%; order: 9; }
-  .suwak input { flex: 1; width: auto; min-height: 44px; }
-  .stan { flex: 1 1 100%; order: 8; }
+  /* Pasek na telefonie: jeden rząd guzików, jedna linia stanu, suwak. Wcześniej zjadał ćwierć ekranu (uwaga drugiej
+     linii, 17 XI: 200 z 812 px). */
+  .pasek { gap: .2rem .35rem; padding: .25rem .4rem; }
+  .proba { display: none; }
+  .dlugi { display: none; }
+  .krotki { display: inline; }
+  button, .guzik { min-height: 44px; min-width: 44px; padding: .4rem .6rem; }
+  .suwak { flex: 1 1 100%; order: 9; font-size: 12px; }
+  .suwak input { flex: 1; width: auto; min-height: 36px; }
+  .stan { flex: 1 1 100%; order: 8; font-size: 12px; line-height: 1.25; }
   .karta { left: 0; right: 0; bottom: 0; width: auto; max-height: 55vh; border-radius: .8rem .8rem 0 0; padding-bottom: calc(.8rem + env(safe-area-inset-bottom, 0px)); }
   .okno { top: 0; left: 0; right: 0; bottom: 0; border-radius: 0; }
   .panel { left: .6rem; }

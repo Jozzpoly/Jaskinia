@@ -111,6 +111,9 @@ export class Miejsce {
   // Miejsce zostało podmienione w całości (wwóz) i trzeba przeczytać wszystko od nowa.
   _rozglosZmiane(przed, dodatkowe = {}) {
     const teraz = this.srod.ostatniNr();
+    // Gdy za przeniesioną rzeczą poszły rzeczy, które z natury z nią leżą, ich zapisy się nie zmieniły, więc strona
+    // czytająca same zmiany by ich nie dostała: mówimy jej, żeby przeczytała całość.
+    if (this.srod.pociagniete) { dodatkowe = { ...dodatkowe, calosc: true }; this.srod.pociagniete = 0; }
     if (teraz === przed && !dodatkowe.calosc) return 0;
     const gniazda = this._gniazda();
     return gniazda.length ? rozglos(gniazda, { t: 'akt', akt: teraz, ...dodatkowe }, { podglad: this._podglad }) : 0;
