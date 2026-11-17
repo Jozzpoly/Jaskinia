@@ -136,6 +136,7 @@
   // Adres rodzica poznajemy dopiero z wiadomosci od niego (origin ramki jest nieczytelny z drugiej strony).
   // Przed pierwsza wiadomoscia mozemy go zgadnac z referrera - i tylko wtedy, gdy jest na liscie, odzywamy sie pierwsi.
   let adresRodzica = null;
+  let ostatniStan = null;
   const doGospodarza = (w) => {
     if (!gospodarzOnad || !znanyRodzic(adresRodzica)) return;
     try { gospodarzOnad.postMessage({ jaskinia: 1, ...w }, adresRodzica); } catch { /* okno moglo zniknac */ }
