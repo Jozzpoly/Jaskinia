@@ -3,7 +3,8 @@
 // więc stąd wychodzi tylko obiekt domyślny i klasa Durable Object Miejsca; trasy i stałe są w osobnych plikach.
 import { json, zdrowie, dom } from './trasy.mjs';
 import { odpowiedz, wCronie } from './fakty.mjs';
-import { ktoTo } from './klucze.mjs';
+import { ktoTo, wczytajKlucze } from './klucze.mjs';
+import { skrot } from './miejsce.mjs';
 export { Miejsce } from './miejsce-do.mjs';
 
 // /api/miejsce/…: wspólny stan po stronie serwera, tylko z kluczem (krok 1 rdzenia, 15 XI 2026; wzięte z dawcy
@@ -39,6 +40,15 @@ async function srodowisko(request, env, url) {
     return json({ blad: 'to Miejsce nie jest publiczne: do czytania potrzebny jest klucz (nagłówek Authorization: Bearer <klucz>)' }, 401);
   }
   const naglowki = new Headers({ 'x-kto': kto, 'x-origin': url.origin });
+  const klucze = wczytajKlucze(env);
+  if (klucze.ok) {
+    naglowki.set('x-imiona', klucze.wpisy.map(([imie]) => imie).join(','));
+    if (env.PODGLAD === 'tak' && env.KLUCZ_PROBNY_AGENTA) {
+      const s = await skrot(env.KLUCZ_PROBNY_AGENTA);
+      const traf = klucze.wpisy.find(([, h]) => h === s);
+      if (traf) naglowki.set('x-probny-imie', traf[0]);
+    }
+  }
   const cialo = request.headers.get('x-cialo');
   if (cialo) naglowki.set('x-cialo', cialo.slice(0, 80));
   const ct = request.headers.get('content-type');

@@ -191,13 +191,24 @@ export class Srodowisko {
     return w ? this._zWiersza(w) : null;
   }
 
-  spis({ rodzaj = null, obszar, limit = 1000 } = {}) {
+  _warunek({ rodzaj = null, obszar } = {}) {
     const war = [], par = [];
     if (rodzaj) { if (String(rodzaj).includes('/')) { war.push('r.rodzaj = ?'); par.push(rodzaj); } else { war.push('(r.rodzaj = ? OR r.rodzaj LIKE ?)'); par.push(rodzaj, rodzaj + '/%'); } }
     if (obszar !== undefined) { if (obszar === null || obszar === '') war.push('r.obszar IS NULL'); else { war.push('r.obszar = ?'); par.push(obszar); } }
+    return { gdzie: war.length ? 'WHERE ' + war.join(' AND ') : '', par };
+  }
+
+  // Lista rzeczy od ostatnio zmienionej. `pomin` i `limit` dają kawałek; ile jest wszystkich, mówi `ile()`.
+  spis({ rodzaj = null, obszar, limit = 1000, pomin = 0 } = {}) {
+    const { gdzie, par } = this._warunek({ rodzaj, obszar });
     const n = Math.max(1, Math.min(2000, limit | 0 || 1000));
-    const w = this.q(`SELECT r.*, z.tresc FROM rzeczy r JOIN zapisy z ON z.id = r.zapis ${war.length ? 'WHERE ' + war.join(' AND ') : ''} ORDER BY r.zmieniono DESC, r.id LIMIT ?`, ...par, n);
+    const w = this.q(`SELECT r.*, z.tresc FROM rzeczy r JOIN zapisy z ON z.id = r.zapis ${gdzie} ORDER BY r.zmieniono DESC, r.id LIMIT ? OFFSET ?`, ...par, n, Math.max(0, pomin | 0));
     return w.map((x) => this._zWiersza(x));
+  }
+
+  ile(filtr = {}) {
+    const { gdzie, par } = this._warunek(filtr);
+    return this.q(`SELECT COUNT(*) AS n FROM rzeczy r ${gdzie}`, ...par)[0].n;
   }
 
   liczby() { return this.q(`SELECT rodzaj, COUNT(*) AS ile FROM rzeczy GROUP BY rodzaj ORDER BY rodzaj`); }

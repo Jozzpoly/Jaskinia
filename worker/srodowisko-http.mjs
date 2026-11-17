@@ -27,7 +27,8 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
   const sciezka = url.pathname;
   const p = url.searchParams;
   const liczba = (x) => (x !== null && /^\d{1,12}$/.test(x) ? Number(x) : null);
-  const opcje = { kto, jako: p.get('jako'), od: liczba(p.get('od')), origin, podglad, kluczProbny };
+  const opcje = { kto, jako: p.get('jako'), od: liczba(p.get('od')), origin, podglad, kluczProbny, probnyImie: request.headers.get('x-probny-imie') || null };
+  const filtr = { rodzaj: p.get('rodzaj'), ...(p.has('obszar') ? { obszar: p.get('obszar') || null } : {}) };
 
   if (request.method === 'GET') {
     if (sciezka.startsWith('/gosc/')) {
@@ -39,13 +40,15 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     if (sciezka === '/umowa-okna') return tekst(umowaOkna());
     if (sciezka === '/rodzaje') return tekst(listaRodzajow(s));
     if (sciezka.startsWith('/rodzaj/')) return tekst(stronaRodzaju(s, decodeURIComponent(sciezka.slice(8))));
-    if (sciezka === '/rzeczy') return tekst(listaRzeczy(s, { rodzaj: p.get('rodzaj'), ...(p.has('obszar') ? { obszar: p.get('obszar') || null } : {}) }));
+    if (sciezka === '/rzeczy') return tekst(listaRzeczy(s, { ...filtr, pomin: liczba(p.get('pomin')) || 0, ile: liczba(p.get('ile')) || 300 }));
     if (sciezka.startsWith('/rzecz/')) { const t = stronaRzeczy(s, sciezka.slice(7), { kto: opcje.kto || (podglad ? opcje.jako : null) }); return t === null ? tekst('Nie ma takiej rzeczy. Lista wszystkich: /rzeczy\n', 404) : tekst(t); }
     if (sciezka === '/api/srodowisko/opis') return json({ ok: true, ...opisDane(s, opcje) });
     if (sciezka === '/api/srodowisko/puls') return json({ ok: true, akt: s.ostatniNr() });
     if (sciezka === '/api/srodowisko/spis') {
-      const rz = s.spis({ rodzaj: p.get('rodzaj'), ...(p.has('obszar') ? { obszar: p.get('obszar') || null } : {}) });
-      return json({ ok: true, rzeczy: rz.map((x) => ({ ...x, tytul: s.tytul(x) })), razem: rz.length, akt: s.ostatniNr() });
+      const pomin = liczba(p.get('pomin')) || 0;
+      const rz = s.spis({ ...filtr, limit: liczba(p.get('ile')) || 1000, pomin });
+      const razem = s.ile(filtr);
+      return json({ ok: true, rzeczy: rz.map((x) => ({ ...x, tytul: s.tytul(x) })), razem, pokazane: rz.length, pominiete: pomin, wszystko: pomin + rz.length >= razem, akt: s.ostatniNr() });
     }
     if (sciezka === '/api/srodowisko/rzecz') {
       const rz = s.rzecz(p.get('id') || '');

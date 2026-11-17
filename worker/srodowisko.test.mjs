@@ -208,6 +208,13 @@ test('strony tekstem: rzecz, rodzaj, lista, umowa okna', async () => {
   assert.match(stronaRodzaju(s, 'projekt/1'), /nazwa: tekst \(wymagana\)/);
   assert.match(stronaRodzaju(s, 'nie-ma/1'), /Nie ma takiego rodzaju/);
   assert.match(listaRzeczy(s, { rodzaj: 'projekt/1' }), /JV Web \[projekt\/1\]/);
+  const cala = listaRzeczy(s, {});
+  assert.match(cala, /ZAKRES: pokazuję \d+ z \d+, pozycje od 1 do \d+/);
+  assert.match(cala, /To jest koniec listy: nic więcej nie ma\./);
+  const kawalek = listaRzeczy(s, { ile: 5 });
+  assert.match(kawalek, /pokazuję 5 z \d+, pozycje od 1 do 5.*To NIE jest cała lista\. Dalszy ciąg: \/rzeczy\?pomin=5&ile=5/);
+  assert.match(listaRzeczy(s, { ile: 5, pomin: 5 }), /pozycje od 6 do 10/);
+  assert.equal(s.ile({ rodzaj: 'projekt' }), 1);
   assert.match(umowaOkna(), /NAJMNIEJSZY DZIAŁAJĄCY GOŚĆ/);
 });
 

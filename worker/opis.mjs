@@ -65,7 +65,7 @@ function zmiany(s, od, limit = 40) {
 }
 
 // Dane, z których powstaje i tekst, i odpowiedź JSON (jedno źródło dla człowieka i agenta).
-export function opisDane(s, { kto = null, jako = null, od = null, origin = '', podglad = false, kluczProbny = null } = {}) {
+export function opisDane(s, { kto = null, jako = null, od = null, origin = '', podglad = false, kluczProbny = null, probnyImie = null } = {}) {
   const ostatni = s.ostatniNr();
   const widzKto = kto || (podglad && jako ? jako : null);
   const rola = s.rola(widzKto);
@@ -94,6 +94,8 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
     przeniesienie: { projekty_w_srodku: (liczby.find((l) => l.rodzaj === 'projekt/1') || { ile: 0 }).ile, publiczne_repozytoria: m ? { ile: m.cechy.wartosc, stan_na: m.cechy.stan_na || null, zrodlo: m.cechy.zrodlo || null } : null },
     czasowniki: czasowniki(s),
     klucz_probny: podglad ? kluczProbny : null,
+    probny_imie: podglad ? probnyImie : null,
+    zalatwione: { prosby: s.spis({ rodzaj: 'prosba/1', limit: 2000 }).filter((p) => p.cechy.stan === 'zalatwiona').length, propozycje_przyjete: s.spis({ rodzaj: 'propozycja/1', limit: 2000 }).filter((p) => p.cechy.stan === 'przyjeta').length, propozycje_odrzucone: s.spis({ rodzaj: 'propozycja/1', limit: 2000 }).filter((p) => p.cechy.stan === 'odrzucona').length },
   };
 }
 
@@ -130,6 +132,9 @@ export function coTuJest(s, opcje = {}) {
     'Obszary (rzecz leży w jednym obszarze; ustawienia dziedziczy się z góry):',
     d.obszary.map((x) => `  ${'  '.repeat(x.glebokosc)}${x.nazwa}${x.glowny ? ' [obszar główny; w ruchu: "obszar": null]' : ''}${x.id ? ` (id ${x.id})` : ''}: ${ile(x.ile, 'rzecz', 'rzeczy', 'rzeczy')}; ile_wolno agentom: ${x.ustawienia.ile_wolno.wartosc}${x.ustawienia.ile_wolno.skad === x.id || (x.glowny && x.ustawienia.ile_wolno.skad) ? '' : ' (odziedziczone)'}`),
     '',
+    'Obszar jest też rzeczą (rodzaj obszar/1): jego nazwę i ustawienia czytasz jak każdą rzecz (/rzeczy?rodzaj=obszar/1). W każdej rzeczy pole obszar',
+    'to identyfikator obszaru, w którym ona leży; null znaczy obszar główny. Rzecz leży dokładnie w jednym obszarze, a obszary tworzą drzewo.',
+    '',
     d.goscie.length ? 'Goście (organy i narzędzia; otwierają się w oknie na stronie głównej /):' : 'Gości (organów i narzędzi) jeszcze nie ma.',
     d.goscie.map((g) => `  ${g.nazwa}: ${obetnij(g.opis, 130)}   -> /rzecz/${g.id}${g.kod ? `, kod: /gosc/${g.kod}` : ''}${g.adres ? `, adres: ${g.adres}` : ''}`),
     '',
@@ -160,7 +165,7 @@ export function coTuJest(s, opcje = {}) {
     `Możliwe wartości ile_wolno: ${STOPNIE.map((x) => `${x} (${CO_ZNACZY[x]})`).join('; ')}.`,
     '',
     '5. JAK COŚ DOŁOŻYĆ',
-    d.klucz_probny ? `Klucz: na tym podglądzie działa jawny klucz próbny agenta: ${d.klucz_probny}` : 'Klucz: daje go właściciel; każdy uczestnik ma własny.',
+    d.klucz_probny ? `Klucz: na tym podglądzie działa jawny klucz próbny agenta: ${d.klucz_probny}${d.probny_imie ? `   (ruchy z tym kluczem robi uczestnik o imieniu ${d.probny_imie}, rola agent)` : ''}` : 'Klucz: daje go właściciel; każdy uczestnik ma własny.',
     'Każdy ruch to jedno żądanie:',
     `  POST ${o}/api/srodowisko/ruch`,
     '  Authorization: Bearer <klucz>',
@@ -202,6 +207,7 @@ export function coTuJest(s, opcje = {}) {
     !d.czeka.propozycje.length && !d.czeka.prosby.length ? 'Teraz nic nie czeka.' : null,
     d.czeka.propozycje.map((p) => `  propozycja od ${p.od}: ${p.rzecz ? 'zmiana rzeczy ' + p.rzecz : 'nowa rzecz'} rodzaju ${p.rodzaj}, czeka od ${dzien(p.kiedy)} -> /rzecz/${p.id}`),
     d.czeka.prosby.map((p) => `  prośba od ${p.od} (${p.tryb}): ${obetnij(p.tresc, 140)} -> /rzecz/${p.id}`),
+    `Już rozstrzygnięte (nie czekają): załatwione prośby: ${d.zalatwione.prosby} (/rzeczy?rodzaj=prosba/1); propozycje przyjęte: ${d.zalatwione.propozycje_przyjete}, odrzucone: ${d.zalatwione.propozycje_odrzucone} (/rzeczy?rodzaj=propozycja/1). Stan każdej stoi w jej cesze stan.`,
     'Prośbę do właściciela zostawia się jako rzecz rodzaju prosba/1 ze stanem "czeka".',
     '',
     '7. SPIS CZASOWNIKÓW (wszystko, co da się tu zrobić; ten sam spis czyta strona i agent)',
@@ -218,13 +224,25 @@ export function coTuJest(s, opcje = {}) {
   );
 }
 
-export function listaRzeczy(s, { rodzaj = null, obszar } = {}) {
-  const rz = s.spis({ rodzaj, obszar, limit: 2000 });
+// Lista zawsze mówi swój zakres: ile jest wszystkich, które pokazuje i czy to już koniec. Ciało, które czyta
+// w kawałkach, musi wiedzieć, czy coś mu umknęło (uwaga sędziego po dowodach, 17 XI).
+export function listaRzeczy(s, { rodzaj = null, obszar, pomin = 0, ile = 300 } = {}) {
+  const n = Math.max(1, Math.min(1000, ile | 0 || 300));
+  const od = Math.max(0, pomin | 0);
+  const razem = s.ile({ rodzaj, obszar });
+  const rz = s.spis({ rodzaj, obszar, limit: n, pomin: od });
+  const koniec = od + rz.length >= razem;
+  const filtr = [rodzaj ? 'rodzaj=' + rodzaj : null, obszar !== undefined ? 'obszar=' + (obszar || '') : null].filter(Boolean).join('&');
+  const dalej = `/rzeczy?${filtr ? filtr + '&' : ''}pomin=${od + rz.length}&ile=${n}`;
+  const nazwaObszaru = (id) => { if (!id) return 'główny'; const o = s.rzecz(id); return o ? s.tytul(o) : id; };
   return wiersze(
-    `RZECZY${rodzaj ? ' rodzaju ' + rodzaj : ''}${obszar !== undefined ? ' w obszarze ' + (obszar || 'głównym') : ''}: ${rz.length}`,
+    `RZECZY${rodzaj ? ' rodzaju ' + rodzaj : ''}${obszar !== undefined ? ' w obszarze ' + nazwaObszaru(obszar) : ''}: ${razem}`,
+    rz.length ? `ZAKRES: pokazuję ${rz.length} z ${razem}, pozycje od ${od + 1} do ${od + rz.length}, od ostatnio zmienionej. ${koniec ? 'To jest koniec listy: nic więcej nie ma.' : 'To NIE jest cała lista. Dalszy ciąg: ' + dalej}` : `ZAKRES: lista jest pusta${od ? ' od pozycji ' + (od + 1) : ''}; wszystkich rzeczy w tym wyborze jest ${razem}.`,
     'Każdy wiersz: tytuł [rodzaj] id, obszar, ostatnia zmiana. Jedna rzecz z historią: /rzecz/<id>. Wszystko o Miejscu: /co-tu-jest',
     '',
-    rz.map((x) => `${obetnij(s.tytul(x), 80)} [${x.rodzaj}] ${x.id}, obszar: ${x.obszar || 'główny'}, zmienił ${x.zmienil} ${dzien(x.zmieniono)}`),
+    rz.map((x) => `${obetnij(s.tytul(x), 80)} [${x.rodzaj}] ${x.id}, obszar: ${nazwaObszaru(x.obszar)}, zmienił ${x.zmienil} ${dzien(x.zmieniono)}`),
+    '',
+    koniec ? `KONIEC LISTY (pokazano ${od + rz.length} z ${razem}).` : `CIĄG DALSZY: ${dalej}   (pokazano ${od + rz.length} z ${razem})`,
     '',
   );
 }
@@ -343,6 +361,9 @@ export function umowaOkna() {
     '  read rzecz    -> {rzecz: {…jak wyżej…}, historia: [{akt, kto, kiedy}], wskazuja: [{od, cecha}]}',
     '  read ksztalty -> {ksztalty: [{dla, opis, tytul, cechy: {nazwa: {typ, opis, wymagana}}, rzecz}]}',
     '  read ja       -> {uczestnik: {imie, rola}, gosc: {rzecz, nazwa}}',
+    'Pole obszar w rzeczy to identyfikator rzeczy rodzaju obszar/1 (jej nazwa stoi w cesze nazwa) albo null, czyli obszar główny.',
+    'Nazwy obszarów dostaniesz przez read spis z rodzaj: "obszar". Rzecz leży dokładnie w jednym obszarze; obszary tworzą drzewo (obszar też ma pole obszar).',
+    'read spis oddaje najwyżej 1000 rzeczy, od ostatnio zmienionej; pole razem mówi, ile jest wszystkich, a wszystko: true, że to cała lista. Dalszy kawałek: pomin: <ile już masz>.',
     '',
     'NAJMNIEJSZY DZIAŁAJĄCY GOŚĆ (cały plik; skopiuj i zmień funkcję pokaz)',
     '<!doctype html>',

@@ -99,8 +99,9 @@
           const p = new URLSearchParams();
           if (typeof m.rodzaj === 'string') p.set('rodzaj', m.rodzaj);
           if (typeof m.obszar === 'string' || m.obszar === null) p.set('obszar', m.obszar || '');
+          if (Number.isInteger(m.pomin) && m.pomin > 0) p.set('pomin', String(m.pomin));
           const d = await czytaj('/api/srodowisko/spis?' + p);
-          dane = { rzeczy: d.rzeczy, razem: d.razem };
+          dane = { rzeczy: d.rzeczy, razem: d.razem, pokazane: d.pokazane, pominiete: d.pominiete, wszystko: d.wszystko };
         } else if (m.what === 'rzecz') {
           const d = await czytaj('/api/srodowisko/rzecz?id=' + encodeURIComponent(String(m.rzecz || '')));
           dane = { rzecz: d.rzecz, historia: d.historia, wskazuja: d.wskazuja };
