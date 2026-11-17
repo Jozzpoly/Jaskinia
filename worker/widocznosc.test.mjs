@@ -200,3 +200,87 @@ test('W12. nowe wywołanie kanału nie zapomni okularów po cichu', async () => 
     .filter(([, l]) => /\b(przyjmijGniazdo|przyjmijWiadomosc|poZamknieciu|rozglosObecnych)\s*\(/.test(l) && !l.startsWith('import') && !l.includes('widac'));
   assert.deepEqual(bez, [], 'wywołania kanału bez `widac` (obecność poniosłaby identyfikatory bez okularów)');
 });
+
+test('W13. "co czeka" nie niesie prośby z obszaru, którego czytelnik nie widzi', async () => {
+  // Pierwsza z pięciu rzeczy, które Fable złamał atakiem pod żywym adresem (17 XI 2026). Źródło usterki nie jest
+  // w trasie, tylko w FUNKCJI, którą trasa woła: czeka() pytało `wszystkie` na celu, nie na widoku, więc okulary
+  // jej nie dotyczyły. W7 pilnuje trasy; to jest o jedno piętro głębiej.
+  const { s, prywatny, jawny } = await swiat();
+  const dodaj = async (obszar, tresc, op) => (await s.ruch('jozz', { op, co: 'poloz', rodzaj: 'prosba/1', obszar, cechy: { tresc, stan: 'czeka' } })).rzecz;
+  const tajna = await dodaj(prywatny.obszar, 'TAJNA-PROSBA-DRUGIEJ-LINII', 'widocznosc-prosba-1');
+  const jawna = await dodaj(jawny.obszar, 'Jawna prośba', 'widocznosc-prosba-2');
+
+  const u = s.dla('agent-probny').czeka();
+  const id = (lista) => lista.map((x) => x.id);
+  assert.ok(!id(u.prosby).includes(tajna), 'uczestnik nie dostaje ani identyfikatora prośby ze skarbca');
+  assert.ok(!JSON.stringify(u.prosby).includes('TAJNA-PROSBA'), 'ani jej treści');
+  assert.ok(id(u.prosby).includes(jawna), 'a jawną prośbę widzi');
+  assert.ok(id(s.dla('jozz').czeka().prosby).includes(tajna), 'właściciel widzi obie');
+  // i to samo przez dane opisu, bo tam ta dziura wyszła
+  const { opisDane } = await import('./opis.mjs');
+  assert.ok(!JSON.stringify(opisDane(s.dla('agent-probny'), { kto: 'agent-probny' }).czeka).includes('TAJNA-PROSBA'));
+});
+
+test('W14. liczba też jest treścią - także ta z tabeli przekroju, nie tylko ze spisu', async () => {
+  // Druga rzecz z ataku Fable: opis mówił 4 projekty, a spis pokazywał 2. liczby() biorą się z przekroju
+  // (liczby zsumowane w tabeli), więc filtr w zapytaniu ich nie dotykał. To moje własne zdanie z W2 złamane
+  // o jedno piętro niżej.
+  const { s, prywatny } = await swiat();
+  const ileProjektow = (kto) => (s.dla(kto)._liczbyDla(kto).find((l) => l.rodzaj === 'projekt/1') || { ile: 0 }).ile;
+  assert.equal(ileProjektow('jozz'), 3);
+  assert.equal(ileProjektow('agent-probny'), 2, 'licznik mówi tyle, ile widać w spisie');
+  assert.equal(s.dla('agent-probny').spis({ rodzaj: 'projekt/1' }).length, 2, 'i spis mówi to samo co licznik');
+  assert.equal(ileProjektow(null), 1);
+  // sam obszar zamknięty leży w obszarze NADRZĘDNYM, więc przekrój policzył go po stronie rodzica
+  const ileObszarow = (kto) => (s.dla(kto)._liczbyDla(kto).find((l) => l.rodzaj === 'obszar/1') || { ile: 0 }).ile;
+  assert.equal(ileObszarow('agent-probny'), s.dla('agent-probny').spis({ rodzaj: 'obszar/1' }).length, 'obszar zamknięty nie jest doliczony');
+  assert.ok(ileObszarow('jozz') > ileObszarow('agent-probny'));
+  const { opisDane } = await import('./opis.mjs');
+  const d = opisDane(s.dla('agent-probny'), { kto: 'agent-probny' });
+  assert.equal((d.liczby.find((l) => l.rodzaj === 'projekt/1') || { ile: 0 }).ile, 2, 'opis liczy tak samo');
+  assert.equal(d.razem, d.liczby.reduce((a, x) => a + x.ile, 0));
+  assert.ok(prywatny.rzecz);
+});
+
+test('W15. przeniesienie rzeczy do jawnego obszaru nie publikuje jej przeszłości', async () => {
+  // Trzecia rzecz z ataku Fable, i jedyna, którą sam nazwał pytaniem o projekt, nie o błąd. Odpowiedź: dawna
+  // wersja jest widoczna tylko dla tego, kto widzi obszar Z JEJ ZAPISU i dzisiejszy. Inaczej przeniesienie rzeczy
+  // do jawnego obszaru jest publikacją całej jej historii, a publikacja ma być świadomym gestem.
+  const { s, prywatny } = await swiat();
+  const p = await s.ruch('jozz', { op: 'widocznosc-przeszlosc-1', co: 'poloz', rodzaj: 'projekt/1', obszar: prywatny.obszar, cechy: { nazwa: 'Projekt', opis: 'TAJNA-PRZESZLOSC' } });
+  const pierwszy = s.historia(p.rzecz)[0].akt;
+  const teraz = s.rzecz(p.rzecz);
+  await s.ruch('jozz', { op: 'widocznosc-przeszlosc-2', co: 'poloz', rzecz: p.rzecz, wersja: teraz.wersja, rodzaj: 'projekt/1', obszar: null, cechy: { nazwa: 'Projekt', opis: 'Jawny opis' } });
+
+  const w = s.dla('agent-probny');
+  assert.ok(w.rzecz(p.rzecz), 'dziś rzecz jest jawna i uczestnik ją widzi');
+  assert.equal(w.rzecz(p.rzecz).cechy.opis, 'Jawny opis');
+  assert.equal(w.wersja(p.rzecz, pierwszy), null, 'ale jej tajna przeszłość nie wraca razem z nią');
+  assert.ok(s.dla('jozz').wersja(p.rzecz, pierwszy).cechy.opis === 'TAJNA-PRZESZLOSC', 'właściciel przeszłość widzi');
+  // sam fakt, że akt był, zostaje słyszalny: numer aktu i tak jest jawny, tak samo jak w dzienniku
+  assert.ok(s.historia(p.rzecz).length >= 2);
+});
+
+test('W16. widok czytelnika nie przepuszcza niczego po cichu: surowy SQL rzuca, a lista owiniętych metod jest jawna', async () => {
+  // Dwie z pięciu dziur Fable miały ten sam kształt: metoda WOŁANA NA WIDOKU pytała bazy na celu, bo zapas
+  // (fallback) w Proxy wiązał wszystko z celem. Zapas, który wszystko przepuszcza, nie jest granicą. Odtąd:
+  // surowy SQL przez widok nie przechodzi, a każda publiczna metoda, która sama dotyka SQL, musi być albo
+  // owinięta, albo wypisana tutaj z powodem - żeby następna taka padła głośno, a nie po cichu.
+  const { s } = await swiat();
+  const w = s.dla('agent-probny');
+  assert.throws(() => w.q('SELECT 1'), /nie podaje surowego SQL/);
+  assert.equal(s.q('SELECT 1 AS x')[0].x, 1, 'na samym środowisku surowe zapytanie dalej działa');
+
+  const owiniete = new Set(['spis', 'wszystkie', 'ile', 'rzecz', 'wersja', 'wskazujaNa', 'pamietaj', 'czeka', 'liczby', 'przekroj', 'q']);
+  const swiadomie = {
+    historia: 'same numery aktów i autorzy, bez treści; treść podaje wersja(), a ta jest owinięta',
+    aktyRzeczy: 'wiersze dziennika; każdy i tak sprawdzany oczami czytelnika w opis.mjs (zmiany)',
+    kodGoscia: 'kod gościa jest dziś jawny po odcisku - zapisane jako brak, nie jako rzecz zrobiona',
+    przebuduj: 'odbudowa spisu: ruch środowiska, nie czytanie dla kogoś',
+  };
+  const czytaSQL = Object.getOwnPropertyNames(Object.getPrototypeOf(s))
+    .filter((n) => n !== 'constructor' && !n.startsWith('_') && typeof s[n] === 'function')
+    .filter((n) => /this\.q\(|\.sql\.exec\(/.test(String(Object.getPrototypeOf(s)[n])));
+  const nieznane = czytaSQL.filter((n) => !owiniete.has(n) && !Object.hasOwn(swiadomie, n));
+  assert.deepEqual(nieznane, [], 'metoda publiczna, która sama pyta bazę, a nie przechodzi przez okulary ani nie jest tu wypisana');
+});

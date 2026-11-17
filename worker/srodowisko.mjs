@@ -387,7 +387,30 @@ export class Srodowisko {
       wszystkie: (f = {}) => cel.wszystkie({ ...f, dla: kto }),
       ile: (f = {}) => cel.ile({ ...f, dla: kto }),
       rzecz: (id, o = {}) => cel.rzecz(id, { ...o, dla: kto }),
-      wersja: (id, akt) => (cel.rzecz(id, { dla: kto }) ? cel.wersja(id, akt) : null),
+      // Dawna wersja niesie obszar, w którym rzecz WTEDY leżała. Dzisiejsza widoczność nie wystarcza: rzecz
+      // przeniesiona z obszaru zamkniętego do jawnego inaczej publikowałaby całą swoją przeszłość przy okazji
+      // przeniesienia, a publikacja ma być świadomym gestem (znalezisko Fable, atak na tę granicę, 17 XI 2026).
+      // Sam fakt, że akt był, zostaje widoczny: numery aktów i tak są słyszalne, tak samo jak w dzienniku.
+      wersja: (id, akt) => {
+        if (cel.rzecz(id, { dla: kto }) === null) return null;
+        const w = cel.wersja(id, akt);
+        if (!w) return null;
+        const zle = cel._niewidoczneDla(kto);
+        return zle && zle.includes(w.obszar ?? null) ? null : w;
+      },
+      // Propozycje i prośby wychodzą z `wszystkie`, ale WOŁANE NA CELU, więc okulary ich nie dotyczyły: prośba
+      // z zamkniętego obszaru stała w "co czeka" z identyfikatorem i treścią (ta sama usterka co niżej w liczbach).
+      czeka: () => ({
+        propozycje: cel.wszystkie({ rodzaj: 'propozycja/1', gdzie: { stan: 'czeka' }, dla: kto }),
+        prosby: cel.wszystkie({ rodzaj: 'prosba/1', gdzie: { stan: 'czeka' }, dla: kto }),
+      }),
+      liczby: () => cel._liczbyDla(kto),
+      przekroj: () => cel._przekrojDla(kto),
+      // Surowy SQL przez widok czytelnika nie przechodzi. To nie wygoda, a bezpiecznik: dopóki tu stał, każde nowe
+      // zapytanie napisane "szybko" obok widoku omijało granicę po cichu i nikt tego nie widział (dwie z pięciu
+      // dziur z ataku Fable były dokładnie tym kształtem). Kto potrzebuje surowego zapytania, pisze je na
+      // środowisku i sam mówi, dla kogo liczy.
+      q: () => { throw new Error('widok czytelnika (srodowisko.dla) nie podaje surowego SQL: policz to przez spis/wszystkie/ile/rzecz albo dopisz tu jawne, filtrowane pytanie'); },
       // "co na to wskazuje" też jest treścią: odniesienie z obszaru, którego ten ktoś nie widzi, zdradzałoby,
       // że tam coś jest, i nawet czym się interesuje.
       wskazujaNa: (id) => cel.wskazujaNa(id).filter((x) => cel.rzecz(x.od, { dla: kto }) !== null),
@@ -521,12 +544,47 @@ export class Srodowisko {
   }
   przekroj() { return [...this._przekrojMapa().values()]; }
 
+  // Przekrój i liczby dla jednego czytelnika. Liczby biorą się z tabeli przekroju, a nie z listy rzeczy, więc
+  // filtr w zapytaniu ich nie dotyka - trzeba odjąć wiersze z obszarów, których ten ktoś nie widzi. Sam obszar
+  // zamknięty leży w obszarze NADRZĘDNYM, więc przekrój policzył go po stronie rodzica: odejmujemy go osobno,
+  // ale tylko wtedy, gdy rodzic jest widoczny (inaczej odjęlibyśmy go dwa razy).
+  _przekrojDla(kto) {
+    const zle = this._niewidoczneDla(kto);
+    if (!zle) return this.przekroj();
+    const ukryte = new Set(zle);
+    const wiersze = this.przekroj().filter((w) => !ukryte.has(w.obszar ?? null)).map((w) => ({ ...w }));
+    for (const id of ukryte) {
+      if (id === null) continue;
+      const o = this.rzecz(id, { odlozone: 'razem' });
+      if (!o || ukryte.has(o.obszar ?? null)) continue;
+      const w = wiersze.find((x) => x.rodzaj === o.rodzaj && (x.obszar ?? null) === (o.obszar ?? null) && Boolean(x.odlozone) === Boolean(o.odlozone));
+      if (w) w.ile = Math.max(0, w.ile - 1);
+    }
+    return wiersze.filter((w) => w.ile > 0);
+  }
+
+  _liczbyDla(kto) {
+    if (!this._niewidoczneDla(kto)) return this.liczby();
+    return this.pamietaj(`liczby|dla:${kto ?? ''}`, () => {
+      const m = new Map();
+      for (const w of this._przekrojDla(kto)) if (!w.odlozone) m.set(w.rodzaj, (m.get(w.rodzaj) || 0) + w.ile);
+      return Object.freeze([...m].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([rodzaj, ile]) => ({ rodzaj, ile })));
+    });
+  }
+
   liczby() {
     return this.pamietaj('liczby', () => {
       const m = new Map();
       for (const w of this.przekroj()) if (!w.odlozone) m.set(w.rodzaj, (m.get(w.rodzaj) || 0) + w.ile);
       return Object.freeze([...m].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([rodzaj, ile]) => ({ rodzaj, ile })));
     });
+  }
+
+  // Akty przesunięć rzeczy od numeru `od`, najnowsze pierwsze. Stoi tu, a nie w surowym zapytaniu u czytającego,
+  // bo widok czytelnika surowego SQL nie podaje: tytuł i rodzaj każdego wiersza i tak trzeba potem sprawdzić
+  // oczami czytelnika (opis.mjs: zmiany), a akt bez widocznej rzeczy zostaje samą liczbą.
+  aktyRzeczy(od, limit) {
+    return this.q(`SELECT a.nr, a.kto, a.kiedy, a.glowa, a.z_zapisu, a.cialo FROM akty a WHERE a.co = 'przesun' AND a.glowa LIKE 'rzecz:%' AND a.nr > ? ORDER BY a.nr DESC LIMIT ?`, od | 0, limit);
   }
 
   // Historia rzeczy: każda wersja ma kolejny numer (1, 2, 3…) i znacznik `akt`, czyli numer aktu, który ją ustawił.

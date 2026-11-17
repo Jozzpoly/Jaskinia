@@ -80,7 +80,7 @@ function obszary(s) {
 }
 
 function zmiany(s, od, limit = 40) {
-  const akty = s.q(`SELECT a.nr, a.kto, a.kiedy, a.glowa, a.z_zapisu, a.cialo FROM akty a WHERE a.co = 'przesun' AND a.glowa LIKE 'rzecz:%' AND a.nr > ? ORDER BY a.nr DESC LIMIT ?`, od | 0, limit + 1);
+  const akty = s.aktyRzeczy(od, limit + 1);
   const wiecej = akty.length > limit;
   // Dziennik jest drugą drogą do tych samych faktów i nie przechodzi przez okulary czytającego: zapytanie idzie
   // wprost do aktów, nie do spisu. Zmiana rzeczy, której ten ktoś nie widzi, wychodziła tędy z identyfikatorem
