@@ -108,8 +108,12 @@ function zmiany(s, od, limit = 40) {
   // (Znalezione atakiem na własną granicę pod żywym adresem, 17 XI; trzecia dziura, inna w rodzaju niż dwie pierwsze.)
   let ukryte = 0;
   const lista = [];
-  for (const a of akty.slice(0, limit)) {
-    const rz = s.rzecz(a.glowa.slice(6));
+  const widoczne = akty.slice(0, limit);
+  // Jedno pytanie na całą listę zamiast jednego na wiersz: to była połowa wszystkich zapytań na otwarcie strony
+  // (zmierzone: tools/koszt.mjs, 17 XI 2026).
+  const rzeczy = s.rzeczyWiele(widoczne.map((a) => a.glowa.slice(6)));
+  for (const a of widoczne) {
+    const rz = rzeczy.get(a.glowa.slice(6));
     if (!rz) { ukryte++; continue; }
     lista.push({ akt: a.nr, kto: a.kto, kto_opis: ktoJest(s, a.kto), kiedy: new Date(a.kiedy).toISOString(), co: a.z_zapisu ? 'zmienił' : 'dołożył', id: a.glowa.slice(6), rodzaj: rz.rodzaj, tytul: s.tytul(rz) });
   }

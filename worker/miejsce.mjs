@@ -306,8 +306,24 @@ export class Rdzen {
       ostatni_akt: ostatni ? new Date(ostatni.kiedy).toISOString() : null };
   }
 
-  meta(klucz) { const w = this.q(`SELECT wartosc FROM meta WHERE klucz = ?`, klucz)[0]; return w ? w.wartosc : null; }
-  ustawMeta(klucz, wartosc) { this.sql.exec(`INSERT INTO meta (klucz, wartosc) VALUES (?, ?) ON CONFLICT(klucz) DO UPDATE SET wartosc = excluded.wartosc`, klucz, String(wartosc)); }
+  // Meta pamiętamy w instancji: te same klucze (obszar_glowny, obszar_nowe, adres) pytane są po kilkanaście razy
+  // na jedno żądanie, a zmienia je tylko `ustawMeta`, które pamięć od razu poprawia. Zmierzone 17 XI 2026
+  // (tools/koszt.mjs): 15 z 82 zapytań jednego otwarcia strony to były te same pytania o meta.
+  // Obiekt Miejsca jest jeden na Miejsce i tylko on pisze do tej tabeli, więc nic nie może się rozjechać;
+  // po uśpieniu instancji pamięć znika razem z nią i pierwsze żądanie czyta na nowo.
+  meta(klucz) {
+    this._meta ??= new Map();
+    if (this._meta.has(klucz)) return this._meta.get(klucz);
+    const w = this.q(`SELECT wartosc FROM meta WHERE klucz = ?`, klucz)[0];
+    const wartosc = w ? w.wartosc : null;
+    this._meta.set(klucz, wartosc);
+    return wartosc;
+  }
+  ustawMeta(klucz, wartosc) {
+    this.sql.exec(`INSERT INTO meta (klucz, wartosc) VALUES (?, ?) ON CONFLICT(klucz) DO UPDATE SET wartosc = excluded.wartosc`, klucz, String(wartosc));
+    this._meta ??= new Map();
+    this._meta.set(klucz, String(wartosc));
+  }
 
   // Most (worker/most.mjs): wiadomości jeszcze niewysłane do repozytorium agentów, bez tych, które przyszły mostem.
   doWyslania(limit = 50) {

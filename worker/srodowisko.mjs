@@ -391,6 +391,26 @@ export class Srodowisko {
     return this._zWiersza(w);
   }
 
+  // Kilka rzeczy naraz, JEDNYM pytaniem. Dziennik pytał o każdą osobno i przy czterdziestu wierszach było to
+  // czterdzieści zapytań na jedno otwarcie strony - połowa wszystkich (zmierzone: tools/koszt.mjs, 17 XI 2026,
+  // w dniu, w którym konto stanęło na dobowym limicie odczytów). Okulary zakładamy tak samo jak w `rzecz`.
+  rzeczyWiele(ids, { dla = undefined } = {}) {
+    const lista = [...new Set((ids || []).filter((x) => typeof x === 'string' && ID.test(x)))];
+    const mapa = new Map();
+    if (!lista.length) return mapa;
+    const zle = dla === undefined ? null : this._niewidoczneDla(dla);
+    // Po sto naraz: SQLite ma granicę liczby parametrów, a sto pytań zamiast stu zapytań i tak jest całą wygraną.
+    for (let i = 0; i < lista.length; i += 100) {
+      const czesc = lista.slice(i, i + 100);
+      const pyt = czesc.map(() => '?').join(', ');
+      for (const w of this.q(`SELECT r.*, z.tresc FROM rzeczy r JOIN zapisy z ON z.id = r.zapis WHERE r.id IN (${pyt})`, ...czesc)) {
+        if (zle && (zle.includes(w.obszar ?? null) || zle.includes(w.id))) continue;
+        mapa.set(w.id, this._zWiersza(w));
+      }
+    }
+    return mapa;
+  }
+
   // Wybór rzeczy: rodzaj (z pokoleniem albo sama nazwa), obszar, wartości cech (`gdzie`), tekst (`szukaj`) i to,
   // czy pokazywać odłożone (domyślnie nie; 'tak': tylko odłożone; 'razem': jedne i drugie).
   // --- widoczność z danych (17 XI 2026, Opus Code, front B) ---------------------------------------------------
@@ -415,6 +435,7 @@ export class Srodowisko {
       wszystkie: (f = {}) => cel.wszystkie({ ...f, dla: kto }),
       ile: (f = {}) => cel.ile({ ...f, dla: kto }),
       rzecz: (id, o = {}) => cel.rzecz(id, { ...o, dla: kto }),
+      rzeczyWiele: (ids, o = {}) => cel.rzeczyWiele(ids, { ...o, dla: kto }),
       // Dawna wersja niesie obszar, w którym rzecz WTEDY leżała. Dzisiejsza widoczność nie wystarcza: rzecz
       // przeniesiona z obszaru zamkniętego do jawnego inaczej publikowałaby całą swoją przeszłość przy okazji
       // przeniesienia, a publikacja ma być świadomym gestem (znalezisko Fable, atak na tę granicę, 17 XI 2026).
