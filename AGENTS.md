@@ -44,10 +44,16 @@ Dwie reguły, obie sprawdzalne:
    tylko raport, i ma brzmieć jak raport.** U mnie nie zatrzymało się nic: budowniczy scalił osiem minut
    po moim werdykcie, zanim pytanie w ogóle do właściciela dotarło. Zgoda, na którą nikt nie czeka, niczego
    nie chroni — jest samym podatkiem od uwagi.
-2. **Jego *tak* pilnuje tego, co do niego dociera:** `main`, adres, który otwiera, jego dane, pieniądze,
-   dostępy i rzeczy nieodwracalne. Wewnątrz własnego pnia próby decydują agenci, a hamulcem jest druga
-   linia, nie on. Agent, który pyta częściej, niż reguła wymaga, nie jest ostrożniejszy — przenosi tylko
-   koszt tam, gdzie jest najdroższy.
+2. **Jego *tak* pilnuje tego, co do niego dociera:** przełączenie Jaskini, której używa, decyzja
+   o fundamencie, zgłoszenie mówiące o sobie, że samo jest dowodem, oraz jego dane, pieniądze, dostępy
+   i rzeczy nieodwracalne — czyli dokładnie to, co wymienia reguła wyżej, i nic ponadto. Gałąź docelowa
+   tego nie rozstrzyga: zgłoszenie do `main`, które niczego z tej listy nie rusza, potrzebuje **drugiej
+   linii, a nie jego**. Agent, który pyta częściej, niż reguła wymaga, nie jest ostrożniejszy — przenosi
+   tylko koszt tam, gdzie jest najdroższy.
+
+   *(Poprawione tego samego dnia, godzinę po pierwszym zapisie: napisałem najpierw „`main`" i to było
+   przykręcenie reguły, nie jej zapisanie. Wyszłoby z tego, że każda zmiana w dokumentacji czeka na
+   właściciela — czyli ta sama choroba, którą ten dopisek miał leczyć, tylko od drugiej strony.)*
 
 Pytanie ma też nie wymagać od niego odtworzenia kontekstu. Jeśli odpowiedź wymaga, żeby najpierw ustalił,
 czego pytanie dotyczy, to nie jest pytanie, tylko praca domowa.
