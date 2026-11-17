@@ -7,15 +7,26 @@
 // Cloudflare trzyma tę bazę po stronie serwera, z odtworzeniem do dowolnej chwili z ostatnich 30 dni
 // (point-in-time recovery dla Durable Objects z SQLite).
 import { Rdzen, obsluzMiejsce } from './miejsce.mjs';
+import { Srodowisko } from './srodowisko.mjs';
+import { ziarna } from './ziarna.mjs';
+import { obsluzSrodowisko } from './srodowisko-http.mjs';
 
 export class Miejsce {
   constructor(ctx, env = {}) {
     this.ctx = ctx;
     this.env = env;
-    this.rdzen = new Rdzen(ctx.storage.sql);
+    // Kto jest właścicielem, mówi ustawienie Workera (WLASCICIEL), nie kod.
+    this.rdzen = new Rdzen(ctx.storage.sql, { wlasciciel: env.WLASCICIEL });
+    this.srod = new Srodowisko(this.rdzen);
+    this.zasiane = null;
   }
 
   async fetch(request) {
-    return obsluzMiejsce(this.rdzen, request);
+    const sciezka = new URL(request.url).pathname;
+    if (sciezka === '/api/miejsce' || sciezka.startsWith('/api/miejsce/')) return obsluzMiejsce(this.rdzen, request);
+    // Środowisko zasiewa swoje rzeczy przy pierwszym wejściu; kolejne wejścia czekają na ten sam zasiew.
+    this.zasiane ??= this.srod.zasiej(ziarna({ wlasciciel: this.rdzen.wlasciciel })).catch((e) => { this.zasiane = null; throw e; });
+    await this.zasiane;
+    return obsluzSrodowisko(this.srod, request, { podglad: this.env.PODGLAD === 'tak', kluczProbny: this.env.KLUCZ_PROBNY_AGENTA || null });
   }
 }
