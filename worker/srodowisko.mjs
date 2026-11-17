@@ -20,6 +20,7 @@ import { poprawneImie, skrot } from './miejsce.mjs';
 import { opKlienta } from './ksztalty.mjs';
 
 export const SRODOWISKO = 'srodowisko-1';
+export const CZYTELNIK_PODGLADU = 'podglad'; // imię czytającego bez klucza na podglądzie; uczestnikiem jest tylko tam
 export const AUTOMAT = 'srodowisko'; // uczestnik, którym środowisko samo zasiewa swoje rzeczy; imię zastrzeżone
 
 const RODZAJ = /^[a-z][a-z0-9_.-]{0,79}\/[1-9][0-9]{0,5}$/;
@@ -574,16 +575,34 @@ export class Srodowisko {
   // --- uczestnicy i prawa ---------------------------------------------------------------------------------------
   // Właścicielem jest jedno imię, ustawione poza danymi (WLASCICIEL w ustawieniach Workera). Rzecz rodzaju uczestnik
   // może nadać rolę agent albo automat; roli właściciela nadać nie może.
+  // Kto jest uczestnikiem, mówią DANE, a nie ustawienie Workera (17 XI 2026, front B). Klucz w ustawieniu KLUCZE
+  // dowodzi tylko, KIM ktoś jest; czy ten ktoś ma tu prawa, stoi w rzeczy rodzaju uczestnik/1, którą właściciel
+  // widzi i zmienia w Miejscu. Do 17 XI było odwrotnie i otwarcie: imię, którego nie było wśród uczestników,
+  // dostawało rolę `agent` z samego faktu, że jest imieniem. Teraz brak rzeczy znaczy brak praw - i to jest
+  // kierunek, w którym błąd ma padać. Imię z klucza zasiewa się jako uczestnik przy pierwszym wejściu i na
+  // otwarciu kanału (miejsce-do.mjs), więc fałszywego braku praw nie da się dostać zwykłą drogą; gdy jednak
+  // padnie, mówi o tym wprost (`powodBrakuPrawa`), a nie "podaj klucz" do kogoś, kto klucz właśnie podał.
   rola(kto) {
     if (!kto) return 'zwiedzajacy';
     if (kto === this.wlasciciel) return 'wlasciciel';
+    if (kto === AUTOMAT) return 'automat';
     const nr = this.ostatniNr();
     if (this._role.nr !== nr) this._role = { nr, mapa: new Map() };
     if (!this._role.mapa.has(kto)) {
-      const u = this.spis({ rodzaj: 'uczestnik/1', gdzie: { imie: kto }, limit: 1 })[0];
-      this._role.mapa.set(kto, u && u.cechy.rola === 'automat' ? 'automat' : 'agent');
+      const u = this.spis({ rodzaj: 'uczestnik/1', gdzie: { imie: kto }, odlozone: 'razem', limit: 1 })[0];
+      // Uczestnik odłożony przestaje być uczestnikiem: odłożenie jest tu tym, czym odebranie prawa wstępu, i jest
+      // odwracalne (`przywroc`), inaczej niż usunięcie, którego Miejsce nie ma.
+      this._role.mapa.set(kto, !u || u.odlozone ? 'zwiedzajacy' : (ROLE.includes(u.cechy.rola) && u.cechy.rola !== 'wlasciciel' ? u.cechy.rola : 'agent'));
     }
     return this._role.mapa.get(kto);
+  }
+
+  // Dlaczego ktoś nie ma prawa: sama rola nie wystarcza na uczciwy komunikat. Kto nie podał klucza, ma go podać;
+  // kto podał klucz, ale nie ma rzeczy uczestnika (albo jest odłożona), musi usłyszeć prawdę, bo inaczej szuka
+  // błędu w kluczu, którego w kluczu nie ma.
+  powodBrakuPrawa(kto, co = 'do ruchu') {
+    if (!kto) return `${co} potrzebny jest klucz uczestnika (nagłówek Authorization: Bearer <klucz>)`;
+    return `klucz jest poprawny, ale w tym Miejscu nie ma uczestnika o imieniu ${kto} (rzecz rodzaju uczestnik/1 - dopisuje i przywraca ją właściciel), więc ${co} nie ma prawa`;
   }
 
   // Ustawienie obowiązujące w obszarze: pierwsze znalezione w drodze do góry; na samej górze wartość domyślna.
@@ -645,7 +664,7 @@ export class Srodowisko {
   // a rodzaj, obszar i cechy to stan po zmianie. Prawo liczy się tam, skąd rzecz wychodzi, i tam, dokąd trafia.
   ocen(kto, { stara = null, rodzaj, obszar = null, cechy = {} }) {
     const rola = this.rola(kto);
-    if (rola === 'zwiedzajacy') return { tryb: 'odmowa', status: 401, powod: 'do ruchu potrzebny jest klucz uczestnika (nagłówek Authorization: Bearer <klucz>)' };
+    if (rola === 'zwiedzajacy') return { tryb: 'odmowa', status: 401, powod: this.powodBrakuPrawa(kto, 'do ruchu') };
     if (rodzaj === 'propozycja/1' || (stara && stara.rodzaj === 'propozycja/1')) return { tryb: 'odmowa', status: 403, powod: 'propozycje powstają same, gdy ruch nie ma prawa do skutku; zmienia je tylko przyjęcie albo odrzucenie (co: przyjmij, co: odrzuc)' };
     if (rola === 'wlasciciel') return { tryb: 'skutek' };
     let wynik = { tryb: 'skutek' };
@@ -1079,7 +1098,7 @@ export class Srodowisko {
     if (!pr || pr.rodzaj !== 'propozycja/1') return blad(404, `nie ma propozycji ${c.propozycja}`);
     if (pr.cechy.stan !== 'czeka') return blad(409, `ta propozycja jest już rozstrzygnięta: ${pr.cechy.stan}`);
     const rola = this.rola(kto);
-    if (rola === 'zwiedzajacy') return blad(401, 'do rozstrzygnięcia propozycji potrzebny jest klucz uczestnika');
+    if (rola === 'zwiedzajacy') return blad(401, this.powodBrakuPrawa(kto, 'do rozstrzygnięcia propozycji'));
     const t = pr.cechy.tresc && typeof pr.cechy.tresc === 'object' ? pr.cechy.tresc : {};
     const cechy = t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {};
     // Propozycja pamięta obszar z chwili, w której powstała. Rzecz, która z natury należy do innej, bierze go z tamtej
@@ -1123,7 +1142,7 @@ export class Srodowisko {
   // Kod gościa: niezmienny zapis rodzaju kod/1. Wskazuje go cecha `kod` rzeczy rodzaju gosc/1.
   async kod(kto, tekst, { op, slad = null } = {}) {
     const rola = this.rola(kto);
-    if (rola === 'zwiedzajacy') return blad(401, 'do zapisania kodu potrzebny jest klucz uczestnika');
+    if (rola === 'zwiedzajacy') return blad(401, this.powodBrakuPrawa(kto, 'do zapisania kodu'));
     if (kto === AUTOMAT) return blad(403, `imię ${AUTOMAT} jest zastrzeżone dla samego środowiska`);
     if (typeof tekst !== 'string' || !tekst.trim()) return blad(400, 'ciało żądania: tekst strony gościa (jeden plik HTML)');
     if (!opKlienta(op)) return blad(400, 'op: w adresie, ?op=<8 do 100 znaków z [A-Za-z0-9_-]>');

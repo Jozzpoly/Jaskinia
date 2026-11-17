@@ -15,7 +15,7 @@ async function swiat() {
   let t = Date.UTC(2026, 10, 17, 2, 0, 0);
   const r = new Rdzen(sqlZNode(), { teraz: () => (t += 1000) });
   const s = new Srodowisko(r);
-  await s.zasiej(ziarna({ wlasciciel: 'jozz' }));
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-probny', 'agent-a', 'agent-b', 'agent-0', 'agent-1', 'agent-2', 'podglad'] }));
   return { r, s, nowe: r.meta('obszar_nowe'), glowny: r.meta('obszar_glowny') };
 }
 const postac = { dla: 'postac/1', opis: 'Postać ze świata gry.', tytul: 'imie', cechy: { imie: { typ: 'tekst', wymagana: true }, sila: { typ: 'liczba' }, z_projektu: { typ: 'rzecz', rodzaj: 'projekt/1' } } };
@@ -25,11 +25,16 @@ test('zasiew: środowisko opisuje samo siebie i nie sieje dwa razy', async () =>
   const przed = s.spis().length;
   assert.ok(s.ksztaltDla('ksztalt/1'), 'kształt kształtu jest rzeczą');
   assert.ok(s.ksztaltDla('obszar/1') && s.ksztaltDla('gosc/1') && s.ksztaltDla('projekt/1'));
-  assert.deepEqual(await s.zasiej(ziarna({ wlasciciel: 'jozz' })), []);
+  assert.deepEqual(await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-probny', 'agent-a', 'agent-b', 'agent-0', 'agent-1', 'agent-2', 'podglad'] })), []);
   assert.equal(s.spis().length, przed);
   assert.equal(s.rola('jozz'), 'wlasciciel');
-  assert.equal(s.rola('ktos-z-kluczem'), 'agent');
+  assert.equal(s.rola('agent-probny'), 'agent', 'uczestnik jest uczestnikiem, bo jest rzeczą uczestnika');
+  // Do 17 XI 2026 to zdanie mówiło 'agent': rolę agenta dostawało KAŻDE imię, bo samo bycie imieniem wystarczało.
+  // Teraz prawa są z danych i brak rzeczy uczestnika znaczy brak praw - w tę stronę ma padać błąd.
+  assert.equal(s.rola('ktos-z-kluczem'), 'zwiedzajacy', 'imię bez rzeczy uczestnika nie jest uczestnikiem');
   assert.equal(s.rola(null), 'zwiedzajacy');
+  assert.match(s.powodBrakuPrawa('ktos-z-kluczem'), /klucz jest poprawny/, 'i słyszy prawdę, a nie "podaj klucz"');
+  assert.match(s.powodBrakuPrawa(null), /potrzebny jest klucz/);
 });
 
 test('D0 w małym: agent dokłada nowy rodzaj jako daną i rzecz tego rodzaju, bez zmiany kodu', async () => {
@@ -424,7 +429,7 @@ test('wywóz i wwóz: po powrocie do pustego Miejsca stoi to samo środowisko', 
   const s2 = new Srodowisko(r2);
   s2.przebuduj();
   assert.equal(obraz(s2), obraz(s), 'spis po wwozie jest co do znaku ten sam');
-  assert.deepEqual(await s2.zasiej(ziarna({ wlasciciel: 'jozz' })), [], 'zasiew niczego nie sieje drugi raz');
+  assert.deepEqual(await s2.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-probny', 'agent-a', 'agent-b', 'agent-0', 'agent-1', 'agent-2', 'podglad'] })), [], 'zasiew niczego nie sieje drugi raz');
   assert.equal(s2.ustawienie(null, 'ile_wolno').wartosc, 'nic', 'ustawienie obszaru głównego przeszło');
   assert.equal(r2.meta('obszar_nowe'), r.meta('obszar_nowe'));
   assert.equal(s2.rzecz(p.rzecz).odlozone, true);
@@ -438,7 +443,7 @@ test('wywóz i wwóz: po powrocie do pustego Miejsca stoi to samo środowisko', 
 
 test('ziarna: zmienione w kodzie odświeżają się same, dopóki nikt poza automatem ich nie ruszył', async () => {
   const { r, s } = await swiat();
-  const lista = ziarna({ wlasciciel: 'jozz' });
+  const lista = ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-probny', 'agent-a', 'agent-b', 'agent-0', 'agent-1', 'agent-2', 'podglad'] });
   const nazwa = 'zdolnosc-start';
   const id = r.meta('ziarno:' + nazwa);
   const zmien = (opis) => lista.map((z) => (z.nazwa === nazwa ? { ...z, cechy: { ...z.cechy, opis } } : z));
@@ -522,4 +527,50 @@ test('klucz próbny właściciela wychodzi do strony tylko na podglądzie', asyn
   assert.equal(opisDane(s, { podglad: true, kluczProbnyWlasciciela: 'jawny-klucz-wlasciciela' }).klucz_probny_wlasciciela, 'jawny-klucz-wlasciciela');
   assert.equal(opisDane(s, { podglad: false, kluczProbnyWlasciciela: 'jawny-klucz-wlasciciela' }).klucz_probny_wlasciciela, null);
   assert.doesNotMatch(coTuJest(s, { podglad: true, kluczProbny: 'k-agenta', kluczProbnyWlasciciela: 'jawny-klucz-wlasciciela' }), /jawny-klucz-wlasciciela/, 'tekst dla agentów podaje tylko klucz agenta');
+});
+
+test('U1. uczestnik odłożony traci prawa, przywrócony je odzyskuje - i to jest jedyna droga do odebrania wstępu', async () => {
+  // Nowy mechanizm, nie poprawka: skoro prawa są z danych, właściciel może odebrać je ruchem, który sam jest
+  // odwracalny. Usunięcia Miejsce nie ma w ogóle, więc "odłożony" jest tu tym, czym odebranie wstępu.
+  const { s, nowe } = await swiat();
+  const przed = await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'projekt/1', obszar: nowe, cechy: { nazwa: 'Przed odłożeniem' } });
+  assert.equal(przed.skutek, 'polozone', JSON.stringify(przed));
+  const u = s.spis({ rodzaj: 'uczestnik/1', gdzie: { imie: 'agent-a' }, limit: 1 })[0];
+  assert.ok(u, 'uczestnik jest rzeczą, którą właściciel widzi');
+
+  const o = await s.ruch('jozz', { op: op(), co: 'odloz', rzecz: u.id, wersja: u.wersja, powod: 'na razie nie rusza' });
+  assert.equal(o.skutek, 'odlozone', JSON.stringify(o));
+  assert.equal(s.rola('agent-a'), 'zwiedzajacy', 'odłożony uczestnik nie jest uczestnikiem');
+  const po = await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'projekt/1', obszar: nowe, cechy: { nazwa: 'Po odłożeniu' } });
+  assert.equal(po.ok, false);
+  assert.equal(po.status, 401);
+  assert.match(po.blad, /klucz jest poprawny, ale/, 'i słyszy, dlaczego, zamiast "podaj klucz"');
+  // drugi agent nie traci nic: odłożenie dotyczy jednego imienia
+  const b = await s.ruch('agent-b', { op: op(), co: 'poloz', rodzaj: 'projekt/1', obszar: nowe, cechy: { nazwa: 'Inny agent' } });
+  assert.equal(b.skutek, 'polozone');
+
+  const wroc = await s.ruch('jozz', { op: op(), co: 'przywroc', rzecz: u.id, wersja: s.rzecz(u.id, { odlozone: 'razem' }).wersja });
+  assert.equal(wroc.skutek, 'przywrocone', JSON.stringify(wroc));
+  assert.equal(s.rola('agent-a'), 'agent');
+  const znow = await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'projekt/1', obszar: nowe, cechy: { nazwa: 'Po powrocie' } });
+  assert.equal(znow.skutek, 'polozone', JSON.stringify(znow));
+});
+
+test('U2. rola bierze się z rzeczy uczestnika, ale roli właściciela nadać nie może', async () => {
+  const { s } = await swiat();
+  const u = s.spis({ rodzaj: 'uczestnik/1', gdzie: { imie: 'agent-b' }, limit: 1 })[0];
+  const nacel = async (rola) => {
+    const teraz = s.rzecz(u.id);
+    const w = await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: u.id, wersja: teraz.wersja, rodzaj: 'uczestnik/1', cechy: { ...teraz.cechy, rola } });
+    assert.equal(w.ok, true, JSON.stringify(w));
+  };
+  await nacel('automat');
+  assert.equal(s.rola('agent-b'), 'automat', 'automat jest daną, nie wyjątkiem w kodzie');
+  await nacel('wlasciciel');
+  assert.equal(s.rola('agent-b'), 'agent', 'właścicielem jest jedno imię z ustawienia Workera i rzecz tego nie zmienia');
+  assert.equal(s.rola('jozz'), 'wlasciciel');
+  // uczestnika dopisuje i zmienia tylko właściciel: ruch agenta na tej rzeczy nie ma skutku
+  const teraz = s.rzecz(u.id);
+  const proba = await s.ruch('agent-a', { op: op(), co: 'poloz', rzecz: u.id, wersja: teraz.wersja, rodzaj: 'uczestnik/1', cechy: { ...teraz.cechy, rola: 'agent' } });
+  assert.notEqual(proba.skutek, 'polozone', JSON.stringify(proba));
 });

@@ -74,8 +74,12 @@ powiedz({ type: 'hello', name: 'Lista rzeczy', version: '1', wants: ['rzeczy'] }
 </html>
 `;
 
-export function ziarna({ wlasciciel }) {
+// `uczestnicy` to imiona, które właściciel ustawił jako klucze. Od 17 XI 2026 prawa bierze się z rzeczy rodzaju
+// uczestnik/1, więc imię bez takiej rzeczy nie jest uczestnikiem - dlatego zasiew musi je znać. W Workerze podaje
+// je `_poznaj` z nagłówka zbudowanego z ustawienia KLUCZE; w sprawdzianie świat podaje je sam.
+export function ziarna({ wlasciciel, uczestnicy = [] }) {
   return [
+    ...uczestnicy.filter((i) => i && i !== wlasciciel).map((imie) => ({ nazwa: 'uczestnik-' + imie, rodzaj: 'uczestnik/1', cechy: { imie, rola: 'agent', opis: 'Uczestnik znany z klucza ustawionego przez właściciela.' } })),
     k('ksztalt', { dla: 'ksztalt/1', tytul: 'dla', opis: 'Kształt: opis rodzaju rzeczy, czyli jakie cechy ma rzecz tego rodzaju. Sam jest rzeczą, więc nowy rodzaj dokłada się ruchem, bez zmiany kodu.',
       cechy: {
         dla: { typ: 'tekst', wymagana: true, opis: 'rodzaj z pokoleniem, który ten kształt opisuje, np. postac/1' },
@@ -240,6 +244,7 @@ export function ziarna({ wlasciciel }) {
     zd('trasa', 'stoi', 'Trasa: jedno żądanie do drzwi i rzecz jest w Miejscu, widać ją w spisie i zostaje.'),
     zd('samowyjasnianie', 'stoi', 'Samowyjaśnianie pod adresem: /co-tu-jest mówi gołym tekstem, co tu jest, co się zmieniło, co komu wolno i jak coś dołożyć; powstaje z danych.'),
     zd('obszary', 'cienko', 'Obszary i prawo do skutku z danych: ten sam ruch daje skutek, propozycję albo odmowę zależnie od ustawienia obszaru.', 'Działa ile_wolno, liczone w obszarze, w którym rzecz leży, i w tym, do którego trafia. Ustawienia uwaga, widzi i uklada są zapisane, ale nic jeszcze z nich nie wynika. Wszyscy agenci mają w obszarze to samo prawo.'),
+    zd('uczestnicy', 'cienko', 'Uczestnicy z danych: kto ma tu prawa, mówi rzecz rodzaju uczestnik/1, którą właściciel widzi i zmienia w Miejscu; klucz w ustawieniu Workera dowodzi tylko, KIM ktoś jest.', 'Rola (agent albo automat) jest cechą tej rzeczy; roli właściciela nadać nie może, bo właściciel to jedno imię z ustawienia Workera. Uczestnik odłożony traci prawa, a przywrócony je odzyskuje - i to jest dziś jedyny sposób odebrania wstępu bez zmiany ustawień. Imię, które nie ma swojej rzeczy uczestnika, nie jest uczestnikiem i słyszy to wprost, zamiast "podaj klucz" do kogoś, kto klucz właśnie podał. Czego nie ma: zaproszeń, zakładania kluczy w Miejscu (klucz nigdy nie jest daną), ani RÓŻNYCH praw dla różnych uczestników w tym samym obszarze - ile_wolno mówi o wszystkich agentach naraz.'), 
     zd('propozycje', 'cienko', 'Propozycje: ruch bez prawa do skutku czeka, aż przyjmie go albo odrzuci właściciel albo ktoś, kto sam mógłby zrobić ten ruch ze skutkiem; autor może swoją wycofać.', 'Ruch, który zmienia coś zastrzeżonego dla właściciela, też staje się propozycją, tylko do niego. Nie ma wygasania ani warstwy do obejrzenia przed przyjęciem.'),
     zd('goscie', 'cienko', 'Goście z kodem w piaskownicy: jeden plik HTML zapisany w Miejscu, podawany bez dostępu do sieci i do adresu Miejsca.', 'Gość czyta rzeczy przez umowę okna. Jeszcze nie proponuje ruchów z okna i nie ma własnej pamięci.'),
     zd('umowa-okna', 'cienko', 'Umowa okna, pokolenie 2: przyrząd starej Jaskini (hello, state, signals, event, flag) i czytanie rzeczy.', 'Opis: /umowa-okna. Brakuje ruchów z okna, wołania czasowników gościa i okna w przestrzeni Startu.'),
