@@ -349,3 +349,19 @@ test('Z12. pamięć numeru aktu i liczb: po każdym ruchu, odłożeniu, wwozie i
   s2.przebuduj();
   assert.equal(s2.ile({}), ileZBazy());
 });
+
+test('Z13. uczestnik, który tylko się połączył, ma prawa: zasiew imion stoi też na otwarciu kanału', async (t) => {
+  // Od 17 XI 2026 prawa bierze się z rzeczy uczestnika. Zasiew tych rzeczy stał wyłącznie na ścieżce HTTP, a kanał
+  // wychodził z `_obsluz` przed nią - więc agent, który najpierw podłączył się do kanału, byłby bez praw do chwili
+  // pierwszego żądania. Tu sprawdzamy to z dwóch stron: że po samym połączeniu uczestnik jest rzeczą i ma rolę,
+  // i że imię bez klucza nie staje się uczestnikiem tylko dlatego, że się połączyło.
+  const stara = globalThis.WebSocketPair;
+  globalThis.WebSocketPair = function Para() { return [gniazdo(), gniazdo()]; };
+  t.after(() => { if (stara === undefined) delete globalThis.WebSocketPair; else globalThis.WebSocketPair = stara; });
+  const { obiekt } = obiektZGniazdami(await env());
+  await obiekt._otworzZywe(zadanie(ADRES_ZYWEGO, { headers: { upgrade: 'websocket', 'x-kto': 'agent-probny', 'x-imiona': 'agent-probny' } }));
+  assert.equal(obiekt.srod.rola('agent-probny'), 'agent', 'po samym połączeniu uczestnik ma prawa');
+  assert.ok(obiekt.srod.spis({ rodzaj: 'uczestnik/1', gdzie: { imie: 'agent-probny' }, limit: 1 })[0], 'i jest rzeczą w Miejscu');
+  assert.equal(obiekt.srod.rola('kto-inny'), 'zwiedzajacy', 'imię, którego nie ma w kluczach, prawa nie dostaje');
+  assert.equal(obiekt.srod.rola('podglad'), 'zwiedzajacy', 'poza podglądem nie powstaje nawet czytelnik podglądu');
+});
