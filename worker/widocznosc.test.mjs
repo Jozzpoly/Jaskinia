@@ -271,16 +271,68 @@ test('W16. widok czytelnika nie przepuszcza niczego po cichu: surowy SQL rzuca, 
   assert.throws(() => w.q('SELECT 1'), /nie podaje surowego SQL/);
   assert.equal(s.q('SELECT 1 AS x')[0].x, 1, 'na samym środowisku surowe zapytanie dalej działa');
 
-  const owiniete = new Set(['spis', 'wszystkie', 'ile', 'rzecz', 'rzeczyWiele', 'wersja', 'wskazujaNa', 'pamietaj', 'czeka', 'liczby', 'przekroj', 'q']);
+  const owiniete = new Set(['spis', 'wszystkie', 'ile', 'rzecz', 'rzeczyWiele', 'wersja', 'wskazujaNa', 'pamietaj', 'czeka', 'liczby', 'przekroj', 'q', 'ksztalty', 'ustawienie']);
   const swiadomie = {
-    historia: 'same numery aktów i autorzy, bez treści; treść podaje wersja(), a ta jest owinięta',
-    aktyRzeczy: 'wiersze dziennika; każdy i tak sprawdzany oczami czytelnika w opis.mjs (zmiany)',
-    kodGoscia: 'kod gościa jest dziś jawny po odcisku - zapisane jako brak, nie jako rzecz zrobiona',
-    przebuduj: 'odbudowa spisu: ruch środowiska, nie czytanie dla kogoś',
+    historia: 'same numery aktow i autorzy, bez tresci; tresc podaje wersja(), a ta jest owinieta',
+    aktyRzeczy: 'wiersze dziennika; kazdy i tak sprawdzany oczami czytelnika w opis.mjs (zmiany)',
+    kodGoscia: 'kod goscia jest dzis jawny po odcisku - zapisane jako brak, nie jako rzecz zrobiona',
+    przebuduj: 'odbudowa spisu: ruch srodowiska, nie czytanie dla kogos',
+    ksztaltDla: 'ksztalt JEDNEGO rodzaju: nazwa i uklad rzeczy, ktora czytajacy juz widzi; lista rodzajow jest owinieta',
+    rola: 'prawa czytajacego, policzone o NIM; sama widocznosc z niej wychodzi, wiec nie moze od niej zalezec',
+    wyrownajZNatury: 'ruch srodowiska (naprawa polozen), nie czytanie dla kogos',
   };
-  const czytaSQL = Object.getOwnPropertyNames(Object.getPrototypeOf(s))
-    .filter((n) => n !== 'constructor' && !n.startsWith('_') && typeof s[n] === 'function')
-    .filter((n) => /this\.q\(|\.sql\.exec\(/.test(String(Object.getPrototypeOf(s)[n])));
-  const nieznane = czytaSQL.filter((n) => !owiniete.has(n) && !Object.hasOwn(swiadomie, n));
-  assert.deepEqual(nieznane, [], 'metoda publiczna, która sama pyta bazę, a nie przechodzi przez okulary ani nie jest tu wypisana');
+  // Pierwsza wersja tego straznika pytala tylko o SUROWY SQL w ciele metody - i dlatego przepuscila dwie metody,
+  // ktore czytaja baze PRZEZ inna metode: `ksztalty` (lista rodzajow: ksztalt z zamknietego obszaru wychodzil
+  // kazdemu czytajacemu) i `ustawienie` (obszar jawny podawal w polu `skad` identyfikator ukrytego rodzica).
+  // Straznik, ktory lapie jeden ksztalt bledu, sam jest dziura; odtad pyta takze o czytanie POSREDNIE.
+  const proto = Object.getPrototypeOf(s);
+  const metody = Object.getOwnPropertyNames(proto).filter((n) => {
+    if (n === 'constructor' || n.startsWith('_')) return false;
+    const d = Object.getOwnPropertyDescriptor(proto, n);
+    return d && typeof d.value === 'function';
+  });
+  const POSREDNIO = /this\.(wszystkie|spis|ile|rzecz|rzeczyWiele|wersja|wskazujaNa|historia|aktyRzeczy|ksztalty|przekroj|liczby)\(/;
+  const czyta = metody.filter((n) => /this\.q\(|\.sql\.exec\(/.test(String(proto[n])) || POSREDNIO.test(String(proto[n])));
+  const nieznane = czyta.filter((n) => !owiniete.has(n) && !Object.hasOwn(swiadomie, n));
+  assert.deepEqual(nieznane, [], 'metoda publiczna, ktora czyta rzeczy (sama albo przez inna metode), a nie przechodzi przez okulary ani nie jest tu wypisana z powodem');
+});
+
+test('W17. rodzaj jest rzeczą: kształt z zamkniętego obszaru nie wychodzi w liście rodzajów, a nazwy rzeczy widocznego rodzaju nie znikają', async () => {
+  // Znalezisko Fable z drugiego ataku na tę granicę, potwierdzone u źródła przez drugą linię (17/18 XI 2026):
+  // `ksztalty()` czytało bazę PRZEZ `wszystkie()`, więc zapas w Proxy wiązał je z celem i lista rodzajów szła
+  // obok okularów. Rodzaj opisany w obszarze tylko dla właściciela był widoczny każdemu czytającemu z nazwą
+  // i opisem - a nazwa rodzaju mówi, czym ktoś się zajmuje.
+  const { s, jawny, prywatny } = await swiat();
+  const k = await s.ruch('jozz', { op: 'w17-ksztalt-tajny', co: 'poloz', rodzaj: 'ksztalt/1', obszar: prywatny.obszar,
+    cechy: { dla: 'tajnyrodzaj/1', opis: 'Rodzaj, o którym nikt obcy nie ma wiedzieć.', cechy: {} } });
+  assert.equal(k.ok, true, JSON.stringify(k));
+  const rodzaje = (kto) => [...s.dla(kto).ksztalty().keys()];
+  assert.ok(rodzaje('jozz').includes('tajnyrodzaj/1'), 'właściciel widzi własny rodzaj');
+  assert.ok(!rodzaje('agent-probny').includes('tajnyrodzaj/1'), 'uczestnik NIE widzi rodzaju z obszaru właściciela');
+  assert.ok(!rodzaje(null).includes('tajnyrodzaj/1'), 'zwiedzający NIE widzi tego rodzaju');
+  // Druga strona: uczestnik dalej widzi cały rdzeń rodzajów, więc to nie jest zgaszenie listy.
+  for (const r of ['projekt/1', 'obszar/1', 'ksztalt/1', 'uczestnik/1']) assert.ok(rodzaje('agent-probny').includes(r), r);
+  // Kształty rdzenia leżą w obszarze głównym, a ten domyślnie mówi `widzi: uczestnicy` - więc zwiedzający bez
+  // klucza nie widzi ŻADNEGO rodzaju. To jest zgodne z resztą: nie widzi też żadnej rzeczy z tego obszaru.
+  // Nazwa rzeczy z obszaru `wszyscy` i tak działa, bo `tytul` i `ksztaltDla` są wiązane z celem, nie z widokiem.
+  assert.deepEqual(rodzaje(null), []);
+  assert.equal(s.dla(null).tytul(s.dla(null).rzecz(jawny.rzecz)), 'Projekt Jawny');
+});
+
+test('W18. ustawienie podaje wartość dziedziczoną, ale nie identyfikator obszaru, którego czytający nie widzi', async () => {
+  // Ten sam skan, druga metoda: `ustawienie()` chodzi po drodze w górę i MUSI widzieć wszystko (z niego wychodzi
+  // sama widoczność), ale pole `skad` to identyfikator rzeczy. Obszar jawny położony w obszarze zamkniętym
+  // podawał tak identyfikator swojego ukrytego rodzica - i robił to w opisie Miejsca, przy każdym obszarze.
+  const { s, prywatny } = await swiat();
+  const w = await s.ruch('jozz', { op: 'w18-jawny-w-prywatnym', co: 'poloz', rodzaj: 'obszar/1', obszar: prywatny.obszar,
+    cechy: { nazwa: 'Jawne okno w prywatnym', widzi: 'wszyscy' } });
+  assert.equal(w.ok, true, JSON.stringify(w));
+  // `ile_wolno` dziedziczy się z rodzica, którego zwiedzający nie widzi.
+  const dlaWlasciciela = s.dla('jozz').ustawienie(w.rzecz, 'ile_wolno');
+  assert.equal(dlaWlasciciela.skad, prywatny.obszar, 'właścicielowi źródło wolno pokazać');
+  const dlaGoscia = s.dla(null).ustawienie(w.rzecz, 'ile_wolno');
+  assert.equal(dlaGoscia.wartosc, dlaWlasciciela.wartosc, 'wartość prawa zostaje: ona dotyczy obszaru, który widzi');
+  assert.equal(dlaGoscia.skad, null, 'ale identyfikator ukrytego rodzica nie wychodzi');
+  // Droga ustawienia nie może zależeć od czytającego: wartość policzona przez okulary i bez nich jest ta sama.
+  assert.equal(s.ustawienie(w.rzecz, 'ile_wolno').wartosc, dlaGoscia.wartosc);
 });
