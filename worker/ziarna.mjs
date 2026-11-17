@@ -95,7 +95,7 @@ const GOSC_SLOWA = `<!doctype html>
   body { margin: 0; padding: 12px 14px; font: 15px/1.45 system-ui, sans-serif; }
   h1 { font-size: 1.05rem; margin: 0 0 2px; }
   #stan { margin: 0 0 10px; opacity: .75; font-size: .9rem; }
-  form { display: grid; gap: 6px; margin: 0 0 12px; }
+  #nowe { display: grid; gap: 6px; margin: 0 0 12px; }
   select, textarea, button { font: inherit; font-size: 16px; padding: 6px 8px; }
   textarea { min-height: 3.4rem; }
   button { justify-self: start; min-height: 44px; padding: 6px 14px; }
@@ -107,11 +107,11 @@ const GOSC_SLOWA = `<!doctype html>
 <body>
 <h1>Słowa</h1>
 <p id="stan">Czekam na gospodarza…</p>
-<form id="nowe">
+<div id="nowe">
   <select id="przy" aria-label="Przy której rzeczy"></select>
   <textarea id="tresc" aria-label="Twoje słowo" placeholder="Słowo przy tej rzeczy"></textarea>
-  <button type="submit">Zostaw słowo</button>
-</form>
+  <button type="button" id="zostaw">Zostaw słowo</button>
+</div>
 <ul id="lista"></ul>
 <script>
 // Gość Jaskini, który pisze: przykład umowy okna, pokolenie 3 (ruch z okna). Pełny opis: adres /umowa-okna.
@@ -163,15 +163,16 @@ async function pokaz() {
     powiedz({ type: 'state', text: slowa.razem + ' słów' });
   } catch (err) { stan.textContent = 'Nie udało się przeczytać: ' + err.message; }
 }
-document.getElementById('nowe').addEventListener('submit', async (e) => {
-  e.preventDefault();
+// Zwykły guzik, nie formularz: w piaskownicy gościa formularze są wyłączone, więc zdarzenie submit by nie przyszło.
+document.getElementById('zostaw').addEventListener('click', async () => {
   const tresc = document.getElementById('tresc'), przy = document.getElementById('przy').value;
   if (!tresc.value.trim() || !przy) { stan.textContent = 'Wybierz rzecz i wpisz słowo.'; return; }
   try {
     const w = await rusz({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: tresc.value.trim(), dotyczy: [przy] } });
-    stan.textContent = w.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (w.powod || 'czeka na właściciela') + ').' : 'Zapisane.';
     tresc.value = '';
-    pokaz();
+    await pokaz();
+    // zdanie o skutku po odświeżeniu listy, żeby lista go nie zamazała
+    stan.textContent = w.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (w.powod || 'czeka na właściciela') + ').' : 'Zapisane pod imieniem tego narzędzia.';
   } catch (err) { stan.textContent = 'Nie zapisało się: ' + err.message; }
 });
 powiedz({ type: 'hello', name: 'Słowa', version: '1', wants: ['rzeczy'] });
