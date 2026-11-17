@@ -171,13 +171,14 @@ export function lancuchZasiegow(w, dla = null, nakladki = []) {
 
 // Wartości wszystkich pokręteł dla zasięgu, policzone oczami czytającego (`w` to widok z srodowisko.dla albo samo
 // środowisko). Jedno żądanie daje twarzy wszystko, czego potrzebuje do narysowania się.
-export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = false } = {}) {
+export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = false, zrodlo = null } = {}) {
   if (dla !== null && !(typeof dla === 'string' && ID.test(dla))) return { ok: false, status: 400, blad: 'dla: identyfikator rzeczy, dla której liczyć ustawienia (26 znaków); bez niego liczy się dla całego Miejsca' };
   const nakl = (Array.isArray(nakladki) ? nakladki : []).filter((x) => typeof x === 'string' && ID.test(x)).slice(0, 4);
-  const lancuch = lancuchZasiegow(w, dla, nakl);
+  const lancuch = zrodlo ? zrodlo.lancuch : lancuchZasiegow(w, dla, nakl);
   if (lancuch === null) return { ok: false, status: 404, blad: `nie ma rzeczy ${dla}` };
-  const dekl = w.pamietaj('ustawienia:deklaracje', () => { const m = new Map(); for (const d of w.wszystkie({ rodzaj: 'pokretlo/1' })) if (typeof d.cechy.nazwa === 'string' && !m.has(d.cechy.nazwa)) m.set(d.cechy.nazwa, d); return m; });
-  const wart = w.pamietaj('ustawienia:wartosci', () => { const m = new Map(); for (const x of w.wszystkie({ rodzaj: 'wartosc/1' })) m.set(x.cechy.pokretlo + '|' + x.cechy.zasieg, x); return m; });
+  // `zrodlo`: deklaracje i wartości już wybrane po nazwach (policzUstawieniaDlaNazw); bez niego wszystko, co leży w Miejscu
+  const dekl = zrodlo ? zrodlo.dekl : w.pamietaj('ustawienia:deklaracje', () => { const m = new Map(); for (const d of w.wszystkie({ rodzaj: 'pokretlo/1' })) if (typeof d.cechy.nazwa === 'string' && !m.has(d.cechy.nazwa)) m.set(d.cechy.nazwa, d); return m; });
+  const wart = zrodlo ? zrodlo.wart : w.pamietaj('ustawienia:wartosci', () => { const m = new Map(); for (const x of w.wszystkie({ rodzaj: 'wartosc/1' })) m.set(x.cechy.pokretlo + '|' + x.cechy.zasieg, x); return m; });
   const pominiete = [];
   // zestawy włączone w zasięgu: tylko wartość wprost w tym zasięgu, od ostatniego na liście (ten wygrywa)
   const dZestawow = dekl.get(POKRETLO_ZESTAWOW);
@@ -211,6 +212,35 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
   }
   return { ok: true, format: FORMAT_USTAWIEN, akt: w.ostatniNr(), dla, nakladki: nakl, lancuch, wartosci, ...(pominiete.length ? { pominiete } : {}),
     ...(deklaracje ? { deklaracje: [...dekl.values()].map((d) => ({ ...d.cechy, rzecz: d.id, wersja: d.wersja })).sort((a, b) => String(a.grupa || '').localeCompare(String(b.grupa || '')) || a.nazwa.localeCompare(b.nazwa)) } : {}) };
+}
+
+// Liczenie dla twarzy: tylko pokrętła o podanych nazwach. Deklaracje i wartości czyta po tożsamości z klucza (nazwa;
+// nazwa i zasięg), więc koszt zależy od liczby nazw i długości drogi zasięgów, a nie od tego, ile pokręteł i wartości
+// leży w całym Miejscu. Liczenie wszystkiego czytało każdą deklarację i każdą wartość, także z cudzych profili, przy
+// każdej zmianie ustawień i w każdej otwartej twarzy: kto dokładał pokrętła tam, gdzie prowadzi, podnosił koszt wszystkim
+// (niezależny atak, 17 XI 2026; limit wierszy jest wspólny dla całego konta).
+export const NAJWIECEJ_NAZW = 200;
+export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], nazwy = [] } = {}) {
+  if (dla !== null && !(typeof dla === 'string' && ID.test(dla))) return policzUstawienia(w, { dla });
+  const lista = [...new Set((Array.isArray(nazwy) ? nazwy : []).filter((n) => typeof n === 'string' && NAZWA.test(n)))];
+  if (lista.length > NAJWIECEJ_NAZW) return { ok: false, status: 400, blad: `nazwy: najwyżej ${NAJWIECEJ_NAZW} nazw pokręteł w jednym pytaniu` };
+  const nakl = (Array.isArray(nakladki) ? nakladki : []).filter((x) => typeof x === 'string' && ID.test(x)).slice(0, 4);
+  const lancuch = lancuchZasiegow(w, dla, nakl);
+  if (lancuch === null) return { ok: false, status: 404, blad: `nie ma rzeczy ${dla}` };
+  const kP = w.ksztaltDla('pokretlo/1'), kW = w.ksztaltDla('wartosc/1');
+  const dekl = new Map(), wart = new Map();
+  for (const n of [POKRETLO_ZESTAWOW, ...lista.filter((x) => x !== POKRETLO_ZESTAWOW)]) {
+    const d = w.rzecz(await w._idZKlucza('pokretlo/1', kP, { nazwa: n }));
+    if (!d || d.rodzaj !== 'pokretlo/1' || d.odlozone || d.cechy.nazwa !== n) continue;
+    dekl.set(n, d);
+    for (const z of lancuch) {
+      const x = w.rzecz(await w._idZKlucza('wartosc/1', kW, { pokretlo: n, zasieg: z.id }));
+      if (x && x.rodzaj === 'wartosc/1' && !x.odlozone) wart.set(n + '|' + z.id, x);
+    }
+  }
+  const u = policzUstawienia(w, { dla, nakladki: nakl, zrodlo: { dekl, wart, lancuch } });
+  if (u.ok && !lista.includes(POKRETLO_ZESTAWOW)) delete u.wartosci[POKRETLO_ZESTAWOW];
+  return u;
 }
 
 const pokaz = (x) => { const t = JSON.stringify(x); return t.length > 90 ? t.slice(0, 89) + '…' : t; };

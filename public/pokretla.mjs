@@ -29,6 +29,10 @@ export const POKRETLA = [
   { nazwa: 'start.cien.przesuniecie_px', typ: 'liczba', domyslna: 8, zakres: { od: 0, do: 40, krok: 1 }, twarde: { od: -400, do: 400 }, jednostka: 'px', grupa: 'Odczucie / Ciągnięta karta', opis: 'O ile cień jest przesunięty w dół spod karty niesionej w ręce.' },
 ];
 
+// Nazwy pokręteł tej tablicy do pytania drzwi (?nazwy=): twarz pyta tylko o swoje, więc koszt odpowiedzi nie rośnie
+// z tym, co ktoś inny zadeklarował w Miejscu.
+export const NAZWY_POKRETEL = POKRETLA.map((p) => p.nazwa).join(',');
+
 // Czy wartość pasuje do deklaracji z tablicy (tylko typy, których tablica dziś używa; każdy inny odpada).
 const pasuje = (d, w) => {
   const wKlamrze = () => !d.twarde || ((d.twarde.od === undefined || w >= d.twarde.od) && (d.twarde.do === undefined || w <= d.twarde.do));

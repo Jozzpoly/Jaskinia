@@ -7,7 +7,7 @@
 // Co jest stanem oka (nie trafia do Miejsca): kamera, liczba stały/ciekły, wybrana rzecz. Co jest zapisem: położenie
 // rzeczy z ręki, przy puszczeniu, jako rzecz rodzaju miejsce w widoku Start (więc ma autora, historię i prawa z obszaru).
 import { Drzwi } from './drzwi.mjs';
-import { Pokretla, KOLORY, RODZAJE_USTAWIEN } from '../pokretla.mjs';
+import { NAZWY_POKRETEL, Pokretla, KOLORY, RODZAJE_USTAWIEN } from '../pokretla.mjs';
 import { zbudujSwiat, ukladStaly, poleCieklego, ukladCiekly, miedzy, lagodnie, krotkieImie, zywosc, galezieWPolu, trafienie,
   kolejnoscRysowania, naEkran, naSwiat, kameraNa, przybliz, KARTA, SKALA } from './swiat.mjs';
 
@@ -86,7 +86,7 @@ async function odswiezUstawienia() {
     for (let obieg = 0; obieg < 3; obieg++) {
       const odcisk = odciskZ(drzwi.rzeczy.values());
       if (odcisk === odciskUstawien) break;
-      P.przyjmij(await drzwi.czytaj('/api/srodowisko/ustawienia' + (widok ? '?dla=' + widok.id : '')));
+      P.przyjmij(await drzwi.czytaj('/api/srodowisko/ustawienia?nazwy=' + NAZWY_POKRETEL + (widok ? '&dla=' + widok.id : '')));
       odciskUstawien = odcisk;
     }
   } catch { /* bez ustawień z Miejsca twarz zostaje przy wartościach, które ma */ } finally { pytamOUstawienia = false; }
