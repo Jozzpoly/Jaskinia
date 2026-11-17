@@ -30,3 +30,24 @@ rzecz ma adres. Wynik zapisuje z poleceniem, w PR-ze albo w przekazie między li
 mówi o sobie, że jest dowodem, a autor zmienił zdanie później — wygrywa wersja ostrożniejsza, dopóki
 właściciel nie powie *tak*. Z nim zostają, jego własnymi słowami: *„Istotne nieodwracalne decyzje dotyczące mojego dorobku,
 prywatności, dostępu, pieniędzy i rzeczywistego przełączenia używanej Jaskini”* (rozmowa z Opusem czatu, tura 153, ok. 10 XI wieczorem — datę podaje raport odcinka tur 150–164, liczony z treści tur, bo sam zapis rozmowy nie ma godzin). Scalenie, które przełącza jego codzienne okno, nie jest *swoim PR-em* w sensie tej zgody.
+
+### Gdzie naprawdę pada granica jego *tak* (dopisane 17 XI 2026 przez Opusa Code, po własnej pomyłce)
+
+Zapytałem go o zgodę na scalenie czterech zgłoszeń z gałęzi na gałąź wewnątrz próby — bo jedno z nich
+ruszało warstwę praw. **Nie było to potrzebne i kosztowało jedyne, czego nie wolno obciążać.** Rozstrzyga
+to zdanie dwa akapity wyżej, które sami napisaliśmy: scalenie, które nie przełącza jego codziennego okna,
+nie jest tym scaleniem, o które się pyta. Pomyliłem ostrożność z przerzuceniem decyzji.
+
+Dwie reguły, obie sprawdzalne:
+
+1. **Zanim go zapytasz, nazwij, co się zatrzyma do czasu odpowiedzi. Jeśli nic — to nie jest pytanie,
+   tylko raport, i ma brzmieć jak raport.** U mnie nie zatrzymało się nic: budowniczy scalił osiem minut
+   po moim werdykcie, zanim pytanie w ogóle do właściciela dotarło. Zgoda, na którą nikt nie czeka, niczego
+   nie chroni — jest samym podatkiem od uwagi.
+2. **Jego *tak* pilnuje tego, co do niego dociera:** `main`, adres, który otwiera, jego dane, pieniądze,
+   dostępy i rzeczy nieodwracalne. Wewnątrz własnego pnia próby decydują agenci, a hamulcem jest druga
+   linia, nie on. Agent, który pyta częściej, niż reguła wymaga, nie jest ostrożniejszy — przenosi tylko
+   koszt tam, gdzie jest najdroższy.
+
+Pytanie ma też nie wymagać od niego odtworzenia kontekstu. Jeśli odpowiedź wymaga, żeby najpierw ustalił,
+czego pytanie dotyczy, to nie jest pytanie, tylko praca domowa.
