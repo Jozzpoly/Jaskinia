@@ -101,8 +101,8 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
       return rz ? json({ ok: true, rzecz: { ...rz, tytul: w.tytul(rz) }, historia: w.historia(rz.id), wskazuja: w.wskazujaNa(rz.id) }) : json({ ok: false, status: 404, blad: 'nie ma takiej rzeczy' });
     }
     if (sciezka === '/api/srodowisko/wersja') {
-      const w = w.wersja(p.get('id') || '', liczba(p.get('akt')));
-      return w ? json({ ok: true, wersja: w }) : json({ ok: false, status: 404, blad: 'nie ma takiej wersji; znaczniki wersji (pole akt) stoją w historii rzeczy: /api/srodowisko/rzecz?id=<id>' });
+      const ws = w.wersja(p.get('id') || '', liczba(p.get('akt')));
+      return ws ? json({ ok: true, wersja: ws }) : json({ ok: false, status: 404, blad: 'nie ma takiej wersji; znaczniki wersji (pole akt) stoją w historii rzeczy: /api/srodowisko/rzecz?id=<id>' });
     }
     // Sprawdzian spójności: co w Miejscu nie zgadza się ze swoim własnym kształtem. Tylko do czytania; widzi go ten
     // sam, kto widzi spis (dziś widoczność jest całością, nie per obszar — to zostaje do zrobienia osobno).

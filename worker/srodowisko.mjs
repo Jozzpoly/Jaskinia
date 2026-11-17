@@ -357,7 +357,8 @@ export class Srodowisko {
     // "nie ma" i "nie dla ciebie" mają brzmieć tak samo, inaczej sam adres zdradza, że coś tam jest.
     if (dla !== undefined) {
       const zle = this._niewidoczneDla(dla);
-      if (zle && zle.includes(w.obszar ?? null)) return null;
+      // ...i obszar, do którego nie ma wstępu, nie odpowiada też pod własnym adresem.
+      if (zle && (zle.includes(w.obszar ?? null) || zle.includes(w.id))) return null;
     }
     return this._zWiersza(w);
   }
@@ -431,6 +432,12 @@ export class Srodowisko {
         if (ids.length) {
           const pyt = ids.map(() => '?').join(', ');
           war.push(glowny ? `r.obszar NOT IN (${pyt})` : `(r.obszar IS NULL OR r.obszar NOT IN (${pyt}))`);
+          par.push(...ids);
+          // Sam obszar jest rzeczą i leży w obszarze NADRZĘDNYM, więc powyższy warunek go nie zasłania: zamknięty
+          // skarbiec dalej stałby na liście z nazwą i ustawieniami. Obszar, do którego ktoś nie ma wstępu, nie jest
+          // dla niego wymieniony - inaczej "nie widzisz" znaczy tylko "nie widzisz zawartości", a nazwa bywa treścią.
+          // (Znalezione atakiem na własną granicę pod żywym adresem, 17 XI.)
+          war.push(`r.id NOT IN (${pyt})`);
           par.push(...ids);
         }
       }

@@ -106,3 +106,41 @@ test('W7. nowa trasa czytająca nie ominie okularów po cichu', async () => {
   const golo = [...bezKomentarzy.matchAll(/(?<![A-Za-z0-9_.])s\.[a-zA-Z_]+/g)].map((m) => m[0]);
   assert.deepEqual(golo, [], `trasa czytająca sięga po surowe środowisko zamiast po widok czytającego: ${golo.join(', ')}. Użyj w.<...> albo napisz tutaj, dlaczego ta jedna ma widzieć wszystko.`);
 });
+
+test('W8. dawna wersja PRZEZ DRZWI: widoczna wraca, ukryta i nieistniejąca brzmią tak samo', async () => {
+  // Ten sprawdzian istnieje, bo jego brak kosztował mnie błąd, którego nie złapał ani `node --check`, ani 339
+  // pozostałych sprawdzianów: mechaniczna zamiana nazw zrobiła z `const w = s.wersja(...)` zapis `const w = w...`,
+  // czyli nazwę zasłaniającą samą siebie. Trasa wywracała się na każdym żądaniu, a żaden sprawdzian jej nie dotykał.
+  // Zobaczył to dopiero żywy adres. Dlatego tutaj pytamy przez drzwi, a nie przez metodę.
+  const { s, jawny, prywatny } = await swiat();
+  const zap = (sciezka, kto = '') => obsluzSrodowisko(s, new Request('https://przyklad.test' + sciezka, { headers: { 'x-kto': kto } }), { podglad: false });
+  const aktJawnej = s.historia(jawny.rzecz)[0].akt;
+
+  const dobra = await (await zap(`/api/srodowisko/wersja?id=${jawny.rzecz}&akt=${aktJawnej}`, 'agent-probny')).json();
+  assert.equal(dobra.ok, true, JSON.stringify(dobra));
+  assert.equal(dobra.wersja.rzecz, jawny.rzecz);
+
+  const zlyAkt = await (await zap(`/api/srodowisko/wersja?id=${jawny.rzecz}&akt=999999`, 'agent-probny')).json();
+  assert.equal(zlyAkt.status, 404);
+
+  const ukryta = await (await zap(`/api/srodowisko/wersja?id=${prywatny.rzecz}&akt=${s.historia(prywatny.rzecz)[0].akt}`, 'agent-probny')).json();
+  assert.equal(ukryta.status, 404, 'ukryta rzecz ma brzmieć dokładnie jak nieistniejąca');
+  assert.deepEqual(Object.keys(ukryta).sort(), Object.keys(zlyAkt).sort(), 'ta sama odpowiedź co do pól, nie tylko co do kodu');
+
+  const uWlasciciela = await (await zap(`/api/srodowisko/wersja?id=${prywatny.rzecz}&akt=${s.historia(prywatny.rzecz)[0].akt}`, 'jozz')).json();
+  assert.equal(uWlasciciela.ok, true, 'właścicielowi ta sama trasa oddaje wersję');
+});
+
+test('W9. obszar, do którego nie ma wstępu, nie jest wymieniony - nazwa też bywa treścią', async () => {
+  // Znalezione atakiem na własną granicę pod żywym adresem: rzeczy ze skarbca nie było widać, ale sam skarbiec
+  // stał na liście obszarów z nazwą, identyfikatorem i ustawieniami. Obszar leży w obszarze NADRZĘDNYM, więc
+  // filtr po `obszar` go nie dotyczył.
+  const { s, prywatny, zamkniety } = await swiat();
+  const widziObszary = (kto) => s.dla(kto).spis({ rodzaj: 'obszar/1' }).map((o) => o.cechy.nazwa).sort();
+  assert.ok(widziObszary('jozz').includes('Tylko wlasciciel'));
+  assert.ok(!widziObszary('agent-probny').includes('Tylko wlasciciel'), 'uczestnik nie widzi nawet nazwy');
+  assert.ok(widziObszary('agent-probny').includes('Dla uczestnikow'), 'ale obszar, do którego ma wstęp, owszem');
+  assert.equal(s.dla('agent-probny').rzecz(prywatny.obszar), null, 'ani pod własnym adresem');
+  assert.ok(s.dla('agent-probny').rzecz(zamkniety.obszar), 'obszar dla uczestników zostaje widoczny');
+  assert.ok(s.dla(null).spis({ rodzaj: 'obszar/1' }).every((o) => o.cechy.nazwa !== 'Dla uczestnikow'));
+});
