@@ -154,7 +154,7 @@ export function coTuJest(s, opcje = {}) {
     'Miejsce to jedna wspólna pamięć: leżą w nim rzeczy właściciela (projekty, wersje, słowa, narzędzia) i wszystko, co dokładają agenci.',
     'Każda rzecz ma stały identyfikator, rodzaj z pokoleniem (np. projekt/1), obszar, w którym leży, i historię zmian z autorem.',
     'Rodzaje rzeczy są danymi, nie kodem: nowy rodzaj dokładasz tym samym ruchem co rzecz. Narzędzia i widoki (goście) też wchodzą ruchem.',
-    'Jądro Miejsca nie wie, czym jest projekt ani okno. Start, czyli twarz dla ręki właściciela, jeszcze nie istnieje (punkt 8).',
+    'Jądro Miejsca nie wie, czym jest projekt ani okno. Start, czyli twarz dla ręki właściciela, stoi jako szkielet pod /start/ (punkt 8): projekty w przestrzeni, a każde położenie z ręki to rzecz rodzaju miejsce/1 w widoku (rodzaj widok/1), czytelna tak jak wszystko inne: /rzeczy?rodzaj=miejsce/1.',
     '',
     '2. CO TU JEST',
     `Rzeczy: ${d.razem}${d.odlozone ? ` (i ${d.odlozone} odłożonych, których listy nie pokazują: /rzeczy?odlozone=tak)` : ''}. Według rodzaju: ${d.liczby.map((l) => `${l.rodzaj}: ${l.ile}`).join(', ') || 'jeszcze nic'}.`,

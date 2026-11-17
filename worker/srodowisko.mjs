@@ -211,6 +211,10 @@ export function sprawdzKsztalt(c) {
     }
   }
   if ('uklad' in c && typeof c.uklad !== 'boolean') b.push('uklad: true albo false (true: rzeczy tego rodzaju to układanie, nie treść)');
+  if ('lezy_z' in c) {
+    const def = typeof c.lezy_z === 'string' && c.cechy && typeof c.cechy === 'object' && Object.hasOwn(c.cechy, c.lezy_z) ? c.cechy[c.lezy_z] : null;
+    if (!def || typCechy(def) !== 'rzecz' || !(typeof def === 'object' && def.wymagana === true)) b.push('lezy_z: nazwa wymaganej cechy typu rzecz; rzecz tego rodzaju leży zawsze w tym samym obszarze co rzecz, którą ta cecha wskazuje');
+  }
   return b;
 }
 
@@ -231,6 +235,7 @@ export function niezgodnosciKsztaltu(stary, nowy) {
   }
   for (const [n, d0] of Object.entries(nc)) if (!Object.hasOwn(sc, n) && def(d0).wymagana === true) b.push(`nowa cecha ${n} jest wymagana`);
   if ((stary.uklad === true) !== (nowy.uklad === true)) b.push('zmieniło się, czy rodzaj jest układem');
+  if ((stary.lezy_z || null) !== (nowy.lezy_z || null)) b.push('zmieniło się, od której rzeczy rodzaj bierze obszar');
   if (JSON.stringify(stary.klucz || null) !== JSON.stringify(nowy.klucz || null)) b.push('zmienił się klucz, czyli tożsamość rzeczy');
   return b;
 }
@@ -540,6 +545,8 @@ export class Srodowisko {
       const rdz = dla.find((d) => KSZTALTY_RDZENIA.includes(d));
       if (rdz) return `kształt rodzaju ${rdz} zmienia tylko właściciel`;
       if ((byl('ksztalt/1') && stara.cechy.uklad === true) !== (rodzaj === 'ksztalt/1' && cechy.uklad === true)) return 'to, czy rodzaj jest układem, ustala tylko właściciel';
+      // lezy_z rozstrzyga, w którym obszarze (czyli pod jakim prawem) leżą rzeczy rodzaju: to też zmiana praw
+      if (((byl('ksztalt/1') && stara.cechy.lezy_z) || null) !== ((rodzaj === 'ksztalt/1' && cechy.lezy_z) || null)) return 'to, od której rzeczy rodzaj bierze obszar, ustala tylko właściciel';
     }
     return null;
   }
@@ -681,6 +688,17 @@ export class Srodowisko {
     if ('obszar' in c) obszar = c.obszar;
     else if (stara) obszar = stara.obszar;
     else obszar = rola === 'wlasciciel' ? null : (this.r.meta('obszar_nowe') || null);
+    // Rzecz, która z natury należy do innej (miejsce do widoku), leży zawsze w tym samym obszarze co ona. Inaczej prawo
+    // do jej zmiany liczyłoby się gdzie indziej niż prawo do rzeczy, której dotyczy: agent kładłby położenia w obszarze,
+    // w którym prowadzi sam, a widok właściciela i tak by je brał (znalezione na podglądzie 17 XI).
+    const ksztaltRzeczy = this.ksztaltDla(rodzaj);
+    if (ksztaltRzeczy && typeof ksztaltRzeczy.lezy_z === 'string') {
+      const wskazana = cechy[ksztaltRzeczy.lezy_z];
+      const dom = typeof wskazana === 'string' && ID.test(wskazana) ? this.rzecz(wskazana) : null;
+      if (!dom) return blad(400, `cecha ${ksztaltRzeczy.lezy_z} musi wskazywać istniejącą rzecz: od niej rzecz rodzaju ${rodzaj} bierze obszar`);
+      if ('obszar' in c && (c.obszar ?? null) !== (dom.obszar ?? null)) return blad(400, `rzecz rodzaju ${rodzaj} leży zawsze w obszarze rzeczy z cechy ${ksztaltRzeczy.lezy_z}; pomiń obszar albo podaj ten sam`);
+      obszar = dom.obszar ?? null;
+    }
     return this._zmien(kto, c.op, slad, { co: 'poloz', stara, id, rodzaj, obszar, cechy, odlozone: stara ? !!stara.odlozone : false, powod: stara && stara.odlozone ? stara.powod : null, wersja: stara ? (c.wersja === 'dowolna' ? stara.wersja : c.wersja) : null });
   }
 
