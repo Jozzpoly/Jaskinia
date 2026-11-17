@@ -156,10 +156,14 @@ const deklaracja = (s, nazwa) => (typeof nazwa === 'string' && NAZWA.test(nazwa)
 
 // Sprawdzenie rzeczy, które środowisko rozumie jako ustawienia, przy zapisie. `widzi(id)`: rzecz oczami piszącego.
 // Zwraca null albo { blad, bledy }.
-export function sprawdzUstawienie(s, rodzaj, cechy, widzi) {
+export function sprawdzUstawienie(s, rodzaj, cechy, widzi, obszar = undefined) {
   const dekl = (nazwa) => { const d = deklaracja(s, nazwa); return d && widzi(d.id) ? d : null; };
+  // Zaufanie odwołań (to samo liczy liczenie; tutaj po to, żeby zdanie padło już przy zapisie): ustawienie, które leży
+  // tam, gdzie zmiana wymaga zgody, nie może iść za pokrętłem zadeklarowanym tam, gdzie uczestnicy zmieniają je sami.
+  const prowadza = (r, o) => s._prawoWObszarze(r, o ?? null).tryb === 'skutek';
+  const obce = (c, zrodlo) => zrodlo !== undefined && prowadza('pokretlo/1', c.obszar) && !prowadza(zrodlo.rodzaj, zrodlo.obszar);
   // wartość zwykła albo odwołanie do zadeklarowanego pokrętła tego samego typu
-  const wada = (d, w) => {
+  const wada = (d, w, zrodlo = undefined) => {
     const cel = odwolanie(d, w);
     if (cel === null) return wadaWartosci(d, w, widzi);
     if (!NAZWA.test(cel)) return 'odwołanie to {"z": "<nazwa pokrętła>"}';
@@ -167,6 +171,7 @@ export function sprawdzUstawienie(s, rodzaj, cechy, widzi) {
     const c = dekl(cel);
     if (!c) return `odwołuje się do pokrętła ${cel}, którego nie ma`;
     if (c.cechy.typ !== d.typ) return `odwołuje się do pokrętła ${cel} typu ${c.cechy.typ}, a samo jest typu ${d.typ}`;
+    if (obce(c, zrodlo)) return `odwołuje się do pokrętła ${cel}, które każdy uczestnik zmienia sam tam, gdzie leży; wartość, która obowiązuje tam, gdzie zmiana wymaga zgody, nie może od niego zależeć`;
     return null;
   };
   if (rodzaj === 'pokretlo/1') {
@@ -177,6 +182,7 @@ export function sprawdzUstawienie(s, rodzaj, cechy, widzi) {
       if (!c) b.push(`domyslna: odwołuje się do pokrętła ${cel}, którego nie ma`);
       else if (c.cechy.typ !== cechy.typ) b.push(`domyslna: odwołuje się do pokrętła ${cel} typu ${c.cechy.typ}, a samo jest typu ${cechy.typ}`);
       else if (cechy.typ === 'wybor' && JSON.stringify(c.cechy.wartosci) !== JSON.stringify(cechy.wartosci)) b.push('domyslna: pokrętło typu wybor może iść tylko za pokrętłem o tej samej liście wartości');
+      else if (obce(c, obszar === undefined ? undefined : { rodzaj: 'pokretlo/1', obszar })) b.push(`domyslna: odwołuje się do pokrętła ${cel}, które każdy uczestnik zmienia sam tam, gdzie leży; wartość, która obowiązuje tam, gdzie zmiana wymaga zgody, nie może od niego zależeć`);
       else {
         // łańcuch wartości domyślnych musi mieć koniec: nie wraca do tego pokrętła i nie jest dłuższy niż dozwolony
         let n = cel, kroki = 0;
@@ -199,7 +205,9 @@ export function sprawdzUstawienie(s, rodzaj, cechy, widzi) {
     // nie ma sensu, a pozwalała budować dowolnie długie łańcuchy rzeczy leżących "z natury" jedna z drugą.
     const z = typeof cechy.zasieg === 'string' ? widzi(cechy.zasieg) : null;
     if (z && ['wartosc', 'pokretlo', 'zestaw', 'propozycja'].includes(String(z.rodzaj).split('/')[0])) return { blad: `zasięgiem wartości nie może być rzecz rodzaju ${z.rodzaj}; zasięg to rzecz, którą się stroi: obszar, widok, okno, uczestnik, profil` };
-    const w = wada(d.cechy, cechy.wartosc);
+    // wartość leży tam, gdzie jej zasięg: w obszarze, gdy zasięgiem jest obszar; inaczej tam, gdzie leży rzecz zasięgu
+    const lezy = z ? { rodzaj: 'wartosc/1', obszar: z.rodzaj === 'obszar/1' ? (z.id === s.r.meta('obszar_glowny') ? null : z.id) : (z.obszar ?? null) } : undefined;
+    const w = wada(d.cechy, cechy.wartosc, lezy);
     return w ? { blad: `wartość pokrętła ${cechy.pokretlo} (typ ${d.cechy.typ}) ${w}` } : null;
   }
   if (rodzaj === 'zestaw/1') {
@@ -261,13 +269,22 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
   const pominiete = [];
   const maRzecz = (id) => w.rzecz(id);
 
+  // Zaufanie odwołań: ustawienie, które obowiązuje tam, gdzie zmiana wymaga zgody, nie idzie za pokrętłem zadeklarowanym
+  // tam, gdzie uczestnicy zmieniają je sami. Inaczej ten, kto prowadzi w jednym obszarze, zmieniałby wartością domyślną
+  // swojego pokrętła wygląd zasięgu, w którym może tylko proponować (ta sama rodzina co zestaw z ataku 17 XI). Źródłem
+  // wartości z zestawu jest wartość, która go włącza: to ona mówi, w jakim zasięgu zestaw obowiązuje.
+  const prowadzaPamiec = new Map();
+  const prowadza = (rodzaj, obszar) => { const k = rodzaj + '|' + (obszar ?? ''); if (!prowadzaPamiec.has(k)) prowadzaPamiec.set(k, w._prawoWObszarze(rodzaj, obszar ?? null).tryb === 'skutek'); return prowadzaPamiec.get(k); };
+  const wolnoIscZa = (zrodlo, cel) => { const c = dekl.get(cel); return !c || !(prowadza('pokretlo/1', c.obszar) && !prowadza(zrodlo.rodzaj, zrodlo.obszar)); };
+  const OBCE = 'które każdy uczestnik zmienia sam tam, gdzie leży, a to ustawienie obowiązuje tam, gdzie zmiana wymaga zgody';
   // Kandydat przechodzi, gdy jest wartością zgodną z deklaracją albo odwołaniem do zadeklarowanego pokrętła tego samego typu.
-  const wadaKandydata = (d, wartosc) => {
+  const wadaKandydata = (d, wartosc, zrodlo) => {
     const cel = odwolanie(d.cechy, wartosc);
     if (cel === null) return wadaWartosci(d.cechy, wartosc, maRzecz);
     const c = dekl.get(cel);
     if (!c) return `odwołuje się do pokrętła ${cel}, którego tu nie ma`;
     if (c.cechy.typ !== d.cechy.typ) return `odwołuje się do pokrętła ${cel} typu ${c.cechy.typ}, a samo jest typu ${d.cechy.typ}`;
+    if (!wolnoIscZa(zrodlo, cel)) return `odwołuje się do pokrętła ${cel}, ${OBCE}`;
     return null;
   };
   // Pierwsze, co mówi o pokrętle droga zasięgów (wartość wprost, potem zestawy zasięgu, potem zasięg wyżej); null: nic.
@@ -279,14 +296,14 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
     for (const z of lancuch) {
       const x = wart.get(nazwa + '|' + z.id);
       if (x) {
-        const wada = wadaKandydata(d, x.cechy.wartosc);
+        const wada = wadaKandydata(d, x.cechy.wartosc, { rodzaj: 'wartosc/1', obszar: x.obszar });
         if (!wada) { wynik = { surowa: x.cechy.wartosc, skad: 'wartosc', zasieg: z.id, rzecz: x.id, wersja: x.wersja }; break; }
         pominiete.push({ pokretlo: nazwa, rzecz: x.id, dlaczego: wada });
       }
       if (nazwa === POKRETLO_ZESTAWOW) continue; // lista zestawów nie dziedziczy się: każdy zasięg włącza swoje
       for (const zs of zestawyW.get(z.id) || []) {
         if (!Object.hasOwn(zs.cechy.wartosci, nazwa)) continue;
-        const wada = wadaKandydata(d, zs.cechy.wartosci[nazwa]);
+        const wada = wadaKandydata(d, zs.cechy.wartosci[nazwa], { rodzaj: 'wartosc/1', obszar: (wart.get(POKRETLO_ZESTAWOW + '|' + z.id) || {}).obszar });
         if (!wada) { wynik = { surowa: zs.cechy.wartosci[nazwa], skad: 'zestaw', zasieg: z.id, rzecz: zs.id, zestaw: w.tytul(zs) }; break; }
         pominiete.push({ pokretlo: nazwa, rzecz: zs.id, dlaczego: wada });
       }
@@ -300,7 +317,8 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
     const d = dekl.get(nazwa);
     if (!d || glebia > NAJGLEBIEJ_ODWOLAN) return undefined;
     const cel = odwolanie(d.cechy, d.cechy.domyslna);
-    return cel === null ? d.cechy.domyslna : domyslnaKoncowa(cel, glebia + 1);
+    if (cel === null) return d.cechy.domyslna;
+    return wolnoIscZa({ rodzaj: 'pokretlo/1', obszar: d.obszar }, cel) ? domyslnaKoncowa(cel, glebia + 1) : undefined;
   };
   const koncowe = new Map();
   const policz = (nazwa, droga) => {
@@ -315,6 +333,7 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
     else {
       let wartosc, powod = null;
       if (cel === nazwa || droga.includes(cel) || droga.length >= NAJGLEBIEJ_ODWOLAN) powod = `odwołania tworzą koło albo łańcuch dłuższy niż ${NAJGLEBIEJ_ODWOLAN} (przez ${cel})`;
+      else if (skad.skad === 'domyslna' && !wolnoIscZa({ rodzaj: 'pokretlo/1', obszar: d.obszar }, cel)) powod = `wartość domyślna idzie za pokrętłem ${cel}, ${OBCE}`;
       else {
         const c = policz(cel, [...droga, nazwa]);
         if (!c || c.wartosc === undefined || c.wartosc === null) powod = `pokrętło ${cel}, za którym idzie, nie ma wartości`;

@@ -603,3 +603,30 @@ test('U23. podgląd w trakcie kręcenia: wartość tymczasowa bez zapisu, także
   assert.equal(q.kolor('reka', true), '#abcdef');
   assert.ok(q.nazwy().split(',').includes('wyglad.paleta.ciemna.reka'));
 });
+
+test('U24. odwołanie nie jest drogą obok prawa: wartość dla całego Miejsca nie idzie za pokrętłem, które agent zmienia sam tam, gdzie leży', async () => {
+  const { s, ok, szkic, wartosc, licz } = await swiat();
+  const AKCENT = 'wyglad.paleta.jasna.akcent';
+  const akcentDomyslny = POKRETLA.find((d) => d.nazwa === AKCENT).domyslna;
+  // agent deklaruje własną barwę tam, gdzie prowadzi, i kładzie motyw, który każe akcentowi iść za nią
+  ok(await s.ruch('agent-a', { op: 'ust-u24-barwa', co: 'poloz', rodzaj: 'pokretlo/1', cechy: { nazwa: 'narzedzie.barwa.glowna', typ: 'kolor', domyslna: '#111111', opis: 'Barwa narzędzia.' } }));
+  const motyw = ok(await s.ruch('agent-a', { op: 'ust-u24-motyw', co: 'poloz', rodzaj: 'zestaw/1', cechy: { nazwa: 'Podstępny', po_co: 'motyw', wartosci: { [AKCENT]: { z: 'narzedzie.barwa.glowna' }, 'wyglad.paleta.jasna.tlo': '#fefefe' } } }));
+  const pr = ok(await wartosc('agent-a', 'ust-u24-wlacz', POKRETLO_ZESTAWOW, [motyw.rzecz]));
+  ok(await s.ruch('jozz', { op: 'ust-u24-przyjmij', co: 'przyjmij', propozycja: pr.propozycja }));
+  const u = licz('agent-a');
+  assert.equal(u.wartosci['wyglad.paleta.jasna.tlo'].wartosc, '#fefefe', 'zwykłe wartości motywu działają');
+  assert.deepEqual(u.wartosci[AKCENT], { wartosc: akcentDomyslny, skad: 'domyslna' }, 'akcent Miejsca nie idzie za barwą, którą agent zmienia sam');
+  assert.ok(u.pominiete.some((x) => x.pokretlo === AKCENT && /zmienia sam/.test(x.dlaczego)), JSON.stringify(u.pominiete));
+  assert.equal((await policzUstawieniaDlaNazw(s.dla('agent-a'), { nazwy: [AKCENT] })).wartosci[AKCENT].wartosc, akcentDomyslny, 'pytanie po nazwach liczy tak samo');
+  // w szkicu, gdzie agent i tak stroi sam, to samo odwołanie działa
+  ok(await wartosc('agent-a', 'ust-u24-w-szkicu', POKRETLO_ZESTAWOW, [motyw.rzecz], { zasieg: szkic }));
+  const wSzkicu = licz('agent-a', { dla: szkic }).wartosci[AKCENT];
+  assert.deepEqual([wSzkicu.wartosc, wSzkicu.z], ['#111111', 'narzedzie.barwa.glowna']);
+  // wartość wprost dla całego Miejsca z takim odwołaniem odbija się już przy zapisie, także właścicielowi, ze zdaniem
+  const wprost = await wartosc('jozz', 'ust-u24-wprost', AKCENT, { z: 'narzedzie.barwa.glowna' });
+  assert.equal(wprost.status, 422, JSON.stringify(wprost));
+  assert.match(wprost.blad, /zmienia sam/);
+  // pokrętło z obszaru głównego (zmiana wymaga zgody) jest dobrym celem
+  ok(await wartosc('jozz', 'ust-u24-dobre', AKCENT, { z: 'wyglad.paleta.jasna.znak' }));
+  assert.equal(licz('agent-a').wartosci[AKCENT].z, 'wyglad.paleta.jasna.znak');
+});

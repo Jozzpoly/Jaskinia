@@ -1093,7 +1093,7 @@ export class Srodowisko {
     }
     // Pokrętła, wartości i zestawy: kształt mówi, jakie mają cechy, a to, czy wartość pasuje do deklaracji pokrętła,
     // umie sprawdzić tylko środowisko (worker/ustawienia.mjs).
-    const wada = sprawdzUstawienie(this, rodzaj, cechy, widzi);
+    const wada = sprawdzUstawienie(this, rodzaj, cechy, widzi, obszar ?? null);
     if (wada) return blad(422, wada.blad, wada.bledy ? { bledy: wada.bledy } : {});
     return { ok: true, ksztalt, nieznane };
   }
