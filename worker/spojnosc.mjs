@@ -93,6 +93,6 @@ export function sprawdzSpojnosc(s, { ile = DOMYSLNIE_ILE, pomin = 0, rodzaj = nu
       ? `Przejrzane ${sprawdzone} rzeczy i to NIE jest całość; niezgodnych ${niezgodne.length}. Dalszy ciąg: pomin=${odKtorej + sprawdzone}. Dopóki przebieg jest urwany, "zero niezgodności" nic nie znaczy.`
       : niezgodne.length === 0
         ? `Przejrzane wszystkie ${sprawdzone} rzeczy przy akcie ${s.ostatniNr()}; żadna nie kłóci się ze swoim kształtem.${bezKsztaltu ? ` ${bezKsztaltu} leży poza jakimkolwiek kształtem, więc o nich sprawdzian nic nie wie.` : ''}`
-        : `Przejrzane wszystkie ${sprawdzone} rzeczy przy akcie ${s.ostatniNr()}; ${niezgodne.length} kłóci się ze swoim kształtem (lezy_z: ${rodziny.lezy_z}, treść: ${rodziny.ksztalt}).`,
+        : `Przejrzane wszystkie ${sprawdzone} rzeczy przy akcie ${s.ostatniNr()}; ${niezgodne.length} kłóci się ze swoim kształtem (lezy_z: ${rodziny.lezy_z}, treść: ${rodziny.ksztalt})${odlozonych ? `; z tego ${odlozonych} to rzeczy odłożone, czyli już uprzątnięte` : ''}.`,
   };
 }

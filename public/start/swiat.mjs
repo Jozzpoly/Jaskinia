@@ -37,6 +37,7 @@ export function jakoProjekt(r) {
 export function zbudujSwiat(rzeczy, { widok = null, obszarWidoku = null } = {}) {
   const projekty = [], rodziny = new Map(), galezie = new Map(), miejsca = new Map();
   let ileSlow = new Map();
+  let obce = 0;
   for (const r of rzeczy) {
     const c = r.cechy || {};
     if (r.rodzaj.startsWith('repo/') || r.rodzaj.startsWith('projekt/')) projekty.push(jakoProjekt(r));
@@ -44,16 +45,18 @@ export function zbudujSwiat(rzeczy, { widok = null, obszarWidoku = null } = {}) 
     else if (r.rodzaj.startsWith('galaz/') && typeof c.repo === 'string') {
       if (!galezie.has(c.repo)) galezie.set(c.repo, []);
       galezie.get(c.repo).push({ id: r.id, nazwa: tekst(c.nazwa) || '?', kiedy: tekst(c.kiedy), temat: tekst(c.temat) });
-    } else if (r.rodzaj.startsWith('miejsce/') && widok && c.widok === widok && (r.obszar ?? null) === (obszarWidoku ?? null) && typeof c.rzecz === 'string' && Number.isFinite(c.x) && Number.isFinite(c.y)) {
-      // liczy się tylko miejsce, które leży w obszarze swojego widoku: położenie zapisane gdzie indziej nie przeszło
-      // przez prawo tego obszaru
+    } else if (r.rodzaj.startsWith('miejsce/') && widok && c.widok === widok && typeof c.rzecz === 'string' && Number.isFinite(c.x) && Number.isFinite(c.y)) {
+      // Liczy się tylko miejsce, które leży w obszarze swojego widoku: inne nie przeszło przez prawo tego obszaru.
+      // Pilnuje tego samo Miejsce (obszar miejsca wynika z widoku przy każdej zmianie). Gdyby mimo to któreś leżało
+      // gdzie indziej, nie znika po cichu: liczymy je, a Start mówi o tym na pasku (znalezisko drugiej linii, 17 XI).
+      if ((r.obszar ?? null) !== (obszarWidoku ?? null)) { obce++; continue; }
       miejsca.set(c.rzecz, { id: r.id, wersja: r.wersja, x: c.x, y: c.y, skala: Number.isFinite(c.skala) ? Math.max(SKALA.min, Math.min(SKALA.max, c.skala)) : 1, kto: r.zmienil, kiedy: r.zmieniono });
     } else if (r.rodzaj.startsWith('slowo/') && Array.isArray(c.dotyczy)) {
       for (const id of c.dotyczy) if (typeof id === 'string') ileSlow.set(id, (ileSlow.get(id) || 0) + 1);
     }
   }
   projekty.sort((a, b) => a.tytul.localeCompare(b.tytul, 'pl') || (a.id < b.id ? -1 : 1));
-  return { projekty, rodziny, galezie, miejsca, ileSlow, widok };
+  return { projekty, rodziny, galezie, miejsca, ileSlow, widok, obce };
 }
 
 // Ważność projektu w stanie ciekłym: pierwiastek z liczby commitów plus stała (tak mierzyła kampania Skala), razy

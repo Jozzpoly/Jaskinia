@@ -89,8 +89,11 @@ const nazwaRodzaju = (r) => String(r).split('/')[0];
 const typCechy = (def) => (typeof def === 'string' ? def : def && def.typ);
 
 // Treść rzeczy w zapisie. Kolejność pól jest stała, bo z treści liczy się identyfikator zapisu.
-function trescRzeczy({ obszar, cechy, odlozone = false, powod = null }) {
-  return JSON.stringify({ obszar: obszar ?? null, cechy, ...(odlozone ? { odlozone: true, ...(powod ? { powod } : {}) } : {}) });
+// Rzecz, która z natury należy do innej (kształt mówi lezy_z), nie niesie własnego obszaru: jej zapis mówi, z której
+// cechy obszar wynika (obszar_z), a pole obszar zostaje puste. Starszy zapis takiej rzeczy, w którym obszar jeszcze
+// stoi, czyta się tak samo: liczy się rzecz wskazana cechą, nie to, co zapisano w polu.
+function trescRzeczy({ obszar, cechy, odlozone = false, powod = null, zNatury = null }) {
+  return JSON.stringify({ obszar: zNatury ? null : (obszar ?? null), ...(zNatury ? { obszar_z: zNatury } : {}), cechy, ...(odlozone ? { odlozone: true, ...(powod ? { powod } : {}) } : {}) });
 }
 
 // Tekst do szukania: wszystkie napisy z cech, małymi literami (po polsku), najwyżej 4000 znaków.
@@ -305,6 +308,8 @@ export class Srodowisko {
     if (stary) this.przebuduj();
     // Spis sprzed tabeli przekroju: liczymy ją raz z tego, co już leży.
     else if (!sql.exec(`SELECT 1 AS jest FROM przekroj LIMIT 1`).toArray().length && sql.exec(`SELECT 1 AS jest FROM rzeczy LIMIT 1`).toArray().length) this._zbudujPrzekroj();
+    // Spis sprzed chwili, w której obszar rzeczy z regułą lezy_z zaczął wynikać z rzeczy wskazanej: wyrównujemy go raz.
+    if (rdzen.meta('spis:lezy_z') !== '2') { this.wyrownajZNatury(); rdzen.ustawMeta('spis:lezy_z', '2'); }
   }
 
   _zbudujPrzekroj() {
@@ -566,9 +571,116 @@ export class Srodowisko {
       if (p.tryb === 'odmowa') return p; // tam, gdzie agentom nie wolno nic, nie ma też propozycji
       if (p.tryb === 'propozycja' && wynik.tryb === 'skutek') wynik = p;
     }
+    // Przeniesienie rzeczy pociąga rzeczy, które z natury leżą z nią. Kto sam nie mógłby ich tam przenieść ze skutkiem,
+    // nie przeniesie ich też przy okazji: cały ruch staje się propozycją.
+    if (stara && (stara.obszar ?? null) !== (obszar ?? null)) {
+      for (const rz of this._rodzajeZaleznych(stara.id)) for (const o of [obszar ?? null, stara.obszar ?? null]) {
+        const p = this._prawoWObszarze(rz, o);
+        if (p.tryb === 'odmowa') return p;
+        if (p.tryb === 'propozycja' && wynik.tryb === 'skutek') wynik = { ...p, powod: `${p.powod}; razem z tą rzeczą przenoszą się rzeczy rodzaju ${rz}, które leżą tam, gdzie ona` };
+      }
+    }
     const z = this._zastrzezone(rodzaj, cechy, stara);
     if (z) return { tryb: 'propozycja', powod: z, wymaga: 'wlasciciel' };
     return wynik;
+  }
+
+  // --- rzeczy, które z natury leżą z inną rzeczą (lezy_z) --------------------------------------------------------
+  // Kształt może powiedzieć lezy_z: <cecha>. Rzecz takiego rodzaju nie ma własnego obszaru: leży tam, gdzie rzecz
+  // wskazana tą cechą. To jest jedna prawda dla wszystkich dróg zapisu (połóż, odłóż, przywróć, cofnij, przyjmij)
+  // i dla przeniesienia rzeczy wskazanej: wtedy zależne idą za nią w tej samej chwili. Druga linia zmierzyła 17 XI,
+  // że pilnowana tylko przy zwykłym zapisie reguła zostawiała po cichu sieroty na trzech pozostałych drogach.
+  // Zwraca undefined, gdy rodzaj takiej reguły nie ma; {cecha, obszar}, gdy ma; {cecha, brak: true}, gdy cecha
+  // nie wskazuje istniejącej rzeczy.
+  _zNatury(rodzaj, cechy) {
+    const k = this.ksztaltDla(rodzaj);
+    if (!k || typeof k.lezy_z !== 'string') return undefined;
+    const wskazana = cechy ? cechy[k.lezy_z] : null;
+    const dom = typeof wskazana === 'string' && ID.test(wskazana) ? this.q(`SELECT obszar FROM rzeczy WHERE id = ?`, wskazana)[0] : null;
+    return dom ? { cecha: k.lezy_z, obszar: dom.obszar ?? null } : { cecha: k.lezy_z, brak: true };
+  }
+
+  // Czy idąc od rzeczy `od` w górę po regule lezy_z dojdzie się do rzeczy `szukana` (wtedy powstałoby koło).
+  _lezyPod(od, szukana) {
+    const widziane = new Set();
+    for (let id = od; typeof id === 'string' && ID.test(id) && !widziane.has(id) && widziane.size < 64;) {
+      if (id === szukana) return true;
+      widziane.add(id);
+      const rz = this.rzecz(id);
+      const k = rz ? this.ksztaltDla(rz.rodzaj) : null;
+      id = k && typeof k.lezy_z === 'string' ? rz.cechy[k.lezy_z] : null;
+    }
+    return false;
+  }
+
+  // Zmiana obszaru w samym spisie, bez nowego zapisu: rzecz z regułą lezy_z obszaru nie niesie, więc nie ma czego
+  // zapisywać. Przekrój spisu idzie za nią. Licznik `pociagniete` czyta obiekt Miejsca, żeby powiedzieć otwartym
+  // stronom, że mają przeczytać całość (stronie czytającej same zmiany taka rzecz by umknęła).
+  _przenies(id, rodzaj, stary, odlozone, nowy) {
+    this.r.sql.exec(`UPDATE rzeczy SET obszar = ? WHERE id = ?`, nowy, id);
+    this.r.sql.exec(`UPDATE przekroj SET ile = ile - 1 WHERE rodzaj = ? AND obszar = ? AND odlozone = ?`, rodzaj, stary ?? '', odlozone ? 1 : 0);
+    this.r.sql.exec(`INSERT INTO przekroj (rodzaj, obszar, odlozone, ile) VALUES (?, ?, ?, 1) ON CONFLICT(rodzaj, obszar, odlozone) DO UPDATE SET ile = ile + 1`, rodzaj, nowy ?? '', odlozone ? 1 : 0);
+    if (this._prz) { doliczPrzekroj(this._prz, rodzaj, stary, odlozone ? 1 : 0, -1); doliczPrzekroj(this._prz, rodzaj, nowy, odlozone ? 1 : 0, 1); }
+    this._pam = null;
+    this.pociagniete = (this.pociagniete || 0) + 1;
+  }
+
+  // Rzeczy, które z natury leżą z rzeczą `id`, idą do jej nowego obszaru; potem ich własne zależne, i tak dalej.
+  _pociagnij(id, obszar, widziane = new Set([id])) {
+    for (const w of this.q(`SELECT o.od, o.cecha, r.rodzaj, r.obszar, r.odlozone FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ?`, id)) {
+      if (widziane.has(w.od)) continue;
+      const k = this.ksztaltDla(w.rodzaj);
+      if (!k || k.lezy_z !== w.cecha) continue;
+      widziane.add(w.od);
+      if ((w.obszar ?? null) !== obszar) this._przenies(w.od, w.rodzaj, w.obszar ?? null, !!w.odlozone, obszar);
+      this._pociagnij(w.od, obszar, widziane);
+    }
+  }
+
+  // Rodzaje rzeczy, które poszłyby za rzeczą `id`, gdyby zmieniła obszar (do oceny prawa przy przenoszeniu).
+  _rodzajeZaleznych(id, widziane = new Set([id]), glebokosc = 0) {
+    const wynik = new Set();
+    if (glebokosc > 8) return wynik;
+    for (const w of this.q(`SELECT o.od, o.cecha, r.rodzaj FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ?`, id)) {
+      if (widziane.has(w.od)) continue;
+      const k = this.ksztaltDla(w.rodzaj);
+      if (!k || k.lezy_z !== w.cecha) continue;
+      widziane.add(w.od);
+      wynik.add(w.rodzaj);
+      for (const x of this._rodzajeZaleznych(w.od, widziane, glebokosc + 1)) wynik.add(x);
+    }
+    return wynik;
+  }
+
+  // Wyrównanie spisu z regułą lezy_z: każda rzecz rodzaju, który z natury leży z inną rzeczą, dostaje w spisie obszar
+  // tamtej. Potrzebne dla spisu sprzed tej reguły i po odbudowie z dziennika. Zwraca, ile rzeczy zmieniło obszar.
+  wyrownajZNatury({ slad = true } = {}) {
+    const rodzaje = [...this.ksztalty()].filter(([, k]) => k && k.cechy && typeof k.cechy.lezy_z === 'string').map(([r]) => r);
+    let razem = 0;
+    for (let obieg = 0; rodzaje.length && obieg < 8; obieg++) {
+      let ruszone = 0;
+      for (const rodzaj of rodzaje) for (const rz of this.wszystkie({ rodzaj, odlozone: 'razem' })) {
+        const n = this._zNatury(rz.rodzaj, rz.cechy);
+        if (!n || n.brak || n.obszar === (rz.obszar ?? null)) continue;
+        this._przenies(rz.id, rz.rodzaj, rz.obszar ?? null, !!rz.odlozone, n.obszar);
+        ruszone++;
+      }
+      razem += ruszone;
+      if (!ruszone) break;
+    }
+    // Wyrównanie nie zmienia żadnego zapisu, więc bez tego śladu nikt by się o nim nie dowiedział (uwaga drugiej linii:
+    // naprawialiśmy ciszę, nie wolno naprawić jej czymś, co samo milczy). Opis pod adresem mówi to jednym zdaniem.
+    if (razem && slad) {
+      let bylo = {};
+      try { bylo = JSON.parse(this.r.meta('spis:wyrownano') || '{}') || {}; } catch { /* zaczynamy od zera */ }
+      this.r.ustawMeta('spis:wyrownano', JSON.stringify({ razem: (Number(bylo.razem) || 0) + razem, ostatnio: razem, kiedy: new Date(this.r.teraz()).toISOString() }));
+    }
+    return razem;
+  }
+
+  // Ślad po wyrównaniach spisu: ile rzeczy dostało obszar z natury bez nowego zapisu (razem i ostatnim razem) i kiedy.
+  wyrownano() {
+    try { const w = JSON.parse(this.r.meta('spis:wyrownano') || 'null'); return w && Number(w.razem) > 0 ? w : null; } catch { return null; }
   }
 
   // Co ten uczestnik może zrobić z istniejącą rzeczą, nie zmieniając jej rodzaju ani obszaru (dla tekstu pod adresem).
@@ -618,6 +730,13 @@ export class Srodowisko {
       const juz = this.ksztalty().get(cechy.dla);
       const nastepne = `${nazwaRodzaju(cechy.dla)}/${Number(cechy.dla.split('/')[1]) + 1}`;
       if (juz && (!stara || juz.id !== stara.id)) return blad(409, `rodzaj ${cechy.dla} ma już kształt (rzecz ${juz.id}); zmień tamtą rzecz albo załóż następne pokolenie, np. ${nastepne}`, { rzecz: juz.id });
+      // Pierwszy kształt rodzaju, pod którym leżą już rzeczy, ma je opisywać. Inaczej rzeczy zapisane wczoraj stałyby
+      // się dziś niezgodne z własnym rodzajem bez żadnego ruchu (znalezisko sprawdzianu spójności, 17 XI, SP5).
+      if (!juz) {
+        const leza = this.wszystkie({ rodzaj: cechy.dla, odlozone: 'razem' });
+        const zle = leza.filter((rz) => sprawdzCechy(cechy, rz.cechy, this._maRzecz, this._maZapis).bledy.length);
+        if (zle.length) return blad(409, `pod rodzajem ${cechy.dla} leży już ${leza.length} rzeczy, a ${zle.length} z nich nie przechodzi tego kształtu (np. ${zle.slice(0, 3).map((x) => x.id).join(', ')}). Opisz kształtem to, co leży, albo załóż ostrzejszy opis jako następne pokolenie: ${nastepne}`, { rzeczy: zle.slice(0, 20).map((x) => x.id) });
+      }
       if (stara && stara.rodzaj === 'ksztalt/1') {
         if (stara.cechy.dla !== cechy.dla) return blad(409, `ten kształt opisuje rodzaj ${stara.cechy.dla} i tak zostaje; inny rodzaj to osobny kształt`);
         if (this.ile({ rodzaj: cechy.dla, odlozone: 'razem' }) > 0) {
@@ -691,13 +810,12 @@ export class Srodowisko {
     // Rzecz, która z natury należy do innej (miejsce do widoku), leży zawsze w tym samym obszarze co ona. Inaczej prawo
     // do jej zmiany liczyłoby się gdzie indziej niż prawo do rzeczy, której dotyczy: agent kładłby położenia w obszarze,
     // w którym prowadzi sam, a widok właściciela i tak by je brał (znalezione na podglądzie 17 XI).
-    const ksztaltRzeczy = this.ksztaltDla(rodzaj);
-    if (ksztaltRzeczy && typeof ksztaltRzeczy.lezy_z === 'string') {
-      const wskazana = cechy[ksztaltRzeczy.lezy_z];
-      const dom = typeof wskazana === 'string' && ID.test(wskazana) ? this.rzecz(wskazana) : null;
-      if (!dom) return blad(400, `cecha ${ksztaltRzeczy.lezy_z} musi wskazywać istniejącą rzecz: od niej rzecz rodzaju ${rodzaj} bierze obszar`);
-      if ('obszar' in c && (c.obszar ?? null) !== (dom.obszar ?? null)) return blad(400, `rzecz rodzaju ${rodzaj} leży zawsze w obszarze rzeczy z cechy ${ksztaltRzeczy.lezy_z}; pomiń obszar albo podaj ten sam`);
-      obszar = dom.obszar ?? null;
+    const n = this._zNatury(rodzaj, cechy);
+    if (n) {
+      if (n.brak) return blad(400, `cecha ${n.cecha} musi wskazywać istniejącą rzecz: od niej rzecz rodzaju ${rodzaj} bierze obszar`);
+      if ('obszar' in c && (c.obszar ?? null) !== n.obszar) return blad(400, `rzecz rodzaju ${rodzaj} leży zawsze w obszarze rzeczy z cechy ${n.cecha}; pomiń obszar albo podaj ten sam`);
+      if (stara && this._lezyPod(cechy[n.cecha], stara.id)) return blad(422, `rzecz nie może leżeć z rzeczą, która sama leży z nią (cecha ${n.cecha} zamyka koło)`);
+      obszar = n.obszar;
     }
     return this._zmien(kto, c.op, slad, { co: 'poloz', stara, id, rodzaj, obszar, cechy, odlozone: stara ? !!stara.odlozone : false, powod: stara && stara.odlozone ? stara.powod : null, wersja: stara ? (c.wersja === 'dowolna' ? stara.wersja : c.wersja) : null });
   }
@@ -777,13 +895,18 @@ export class Srodowisko {
 
   // Wspólny koniec każdej zmiany rzeczy: sprawdzenie treści, ocena prawa, potem zapis albo propozycja.
   async _zmien(kto, op, slad, { co, stara, id, rodzaj, obszar, cechy, odlozone, powod, wersja, zWersji = null }) {
+    // Jedno miejsce dla wszystkich dróg zmiany (połóż, odłóż, przywróć, cofnij): rzecz, która z natury należy do innej,
+    // leży tam, gdzie tamta leży dziś, a nie tam, gdzie leżała, gdy powstawała wersja, do której wracamy.
+    const n = this._zNatury(rodzaj, cechy);
+    if (n && !n.brak) obszar = n.obszar;
+    const zNatury = n ? n.cecha : null;
     const spr = this._sprawdzTresc(rodzaj, cechy, obszar, stara, odlozone);
     if (!spr.ok) return co === 'cofnij' ? blad(409, 'dawna wersja nie przechodzi dzisiejszego sprawdzenia: ' + spr.blad, { bledy: spr.bledy }) : spr;
     const ocena = this.ocen(kto, { stara, rodzaj, obszar, cechy });
     if (ocena.tryb === 'odmowa') return blad(ocena.status, ocena.powod);
     const uwagi = { ...(spr.nieznane.length ? { nieznane_cechy: spr.nieznane } : {}), ...(spr.bezKsztaltu ? { uwaga: `rodzaj ${rodzaj} nie ma kształtu: rzecz jest zapisana i widoczna, ale niczego w niej nie sprawdzono` } : {}) };
     if (ocena.tryb === 'skutek') {
-      const p = await this.r.przygotujPolozenie({ op, rodzaj, tresc: trescRzeczy({ obszar, cechy, odlozone, powod }), glowa: 'rzecz:' + id, wersja: stara ? wersja : null });
+      const p = await this.r.przygotujPolozenie({ op, rodzaj, tresc: trescRzeczy({ obszar, cechy, odlozone, powod, zNatury }), glowa: 'rzecz:' + id, wersja: stara ? wersja : null });
       if (!p.ok) return p;
       return this._zatwierdz(kto, [{ p, id, rodzaj, obszar, cechy, odlozone, ksztalt: spr.ksztalt }], slad,
         { skutek: SKUTKI[co], rzecz: id, adres: '/rzecz/' + id, ...(zWersji ? { z_wersji: zWersji } : {}), ...uwagi });
@@ -836,12 +959,17 @@ export class Srodowisko {
         odlozone = excluded.odlozone, szukane = excluded.szukane, zmienil = excluded.zmienil, zmieniono = excluded.zmieniono`,
       id, rodzaj, obszar ?? null, zapis, akt, odlozone ? 1 : 0, doSzukania(cechy), kto, t, kto, t);
     this._odniesienia(id, rodzaj, cechy, ksztalt);
+    // Rzeczy, które z natury leżą z tą rzeczą, idą za nią w tej samej chwili (ich zapisy się nie zmieniają, bo obszaru
+    // nie niosą). Inaczej po przeniesieniu widoku jego położenia zostawałyby w starym obszarze i pod starym prawem.
+    if (bylo && (bylo.obszar ?? null) !== (obszar ?? null)) this._pociagnij(id, obszar ?? null);
     // Nowy albo zmieniony kształt zmienia to, które cechy są odniesieniami: rzeczy tego rodzaju liczymy od nowa,
     // inaczej spis zależałby od kolejności, w jakiej powstały rzecz i jej kształt.
     if (rodzaj === 'ksztalt/1' && typeof cechy.dla === 'string') {
       this._k = null;
       const k = this.ksztaltDla(cechy.dla);
       for (const rz of this.wszystkie({ rodzaj: cechy.dla, odlozone: 'razem' })) this._odniesienia(rz.id, rz.rodzaj, rz.cechy, k);
+      // kształt, który każe rzeczom leżeć z inną rzeczą, zastał już rzeczy tego rodzaju: dostają obszar z natury
+      if (typeof cechy.lezy_z === 'string') this.wyrownajZNatury();
     }
   }
 
@@ -869,7 +997,10 @@ export class Srodowisko {
     if (rola === 'zwiedzajacy') return blad(401, 'do rozstrzygnięcia propozycji potrzebny jest klucz uczestnika');
     const t = pr.cechy.tresc && typeof pr.cechy.tresc === 'object' ? pr.cechy.tresc : {};
     const cechy = t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {};
-    const obszar = t.obszar ?? null;
+    // Propozycja pamięta obszar z chwili, w której powstała. Rzecz, która z natury należy do innej, bierze go z tamtej
+    // dzisiaj: inaczej właściciel własnym przyjęciem zakładałby rzecz tam, gdzie jej rodzic już nie leży.
+    const zn = this._zNatury(pr.cechy.rodzaj, cechy);
+    const obszar = zn && !zn.brak ? zn.obszar : (t.obszar ?? null);
     const stara = pr.cechy.rzecz ? this.rzecz(pr.cechy.rzecz) : null;
     const autor = kto === pr.cechy.od;
     // Kto rozstrzyga: właściciel, albo uczestnik, który ten sam ruch mógłby zrobić sam ze skutkiem. Autor może swoją
@@ -893,7 +1024,7 @@ export class Srodowisko {
     const odlozone = t.odlozone === true;
     const spr = this._sprawdzTresc(pr.cechy.rodzaj, cechy, obszar, stara, odlozone);
     if (!spr.ok) return blad(spr.status, 'propozycja nie przechodzi dzisiejszego sprawdzenia: ' + spr.blad);
-    const p1 = await this.r.przygotujPolozenie({ op: c.op, rodzaj: pr.cechy.rodzaj, tresc: trescRzeczy({ obszar, cechy, odlozone, powod: typeof t.powod === 'string' ? t.powod : null }), glowa: 'rzecz:' + id, wersja: stara ? stara.wersja : null });
+    const p1 = await this.r.przygotujPolozenie({ op: c.op, rodzaj: pr.cechy.rodzaj, tresc: trescRzeczy({ obszar, cechy, odlozone, powod: typeof t.powod === 'string' ? t.powod : null, zNatury: zn ? zn.cecha : null }), glowa: 'rzecz:' + id, wersja: stara ? stara.wersja : null });
     if (!p1.ok) return p1;
     const nc = { ...pr.cechy, stan: 'przyjeta', rozstrzygnal: kto, rozstrzygnieto: kiedy, wynik: id };
     const p2 = await this.r.przygotujPolozenie({ op: c.op + '.prop', rodzaj: 'propozycja/1', tresc: trescRzeczy({ obszar: pr.obszar, cechy: nc }), glowa: 'rzecz:' + pr.id, wersja: pr.wersja });
@@ -955,6 +1086,9 @@ export class Srodowisko {
     this._zbudujPrzekroj();
     this._role = { nr: -1, mapa: new Map() };
     for (const rz of this.wszystkie({ odlozone: 'razem' })) this._odniesienia(rz.id, rz.rodzaj, rz.cechy, this.ksztaltDla(rz.rodzaj));
+    // zapis rzeczy z regułą lezy_z obszaru nie niesie (albo niesie dawny): spis dostaje go z rzeczy wskazanej.
+    // To jest zwykłe liczenie spisu od nowa, a nie poprawka zastanego, więc nie zostawia śladu wyrównania.
+    this.wyrownajZNatury({ slad: false });
     return { ok: true, rzeczy: glowy.length };
   }
 

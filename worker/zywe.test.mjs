@@ -153,6 +153,20 @@ test('Z6. gniazdo, które zalewa wiadomościami, traci połączenie; po minucie 
   assert.equal(stanGniazda(spokojne).n, 1);
 });
 
+test('Z6b. napis "ping" nie liczy się do granicy: pod adresem odpowiada na niego samo połączenie, więc i tutaj nie zamyka', async () => {
+  // Atak drugiej linii (17 XI, proby/z3-kanal-na-zywo/atak-zalew.mjs): pod adresem 90 razy "ping" zostawia połączenie,
+  // a 90 razy cokolwiek innego kończy się kodem 4429. Ten sprawdzian pilnuje, żeby Node mówił to samo co adres.
+  const g = gniazdo({ kto: 'jozz', okno: 0, n: 0 });
+  g.send = (t) => { g.wyslane.push(t); };
+  const opcje = { env: {}, gniazda: () => [g], podglad: true, akt: () => 1 };
+  for (let i = 0; i < NAJWIECEJ_NA_MINUTE + 30; i++) await przyjmijWiadomosc(g, 'ping', { ...opcje, teraz: 1000 + i });
+  assert.equal(g.zamkniete, null);
+  assert.equal(stanGniazda(g).n || 0, 0, 'ping nie rusza licznika');
+  assert.equal(g.wyslane.filter((x) => x === 'pong').length, NAJWIECEJ_NA_MINUTE + 30);
+  for (let i = 0; i <= NAJWIECEJ_NA_MINUTE; i++) await przyjmijWiadomosc(g, 'pong', { ...opcje, teraz: 5000 + i });
+  assert.equal(g.zamkniete.kod, KOD_ZA_DUZO, 'każdy inny napis liczy się jak zwykła wiadomość');
+});
+
 test('Z7. miejsce na nowe połączenie: gdy jest pełno, ustępuje najstarsze bez klucza; gdy wszystkie mają klucze, nowe czeka', () => {
   const a = gniazdo({ od: 5 }), b = gniazdo({ od: 2 }), c = gniazdo({ kto: 'jozz', od: 1 });
   assert.equal(zrobMiejsce([a, b, c], 4), true);

@@ -92,3 +92,102 @@ test('M5. lezy_z w kształcie: tylko wymagana cecha typu rzecz; zmiana tego usta
   const zwykly = await s.ruch('agent-probny', { op: 'miejsce-test-ksztalt-2', co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'notka-zwykla/1', opis: 'próba', cechy: { dom: { typ: 'rzecz', wymagana: true } } } });
   assert.equal(zwykly.skutek, 'polozone', JSON.stringify(zwykly));
 });
+
+// --- 17 XI, po sądzie drugiej linii: obszar miejsca nie jest osobnym zapisem, tylko wynika z widoku ----------------
+const przeniesWidok = (s, kto, op, widok, obszar) => s.ruch(kto, { op, co: 'poloz', rodzaj: 'widok/1', rzecz: widok.id, obszar, wersja: 'dowolna', cechy: widok.cechy });
+const liczby = (s, rodzaj) => Object.fromEntries(s.przekroj().filter((x) => x.rodzaj === rodzaj && x.ile > 0).map((x) => [(x.obszar ?? 'glowny') + (x.odlozone ? ':odlozone' : ''), x.ile]));
+
+test('M6. miejsce idzie za widokiem: spis, liczby i pytanie po obszarze zgadzają się po przeniesieniu, a zapis miejsca się nie zmienia', async () => {
+  const { s, widok, projekt, nowe } = await swiat();
+  const drugi = await s.ruch('jozz', { op: 'miejsce-test-drugi-projekt', co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Drugi projekt' } });
+  const a = await poloz(s, 'jozz', 'miejsce-test-m6-a', { widok: widok.id, rzecz: projekt, x: 1, y: 2 });
+  const b = await poloz(s, 'jozz', 'miejsce-test-m6-b', { widok: widok.id, rzecz: drugi.rzecz, x: 3, y: 4 });
+  await s.ruch('jozz', { op: 'miejsce-test-m6-odloz', co: 'odloz', rzecz: b.rzecz, wersja: 'dowolna', powod: 'próba' });
+  const przed = [s.rzecz(a.rzecz).wersja, s.rzecz(b.rzecz).wersja];
+  assert.deepEqual(liczby(s, 'miejsce/1'), { glowny: 1, 'glowny:odlozone': 1 });
+  const p = await przeniesWidok(s, 'jozz', 'miejsce-test-m6-widok', widok, nowe);
+  assert.equal(p.ok, true, JSON.stringify(p));
+  assert.deepEqual([s.rzecz(a.rzecz).obszar, s.rzecz(b.rzecz).obszar], [nowe, nowe], 'oba miejsca, także odłożone, leżą tam, gdzie widok');
+  assert.deepEqual([s.rzecz(a.rzecz).wersja, s.rzecz(b.rzecz).wersja], przed, 'miejsca nie dostały nowej wersji: ich zapis obszaru nie niesie');
+  assert.deepEqual(liczby(s, 'miejsce/1'), { [nowe]: 1, [nowe + ':odlozone']: 1 }, 'przekrój spisu poszedł za rzeczami');
+  assert.equal(s.ile({ rodzaj: 'miejsce/1', obszar: nowe }), 1);
+  assert.equal(s.ile({ rodzaj: 'miejsce/1', obszar: null }), 0);
+  assert.ok(s.pociagniete >= 2, 'środowisko mówi, że pociągnęło rzeczy, żeby otwarte strony przeczytały całość');
+  const tresc = JSON.parse(s.q(`SELECT z.tresc FROM rzeczy r JOIN zapisy z ON z.id = r.zapis WHERE r.id = ?`, a.rzecz)[0].tresc);
+  assert.deepEqual([tresc.obszar, tresc.obszar_z], [null, 'widok'], 'zapis mówi, z której cechy bierze się obszar, i nie niesie własnego');
+});
+
+test('M7. przyjęcie propozycji po przeniesieniu widoku zakłada miejsce tam, gdzie widok leży dziś', async () => {
+  const { s, widok, projekt, nowe } = await swiat();
+  const prop = await poloz(s, 'agent-a', 'miejsce-test-m7-prop', { widok: widok.id, rzecz: projekt, x: 5, y: 6 });
+  assert.equal(prop.skutek, 'propozycja', JSON.stringify(prop));
+  await przeniesWidok(s, 'jozz', 'miejsce-test-m7-widok', widok, nowe);
+  const przyjecie = await s.ruch('jozz', { op: 'miejsce-test-m7-przyjmij', co: 'przyjmij', propozycja: prop.propozycja });
+  assert.equal(przyjecie.ok, true, JSON.stringify(przyjecie));
+  assert.equal(s.rzecz(przyjecie.rzecz).obszar, nowe, 'własne przyjęcie właściciela nie zakłada niespójności');
+});
+
+test('M8. agent nie przeciągnie cudzych położeń przy okazji: przeniesienie widoku tam, gdzie mógłby tylko proponować, jest propozycją', async () => {
+  const { s, widok, projekt, nowe } = await swiat();
+  // widok leży w Nowe (agenci prowadzą tam sami) i ma jedno miejsce
+  await przeniesWidok(s, 'jozz', 'miejsce-test-m8-widok', widok, nowe);
+  const m = await poloz(s, 'agent-a', 'miejsce-test-m8-miejsce', { widok: widok.id, rzecz: projekt, x: 7, y: 8 });
+  assert.equal(m.skutek, 'polozone', JSON.stringify(m));
+  // agent chce przenieść widok do głównego, gdzie wolno mu tylko proponować: propozycja, nic się nie rusza
+  const w = s.rzecz(widok.id);
+  const ruch = await przeniesWidok(s, 'agent-a', 'miejsce-test-m8-do-glownego', w, null);
+  assert.equal(ruch.skutek, 'propozycja', JSON.stringify(ruch));
+  assert.deepEqual([s.rzecz(widok.id).obszar, s.rzecz(m.rzecz).obszar], [nowe, nowe]);
+  // po przyjęciu przez właściciela idą razem
+  const przyjecie = await s.ruch('jozz', { op: 'miejsce-test-m8-przyjmij', co: 'przyjmij', propozycja: ruch.propozycja });
+  assert.equal(przyjecie.ok, true, JSON.stringify(przyjecie));
+  assert.deepEqual([s.rzecz(widok.id).obszar, s.rzecz(m.rzecz).obszar], [null, null]);
+});
+
+test('M9. odbudowa spisu z dziennika daje ten sam obszar miejsc co praca na bieżąco, także dla zapisów sprzed tej reguły', async () => {
+  const { r, s, widok, projekt, nowe } = await swiat();
+  const a = await poloz(s, 'jozz', 'miejsce-test-m9-a', { widok: widok.id, rzecz: projekt, x: 1, y: 2 });
+  await przeniesWidok(s, 'jozz', 'miejsce-test-m9-widok', widok, nowe);
+  const przed = s.wszystkie({ odlozone: 'razem' }).map((x) => [x.id, x.obszar]).sort();
+  const liczbyPrzed = JSON.stringify(s.przekroj().filter((x) => x.ile > 0).sort((x, y) => JSON.stringify(x) < JSON.stringify(y) ? -1 : 1));
+  s.przebuduj();
+  assert.deepEqual(s.wszystkie({ odlozone: 'razem' }).map((x) => [x.id, x.obszar]).sort(), przed);
+  assert.equal(JSON.stringify(s.przekroj().filter((x) => x.ile > 0).sort((x, y) => JSON.stringify(x) < JSON.stringify(y) ? -1 : 1)), liczbyPrzed);
+  assert.equal(s.rzecz(a.rzecz).obszar, nowe);
+  // spis sprzed reguły (obszar miejsca zapisany osobno i już nieprawdziwy): nowe środowisko na tych samych danych go wyrównuje
+  r.sql.exec(`UPDATE rzeczy SET obszar = NULL WHERE id = ?`, a.rzecz);
+  s._zbudujPrzekroj(); // przekrój liczony z tego samego, dawnego spisu
+  r.ustawMeta('spis:lezy_z', '0');
+  const s2 = new Srodowisko(r);
+  assert.equal(s2.rzecz(a.rzecz).obszar, nowe, 'wyrównanie przy starcie');
+  assert.equal(s2.ile({ rodzaj: 'miejsce/1', obszar: nowe }), 1);
+  // wyrównanie nie zmienia żadnego zapisu, więc zostawia ślad: liczbę i chwilę, a opis pod adresem mówi to zdaniem
+  const slad = s2.wyrownano();
+  assert.deepEqual([slad.razem, slad.ostatnio], [1, 1], JSON.stringify(slad));
+  const { coTuJest } = await import('./opis.mjs');
+  assert.match(coTuJest(s2, { origin: 'https://proba.example' }), /Wyrównanie spisu: 1 rzecz dostała w spisie obszar rzeczy, z którą z natury leży/);
+});
+
+test('M10. reguła nie daje się zamknąć w koło, a kształt z lezy_z dołożony po rzeczach od razu je porządkuje', async () => {
+  const { s, nowe } = await swiat();
+  const ks = (dla, extra = {}) => ({ dla, opis: 'Rzecz próbna, która leży z inną.', tytul: 'nazwa', cechy: { nazwa: { typ: 'tekst', wymagana: true }, przy: { typ: 'rzecz', wymagana: true } }, ...extra });
+  const k = await s.ruch('jozz', { op: 'miejsce-test-m10-ksztalt', co: 'poloz', rodzaj: 'ksztalt/1', cechy: ks('przypinka/1', { lezy_z: 'przy' }) });
+  assert.equal(k.ok, true, JSON.stringify(k));
+  const kotwica = await s.ruch('jozz', { op: 'miejsce-test-m10-kotwica', co: 'poloz', rodzaj: 'projekt/1', obszar: nowe, cechy: { nazwa: 'Kotwica' } });
+  const a = await s.ruch('jozz', { op: 'miejsce-test-m10-a', co: 'poloz', rodzaj: 'przypinka/1', cechy: { nazwa: 'A', przy: kotwica.rzecz } });
+  const b = await s.ruch('jozz', { op: 'miejsce-test-m10-b', co: 'poloz', rodzaj: 'przypinka/1', cechy: { nazwa: 'B', przy: a.rzecz } });
+  assert.deepEqual([s.rzecz(a.rzecz).obszar, s.rzecz(b.rzecz).obszar], [nowe, nowe], 'łańcuch: B leży z A, A z kotwicą');
+  const kolo = await s.ruch('jozz', { op: 'miejsce-test-m10-kolo', co: 'poloz', rodzaj: 'przypinka/1', rzecz: a.rzecz, wersja: 'dowolna', cechy: { nazwa: 'A', przy: b.rzecz } });
+  assert.equal(kolo.ok, false);
+  assert.equal(kolo.status, 422);
+  assert.match(kolo.blad, /zamyka koło/);
+  // kotwica wraca do głównego: idzie za nią cały łańcuch
+  await s.ruch('jozz', { op: 'miejsce-test-m10-przenies', co: 'poloz', rodzaj: 'projekt/1', rzecz: kotwica.rzecz, obszar: null, wersja: 'dowolna', cechy: { nazwa: 'Kotwica' } });
+  assert.deepEqual([s.rzecz(a.rzecz).obszar, s.rzecz(b.rzecz).obszar], [null, null]);
+  // rodzaj bez kształtu, rzeczy leżą w Nowe; kształt z lezy_z przychodzi później i od razu daje im obszar z natury
+  const luzna = await s.ruch('agent-a', { op: 'miejsce-test-m10-luzna', co: 'poloz', rodzaj: 'znaczek/1', cechy: { nazwa: 'Luźny', przy: kotwica.rzecz } });
+  assert.equal(s.rzecz(luzna.rzecz).obszar, nowe);
+  const k2 = await s.ruch('jozz', { op: 'miejsce-test-m10-ksztalt-2', co: 'poloz', rodzaj: 'ksztalt/1', cechy: ks('znaczek/1', { lezy_z: 'przy' }) });
+  assert.equal(k2.ok, true, JSON.stringify(k2));
+  assert.equal(s.rzecz(luzna.rzecz).obszar, null, 'znaczek leży teraz tam, gdzie kotwica');
+});

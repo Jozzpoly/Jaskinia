@@ -189,7 +189,9 @@ function rysuj() {
       ctx.globalAlpha = alfaRodzin * plynnie(e.w, 60, 160);
       ctx.fillStyle = K.ciche;
       ctx.font = `600 ${rozmiar}px system-ui, sans-serif`;
-      ctx.fillText(r.nazwa.toUpperCase(), e.x, e.y - 6);
+      // podpis rodziny nie wychodzi poza swoje rzeczy: z daleka skraca się, zamiast wchodzić na sąsiednie karty
+      const podpis = zawin(r.nazwa.toUpperCase(), ctx.font, Math.max(24, e.w), 1);
+      ctx.fillText(podpis.linie[0] || '', e.x, e.y - 6);
     }
     ctx.globalAlpha = 1;
   }
@@ -250,7 +252,9 @@ function rysujTresc(p, e, teraz) {
     const proba = zawin(p.tytul, `650 ${rozmiar}px system-ui, sans-serif`, szer, ileLinii(rozmiar));
     if (!proba.zaSzeroka && !proba.ucieto) { nazwa = proba; break; }
   }
-  if (!nazwa && e.w > 34 && e.h > 16) { rozmiar = 9.5; nazwa = zawin(p.tytul, `650 ${rozmiar}px system-ui, sans-serif`, szer, ileLinii(rozmiar)); }
+  // Z daleka (działka węższa niż 64 px) zostaje sam kolor życia: trzy litery z wielokropkiem niczego nie mówią.
+  // Imię wraca przy pierwszym przybliżeniu albo po dotknięciu (karta rzeczy).
+  if (!nazwa && e.w > 64 && e.h > 20) { rozmiar = 9.5; nazwa = zawin(p.tytul, `650 ${rozmiar}px system-ui, sans-serif`, szer, ileLinii(rozmiar)); }
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   if (nazwa) {
     // Gdy projekt jest większy niż okno, jego imię trzyma się widocznego rogu, żeby było wiadomo, w czym się jest.
@@ -364,8 +368,13 @@ function rysujPasek() {
   let tu = '';
   if (inni.length) tu = ' · są też: ' + inni.map((x) => x.kto).join(', ');
   else if (drzwi.obecni.ilu) tu = ' · z kluczem jest tu: ' + drzwi.obecni.ilu;
-  const ile = swiat ? swiat.projekty.length : 0;
-  $('stan').textContent = `${lp(ile, 'projekt', 'projekty', 'projektów')} · akt ${d.miejsce.akt} · ${ja || 'zwiedzający'} · ${drzwi.zywe ? 'na żywo' : 'bez połączenia na żywo'}${tu}`;
+  // Karta repozytorium to fakt przyniesiony przez obserwatora, a nie dzieło wniesione do środka: liczymy je osobno,
+  // żeby pasek nie mówił "28 projektów" tam, gdzie licznik przeniesienia mówi "0" (uwaga drugiej linii, 17 XI).
+  const repo = swiat ? swiat.projekty.filter((p) => p.fakt).length : 0;
+  const dziel = swiat ? swiat.projekty.length - repo : 0;
+  const co = [dziel ? lp(dziel, 'dzieło', 'dzieła', 'dzieł') : null, repo || !dziel ? lp(repo, 'repozytorium', 'repozytoria', 'repozytoriów') : null].filter(Boolean).join(' i ');
+  const obce = swiat && swiat.obce ? ` · ${lp(swiat.obce, 'położenie leży', 'położenia leżą', 'położeń leży')} poza obszarem widoku i nie jest pokazane` : '';
+  $('stan').textContent = `${co} · akt ${d.miejsce.akt} · ${ja || 'zwiedzający'} · ${drzwi.zywe ? 'na żywo' : 'bez połączenia na żywo'}${tu}${obce}`;
   $('stan').title = drzwi.zywe ? 'Połączenie stoi: zmiany przychodzą same.' : 'Połączenie na żywo nie stoi: strona pyta o zmiany co kilka sekund.';
   // To, co czeka na właściciela (propozycje agentów, także położeń, i prośby), widać od razu; rozstrzyga się na
   // stronie gospodarza, bo szkielet nie ma jeszcze warstwy propozycji na płótnie.
@@ -376,7 +385,10 @@ function rysujPasek() {
   $('przelacz').textContent = t >= 0.5 ? 'połóż' : 'nadmuchaj';
   $('przelacz').title = t >= 0.5 ? 'Wróć do stanu stałego: rzeczy płyną tam, gdzie je położyłeś' : 'Nadmuchaj: rzeczy wypełniają okno, ważniejsze większe';
   const g = $('wejscie'), p = $('wejscie-panel');
-  g.textContent = drzwi.klucz && ja ? ja + ' · wyjdź' : 'Wejdź';
+  // Na wąskim ekranie imię stoi już w linii stanu, więc guzik mówi samo "wyjdź" i mieści się w jednym rzędzie.
+  g.replaceChildren();
+  if (drzwi.klucz && ja) { const imie = document.createElement('span'); imie.className = 'dlugi'; imie.textContent = ja + ' · '; g.append(imie, 'wyjdź'); g.title = 'Wszedłeś jako ' + ja; }
+  else { g.append('Wejdź'); g.title = ''; }
   if (drzwi.klucz && ja) { g.onclick = () => drzwi.wejdz('').then(() => komunikat('Wyszedłeś. Oglądasz jako zwiedzający.')); p.hidden = true; return; }
   g.onclick = () => { p.hidden = !p.hidden; };
   if (p.dataset.akt === String(d.klucz_probny_wlasciciela) + '|' + String(d.klucz_probny)) return;

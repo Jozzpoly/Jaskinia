@@ -104,8 +104,9 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
   // po każdej zmianie, a zmierzone 17 XI jedno takie czytanie przy 636 rzeczach kosztowało 5510 wierszy bazy.
   const cz = s.pamietaj('opis:czeka', () => s.czeka());
   const miary = s.pamietaj('opis:miary', () => s.spis({ rodzaj: 'miara/1', limit: 200 }));
-  // Licznik przeniesienia bierze liczbę publicznych repozytoriów z miary dołożonej ręką, a gdy jej nie ma, z miary
-  // obserwatora faktów: on i tak wie, ile ich jest, więc Miejsce nie powinno mówić, że nie wie.
+  // Ile dzieł jest w środku i o ilu repozytoriach są fakty: dwie osobne liczby. Wcześniej stały tu jako "N na M"
+  // i udawały miarę postępu, czyli stawiały cel (wnieść wszystkie M), którego nikt nie zamawiał (zdjęte 17 XI).
+  // Liczbę repozytoriów bierzemy z miary dołożonej ręką, a gdy jej nie ma, z miary obserwatora faktów.
   const m = miary.find((x) => x.cechy.nazwa === 'publiczne-repozytoria') || miary.find((x) => x.cechy.nazwa === 'obserwator-faktow');
   return {
     miejsce: { srodowisko: 'srodowisko-1', format: WERSJA, adres: origin, akt: ostatni, stan_na: new Date(s.r.teraz()).toISOString(), podglad },
@@ -119,6 +120,7 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
     zmiany: { od: odAktu, skad, pierwszy_raz: odAktu === null, lista: zm.lista, wiecej: zm.wiecej, wizyta_zapisana: wizyta && !wizyta.pierwszy_raz ? { akt: wizyta.widziane_do, kiedy: wizyta.widziane_kiedy } : null },
     czeka: { propozycje: cz.propozycje.map((p) => ({ id: p.id, od: p.cechy.od, co: p.cechy.co || 'poloz', rodzaj: p.cechy.rodzaj, obszar: p.obszar, rzecz: p.cechy.rzecz || null, kiedy: p.utworzono, wymaga: p.cechy.wymaga || null })), prosby: cz.prosby.map((p) => ({ id: p.id, tresc: p.cechy.tresc, tryb: p.cechy.tryb || 'czeka', od: p.utworzyl, kiedy: p.utworzono })) },
     zdolnosci: s.pamietaj('opis:zdolnosci', () => s.spis({ rodzaj: 'zdolnosc/1', limit: 500 }).map((z) => ({ id: z.id, nazwa: z.cechy.nazwa, stan: z.cechy.stan, opis: z.cechy.opis, jak: z.cechy.jak || null }))),
+    wyrownanie: s.wyrownano(),
     przeniesienie: { projekty_w_srodku: (liczby.find((l) => l.rodzaj === 'projekt/1') || { ile: 0 }).ile, publiczne_repozytoria: m ? { ile: m.cechy.wartosc, stan_na: m.cechy.stan_na || null, zrodlo: m.cechy.zrodlo || null } : null },
     obserwator: obserwator(s),
     czasowniki: czasowniki(s),
@@ -172,14 +174,16 @@ export function coTuJest(s, opcje = {}) {
     '',
     'Obszar jest też rzeczą (rodzaj obszar/1): jego nazwę i ustawienia czytasz jak każdą rzecz (/rzeczy?rodzaj=obszar/1). W każdej rzeczy pole obszar',
     'to identyfikator obszaru, w którym ona leży; null znaczy obszar główny. Rzecz leży dokładnie w jednym obszarze, a obszary tworzą drzewo.',
+    'Rzecz rodzaju, którego kształt mówi lezy_z, nie ma własnego obszaru: leży tam, gdzie rzecz wskazana tą cechą, i idzie za nią, gdy tamta zmienia obszar.',
+    d.wyrownanie ? `Wyrównanie spisu: ${ile(d.wyrownanie.razem, 'rzecz dostała', 'rzeczy dostały', 'rzeczy dostało')} w spisie obszar rzeczy, z którą z natury leży (ostatnio ${d.wyrownanie.ostatnio}, ${dzien(d.wyrownanie.kiedy)}); zapisy tych rzeczy się nie zmieniły.` : null,
     '',
     d.goscie.length ? 'Goście (organy i narzędzia; otwierają się w oknie na stronie głównej /):' : 'Gości (organów i narzędzi) jeszcze nie ma.',
     d.goscie.map((g) => `  ${g.nazwa}: ${obetnij(g.opis, 130)}   -> /rzecz/${g.id}${g.kod ? `, kod: /gosc/${g.kod}` : ''}${g.adres ? `, adres: ${g.adres}` : ''}`),
     '',
     `Uczestnicy: ${d.uczestnicy.map((u) => `${u.imie} (${u.rola})`).join(', ')}. Uczestnik z kluczem, którego tu nie wypisano, ma rolę agent.`,
     d.przeniesienie.publiczne_repozytoria
-      ? `Licznik przeniesienia: w środku jest ${ile(d.przeniesienie.projekty_w_srodku, 'projekt', 'projekty', 'projektów')} na ${d.przeniesienie.publiczne_repozytoria.ile} publicznych repozytoriów właściciela (stan na ${dzien(d.przeniesienie.publiczne_repozytoria.stan_na || d.miejsce.stan_na)}).`
-      : `Licznik przeniesienia: w środku jest ${ile(d.przeniesienie.projekty_w_srodku, 'projekt', 'projekty', 'projektów')}; ile rzeczy właściciela jest jeszcze na zewnątrz, tego Miejsce nie wie (nikt nie dołożył miary).`,
+      ? `Dzieła wniesione do środka (rodzaj projekt/1): ${d.przeniesienie.projekty_w_srodku}. Osobno: fakty o ${d.przeniesienie.publiczne_repozytoria.ile} publicznych repozytoriach właściciela (stan na ${dzien(d.przeniesienie.publiczne_repozytoria.stan_na || d.miejsce.stan_na)}). To dwie różne liczby i żadna nie jest miarą postępu: wniesienie wszystkich repozytoriów nie jest celem samym w sobie.`
+      : `Dzieła wniesione do środka (rodzaj projekt/1): ${d.przeniesienie.projekty_w_srodku}. Ile rzeczy właściciela jest na zewnątrz, tego Miejsce nie wie (nikt nie dołożył miary).`,
     d.obserwator.ostatnie_udane && d.obserwator.ostatnie_udane.z_pliku
       ? `Obserwator faktów: fakty z pliku starej Jaskini, stan na ${dzien(d.obserwator.ostatnie_udane.stan_na)}; są tak świeże, jak ostatnie odświeżenie starej Jaskini (robi je zwykle dwa razy na dobę); z tokenem obserwator czytałby GitHuba sam i częściej. Przyniósł ${ile(d.obserwator.repozytoria, 'repozytorium', 'repozytoria', 'repozytoriów')} i ${ile(d.obserwator.galezie, 'gałąź', 'gałęzie', 'gałęzi')} (rzeczy repo/1 i galaz/1 w obszarze Fakty, z rodzinami projektów jako rodzina/1); ${obetnij(d.obserwator.ostatnie_udane.zrodlo || 'bez opisu źródła', 420)}.`
       : d.obserwator.ostatnie_udane
