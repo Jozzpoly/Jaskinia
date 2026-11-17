@@ -515,12 +515,14 @@ export class Srodowisko {
     // Proste pytania (rodzaj z pokoleniem, obszar, odłożone albo nie) mają odpowiedź w pamiętanym przekroju spisu:
     // opis pyta o takie liczby kilkanaście razy, a każde osobne liczenie przeglądało cały spis.
     const { rodzaj = null, obszar, gdzie: cechy = null, szukaj = null, odlozone = 'nie', po = null, dla = undefined } = filtr;
-    // Pamiętany przekrój spisu nie zna widoczności (liczy wszystko), więc pytanie "ile widzi TEN czytający" idzie
-    // zwykłą drogą. Inaczej liczba zdradzałaby istnienie rzeczy, których ten ktoś nie ma prawa zobaczyć.
+    // Pytanie "ile widzi TEN czytający" też ma odpowiedź w przekroju: `_przekrojDla` odejmuje z niego obszary,
+    // których ten ktoś nie widzi, i same zamknięte obszary po stronie ich rodzica. Do 17 XI 2026 wieczorem szło
+    // ono zwykłą drogą i KAŻDE otwarcie strony skanowało przez to CAŁĄ tabelę rzeczy (zmierzone: tools/koszt.mjs).
+    // Mój własny dług z tego samego dnia: widoczność wyłączyła szybką ścieżkę, zamiast nauczyć ją widzieć.
     const prostyRodzaj = rodzaj === null || (typeof rodzaj === 'string' && rodzaj.includes('/') && RODZAJ_LUB_NAZWA.test(rodzaj));
-    if (dla === undefined && !cechy && !szukaj && po === null && prostyRodzaj && ['nie', 'tak', 'razem'].includes(odlozone)) {
+    if (!cechy && !szukaj && po === null && prostyRodzaj && ['nie', 'tak', 'razem'].includes(odlozone)) {
       let n = 0;
-      for (const w of this.przekroj()) {
+      for (const w of (dla === undefined ? this.przekroj() : this._przekrojDla(dla))) {
         if (rodzaj !== null && w.rodzaj !== rodzaj) continue;
         if (obszar !== undefined && (obszar === null || obszar === '' ? w.obszar !== null : w.obszar !== String(obszar))) continue;
         if (odlozone === 'nie' ? w.odlozone : (odlozone === 'tak' ? !w.odlozone : false)) continue;
