@@ -7,7 +7,7 @@
 // Co jest stanem oka (nie trafia do Miejsca): kamera, liczba stały/ciekły, wybrana rzecz. Co jest zapisem: położenie
 // rzeczy z ręki, przy puszczeniu, jako rzecz rodzaju miejsce w widoku Start (więc ma autora, historię i prawa z obszaru).
 import { Drzwi } from './drzwi.mjs';
-import { NAZWY_POKRETEL, Pokretla, KOLORY, RODZAJE_USTAWIEN } from '../pokretla.mjs';
+import { NAZWY_POKRETEL, Pokretla, KOLORY, RODZAJE_USTAWIEN, krojNaCss, polaczPodglad } from '../pokretla.mjs';
 import { zbudujSwiat, ukladStaly, poleCieklego, ukladCiekly, miedzy, lagodnie, krotkieImie, zywosc, galezieWPolu, trafienie,
   kolejnoscRysowania, naEkran, naSwiat, kameraNa, przybliz, KARTA, SKALA } from './swiat.mjs';
 
@@ -65,15 +65,24 @@ function wczytajKolory() {
 // i twarz przerysowuje się bez przeładowania. Adres z ?bezpiecznie zostawia same wartości domyślne: wyjście z każdego
 // zepsutego wyglądu.
 const P = new Pokretla({ bezpiecznie: new URLSearchParams(location.search).has('bezpiecznie'), naZmiane: zastosujWyglad });
-let KROJ = String(P.w('wyglad.kroj.rodzina'));
+// Podgląd z panelu ustawień w innej karcie tego samego adresu: wartość w trakcie kręcenia, bez zapisu i bez serwera.
+polaczPodglad(P);
+// Dwie role kroju: tekst (liczby, podpisy, opisy) i imiona (nazwy rzeczy na kartach).
+let KROJ = P.kroj('tekst').rodzina, KROJ_IMION = P.kroj('imiona').rodzina, GRUBOSC_IMION = 650;
 let odciskUstawien = null, pytamOUstawienia = false;
 function zastosujWyglad() {
   const system = matchMedia('(prefers-color-scheme: dark)').matches;
   const st = document.documentElement.style;
   for (const n of KOLORY) st.setProperty('--' + n, String(P.kolor(n, system)));
   st.setProperty('color-scheme', P.ciemna(system) ? 'dark' : 'light');
-  KROJ = String(P.w('wyglad.kroj.rodzina'));
-  document.body.style.fontFamily = KROJ;
+  const tekst = P.kroj('tekst'), imiona = P.kroj('imiona'), css = krojNaCss(tekst);
+  KROJ = tekst.rodzina;
+  KROJ_IMION = imiona.rodzina;
+  GRUBOSC_IMION = imiona.grubosc === undefined ? 650 : Math.round(imiona.grubosc);
+  // strona bierze rodzinę, grubość i osie; płótno na razie rodzinę i grubość imion (osie na płótnie przyjdą z bajtami kroju)
+  document.body.style.fontFamily = css.rodzina;
+  document.body.style.fontWeight = css.grubosc;
+  document.body.style.fontVariationSettings = css.osie;
   wczytajKolory();
 }
 // Odcisk tego, co w spisie jest ustawieniem: ile takich rzeczy i która zmieniła się ostatnio. Inny odcisk znaczy
@@ -194,7 +203,7 @@ function klatka(teraz) {
   // Rzeczy doganiają swój cel łagodnie, gdy układ zmienił się skokiem (puszczenie, zamiana, cudza zmiana na żywo).
   // Gdy cel sam płynie (suwak, przełącznik) albo rzecz jest pod palcem, idą za nim od razu.
   const wprost = suwakWRuchu || animT !== null;
-  const tau = P.czas('start.ruch.doganianie_ms');
+  const tau = P.czas('odczucie.ruch.doganianie');
   const wsp = tau > 0 ? 1 - Math.exp(-dt / tau) : 1;
   for (const p of swiat.projekty) {
     const c = cel(p.id), s = pokazane.get(p.id);
@@ -250,9 +259,9 @@ function rysuj() {
 function rysujProjekt(p, e, teraz) {
   const z = zywosc(p.zycie, teraz);
   const ciagniety = ciagnie && ciagnie.ruszyl && ciagnie.id === p.id;
-  const r = Math.min(Math.max(0, Number(P.w('start.karta.rog_px')) || 0), e.w * 0.06, e.h * 0.1);
+  const r = Math.min(Math.max(0, Number(P.w('wyglad.karta.rog')) || 0), e.w * 0.06, e.h * 0.1);
   ctx.save();
-  if (ciagniety) { ctx.shadowColor = `rgba(0, 0, 0, ${Number(P.w('start.cien.krycie')) || 0})`; ctx.shadowBlur = Math.max(0, Number(P.w('start.cien.rozmycie_px')) || 0); ctx.shadowOffsetY = Number(P.w('start.cien.przesuniecie_px')) || 0; ctx.globalAlpha = 0.94; }
+  if (ciagniety) { const c = P.w('odczucie.reka.cien_niesionej') || {}; ctx.shadowColor = typeof c.kolor === 'string' ? c.kolor : 'transparent'; ctx.shadowBlur = Math.max(0, Number(c.rozmycie) || 0); ctx.shadowOffsetX = Number(c.x) || 0; ctx.shadowOffsetY = Number(c.y) || 0; ctx.globalAlpha = 0.94; }
   // Kolor znaczy: im żywszy projekt, tym bardziej zielony; spokojny zostaje w kolorze płyty.
   zaokraglony(e.x, e.y, e.w, e.h, r);
   ctx.fillStyle = z === null ? K.plyta : mieszaj(K.plyta, K.zywe, 0.06 + z * 0.3);
@@ -286,19 +295,19 @@ function rysujTresc(p, e, teraz) {
   let nazwa = null;
   const ileLinii = (roz) => Math.max(1, Math.min(3, Math.floor((e.h - 2 * pad) / (roz * 1.18))));
   for (; rozmiar >= 9; rozmiar -= 1.5) {
-    const proba = zawin(p.tytul, `650 ${rozmiar}px ${KROJ}`, szer, ileLinii(rozmiar));
+    const proba = zawin(p.tytul, `${GRUBOSC_IMION} ${rozmiar}px ${KROJ_IMION}`, szer, ileLinii(rozmiar));
     if (!proba.zaSzeroka && !proba.ucieto) { nazwa = proba; break; }
   }
   // Z daleka (działka węższa niż 64 px) zostaje sam kolor życia: trzy litery z wielokropkiem niczego nie mówią.
   // Imię wraca przy pierwszym przybliżeniu albo po dotknięciu (karta rzeczy).
-  if (!nazwa && e.w > 64 && e.h > 20) { rozmiar = 9.5; nazwa = zawin(p.tytul, `650 ${rozmiar}px ${KROJ}`, szer, ileLinii(rozmiar)); }
+  if (!nazwa && e.w > 64 && e.h > 20) { rozmiar = 9.5; nazwa = zawin(p.tytul, `${GRUBOSC_IMION} ${rozmiar}px ${KROJ_IMION}`, szer, ileLinii(rozmiar)); }
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   if (nazwa) {
     // Gdy projekt jest większy niż okno, jego imię trzyma się widocznego rogu, żeby było wiadomo, w czym się jest.
     const wys = nazwa.linie.length * rozmiar * 1.18;
     const nx = Math.max(e.x + pad + 4, Math.min(8, e.x + e.w - 120)), ny = Math.max(y, Math.min(gora + 8, e.y + e.h - pad - wys));
     const przyklejone = nx > e.x + pad + 4.5 || ny > y + 0.5;
-    ctx.font = `650 ${rozmiar}px ${KROJ}`;
+    ctx.font = `${GRUBOSC_IMION} ${rozmiar}px ${KROJ_IMION}`;
     if (przyklejone) {
       const sz = Math.max(...nazwa.linie.map((l) => ctx.measureText(l).width));
       ctx.fillStyle = mieszaj(K.plyta, K.tlo, 0.5); ctx.globalAlpha *= 0.9;
@@ -447,12 +456,12 @@ $('suwak').addEventListener('input', () => { animT = null; suwakWRuchu = true; t
 $('suwak').addEventListener('change', () => { suwakWRuchu = false; zapiszOko(); popros(); });
 $('przelacz').addEventListener('click', () => {
   const na = t >= 0.5 ? 0 : 1;
-  animT = { z: t, na, od: performance.now(), ms: P.czas('start.ruch.przelacznik_ms') };
+  animT = { z: t, na, od: performance.now(), ms: P.czas('odczucie.ruch.przelacznik') };
   // przy nadmuchaniu kamera płynie tak, żeby mozaika wypełniła okno; przy powrocie zostaje, gdzie była
-  if (na === 1 && pole) animKam = { z: kam, na: kameraNa(pole, okno, 8, gora), od: performance.now(), ms: P.czas('start.ruch.przelacznik_ms') };
+  if (na === 1 && pole) animKam = { z: kam, na: kameraNa(pole, okno, 8, gora), od: performance.now(), ms: P.czas('odczucie.ruch.przelacznik') };
   popros();
 });
-$('caly').addEventListener('click', () => { if (!swiat) return; animKam = { z: kam, na: kameraNa(t >= 0.5 ? pole : staly.granice, okno, t >= 0.5 ? 8 : 28, gora), od: performance.now(), ms: P.czas('start.ruch.calosc_ms') }; popros(); });
+$('caly').addEventListener('click', () => { if (!swiat) return; animKam = { z: kam, na: kameraNa(t >= 0.5 ? pole : staly.granice, okno, t >= 0.5 ? 8 : 28, gora), od: performance.now(), ms: P.czas('odczucie.ruch.kamera_do_calosci') }; popros(); });
 $('pomoc-guzik').addEventListener('click', () => { const p = $('pomoc'); p.hidden = !p.hidden; $('pomoc-guzik').setAttribute('aria-expanded', p.hidden ? 'false' : 'true'); });
 
 // --- karta wybranej rzeczy: czym jest, skąd się tu wzięła, co da się z nią zrobić --------------------------------------
@@ -511,7 +520,7 @@ function naRzecz(id) {
   const s = pokazane.get(id) || cel(id);
   const e = naEkran(kam, okno, s);
   if (e.x >= 0 && e.y >= gora && e.x + e.w <= okno.w && e.y + e.h <= okno.h) return;
-  animKam = { z: kam, na: { ...kam, x: s.x + s.w / 2, y: s.y + s.h / 2 }, od: performance.now(), ms: P.czas('start.ruch.do_karty_ms') };
+  animKam = { z: kam, na: { ...kam, x: s.x + s.w / 2, y: s.y + s.h / 2 }, od: performance.now(), ms: P.czas('odczucie.ruch.kamera_do_karty') };
   popros();
 }
 
@@ -700,7 +709,7 @@ plotno.addEventListener('pointermove', (e) => {
     return;
   }
   const dx = p.x - gest.x, dy = p.y - gest.y;
-  if (gest.typ === 'czeka' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > (Number(P.w('reka.prog_przeciagania_px')) || 0)) {
+  if (gest.typ === 'czeka' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > (Number(P.w('odczucie.reka.prog_przeciagania')) || 0)) {
     // Rusza się rzecz, jeśli palec ją trzyma i wolno układać; inaczej rusza się widok.
     if (gest.id && !gest.srodkowy && drzwi.klucz) {
       const s = pokazane.get(gest.id), w = naSwiat(kam, okno, gest.x0, gest.y0);
@@ -779,5 +788,8 @@ function wymiar() {
 addEventListener('resize', wymiar);
 wymiar();
 zastosujWyglad();
+// Widoczne wyjście do wyglądu domyślnego i z powrotem: guzik ma stałe barwy (start.css), nie barwy motywu, żeby dało
+// się go znaleźć także wtedy, gdy wygląd z Miejsca jest nieczytelny.
+if (P.bezpiecznie) { const w = $('wyjscie'); w.href = location.pathname; w.textContent = '◑'; w.title = 'Wróć do wyglądu z Miejsca'; w.setAttribute('aria-label', 'Wróć do wyglądu z Miejsca'); }
 if (P.bezpiecznie) komunikat('Tryb bezpieczny: wygląd i odczucie mają wartości domyślne, bez ustawień z Miejsca. Zwykły adres: bez ?bezpiecznie.');
 drzwi.start().catch((blad) => { $('stan').textContent = 'brak połączenia'; komunikat('Nie udało się przeczytać Miejsca: ' + blad.message, true); });

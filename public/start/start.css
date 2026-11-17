@@ -91,3 +91,6 @@ button[hidden], .guzik[hidden] { display: none; }
   .okno { top: 0; left: 0; right: 0; bottom: 0; border-radius: 0; }
   .panel { left: .6rem; }
 }
+
+/* Wyjście do wyglądu domyślnego: stałe barwy, celowo nie z motywu. Ma być widać także przy nieczytelnym motywie. */
+.wyjscie { display: inline-flex; align-items: center; justify-content: center; min-width: 1.9rem; height: 1.9rem; border-radius: 999px; background: #24211c; color: #f4f1ea; border: 2px solid #f4f1ea; outline: 1px solid #24211c; text-decoration: none; font: 600 15px system-ui, sans-serif; }

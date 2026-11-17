@@ -1453,11 +1453,21 @@ export class Srodowisko {
     const propId = await idZ('propozycja', kto, op);
     const obszarProp = stara ? stara.obszar : obszar;
     const cp = { od: kto, ...(przez ? { przez } : {}), co, rodzaj, tresc: { obszar: obszar ?? null, cechy, ...(odlozone ? { odlozone: true, ...(powod ? { powod } : {}) } : {}) },
-      ...(stara ? { rzecz: stara.id, wersja } : { nowa: id }), stan: 'czeka', ...(ocena.wymaga === 'wlasciciel' ? { wymaga: 'wlasciciel' } : {}) };
+      ...(stara ? { rzecz: stara.id, wersja } : { nowa: id }), stan: 'czeka', ...(ocena.wymaga === 'wlasciciel' ? { wymaga: 'wlasciciel' } : {}), ...this._przypiete(rodzaj, cechy) };
     const p = await this.r.przygotujPolozenie({ op, rodzaj: 'propozycja/1', tresc: trescRzeczy({ obszar: obszarProp, cechy: cp }), glowa: 'rzecz:' + propId, wersja: null });
     if (!p.ok) return p;
     return this._zatwierdz(kto, [{ p, id: propId, rodzaj: 'propozycja/1', obszar: obszarProp, cechy: cp, odlozone: false, ksztalt: this.ksztaltDla('propozycja/1') }], slad,
       { skutek: 'propozycja', propozycja: propId, adres: '/rzecz/' + propId, powod: ocena.powod, kto_przyjmuje: ocena.wymaga === 'wlasciciel' ? 'wlasciciel' : 'wlasciciel albo uczestnik, który sam mógłby zrobić ten ruch ze skutkiem', ...uwagi });
+  }
+
+  // Propozycja, która włącza zestawy, pamięta ich wersje z chwili złożenia: kto ją przyjmuje, przyjmuje to, co oglądał
+  // (linia wyglądu, 18 XI 2026: on przyjmuje motyw, który zobaczył; niezależny atak, 17 XI: autor mógł zmienić zestaw
+  // między propozycją a przyjęciem).
+  _przypiete(rodzaj, cechy) {
+    if (rodzaj !== 'wartosc/1' || cechy.pokretlo !== POKRETLO_ZESTAWOW || !Array.isArray(cechy.wartosc)) return {};
+    const p = {};
+    for (const id of cechy.wartosc) { const z = typeof id === 'string' ? this.rzecz(id) : null; if (z && z.rodzaj === 'zestaw/1') p[id] = z.wersja; }
+    return Object.keys(p).length ? { przypiete: p } : {};
   }
 
   _zatwierdz(kto, lista, slad, wynik) {
@@ -1558,6 +1568,16 @@ export class Srodowisko {
     if (sam.tryb !== 'skutek') return blad(403, 'propozycję przyjmuje właściciel albo uczestnik, który sam mógłby zrobić ten ruch ze skutkiem' + (sam.powod ? ` (${sam.powod})` : ''));
     if (pr.cechy.rzecz && !stara) return blad(409, 'rzecz, której dotyczy propozycja, już nie istnieje pod tym identyfikatorem');
     if (stara && stara.wersja !== pr.cechy.wersja) return blad(409, 'rzecz zmieniła się od czasu propozycji; odrzuć ją albo poproś o nową', { wersja: stara.wersja });
+    // Zestawy przypięte przy propozycji: gdy któryś zmienił się albo zniknął, przyjęcie odmawia i mówi który. Przyjmujący
+    // może obejrzeć dzisiejszą wersję i przyjąć świadomie (mimo_zmian: true).
+    if (pr.cechy.przypiete && typeof pr.cechy.przypiete === 'object' && c.mimo_zmian !== true) {
+      const zmienione = [];
+      for (const [zid, wersja] of Object.entries(pr.cechy.przypiete)) {
+        const z = widzi(zid);
+        if (!z || z.odlozone || z.wersja !== wersja) zmienione.push({ rzecz: zid, nazwa: z ? this.tytul(z) : null, byla: wersja, jest: z && !z.odlozone ? z.wersja : null });
+      }
+      if (zmienione.length) return blad(409, `od chwili, gdy złożono tę propozycję, zmieniło się to, co ma włączyć: ${zmienione.map((x) => (x.nazwa ? `zestaw "${x.nazwa}"` : `zestaw ${x.rzecz}`) + (x.jest === null ? ' (już go nie ma)' : '')).join(', ')}; obejrzyj dzisiejszą wersję i przyjmij z "mimo_zmian": true albo odrzuć`, { zmienione });
+    }
     const id = stara ? stara.id : (typeof pr.cechy.nowa === 'string' && ID.test(pr.cechy.nowa) ? pr.cechy.nowa : await idZ('przyjeta', pr.id));
     if (!stara && this.rzecz(id)) return blad(409, 'rzecz, którą ta propozycja miała założyć, powstała w międzyczasie inną drogą; odrzuć propozycję albo poproś o nową', { rzecz: id });
     const odlozone = t.odlozone === true;

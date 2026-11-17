@@ -54,7 +54,7 @@
     try {
       const o = await fetch('/api/srodowisko/ruch', { method: 'POST', headers: naglowki({ 'content-type': 'application/json', 'x-cialo': 'strona gospodarza' }), body: JSON.stringify({ op: nowyOp(), ...cialo }) });
       const d = await o.json().catch(() => null);
-      if (!o.ok || !d || d.ok === false) { komunikat((d && d.blad) || 'Drzwi odpowiedziały: ' + o.status, true); return null; }
+      if (!o.ok || !d || d.ok === false) { if (opcje.naOdmowe) opcje.naOdmowe(d); komunikat((d && d.blad) || 'Drzwi odpowiedziały: ' + o.status, true); return null; }
       if (opcje.sukces) opcje.sukces();
       let zdanie = d.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (d.powod || 'czeka na rozstrzygnięcie') + ').' : (dobrze || 'Zrobione.');
       // Najpierw ekran, potem zdanie o skutku: inaczej przez chwilę strona mówi dwie różne rzeczy.
@@ -163,7 +163,12 @@
           dane = { ksztalty: (await czytaj('/api/srodowisko/ksztalty')).ksztalty };
         } else if (m.what === 'ja') {
           dane = { uczestnik: opis ? opis.czytasz_jako : null, gosc: o.gosc ? { rzecz: o.gosc.id, nazwa: o.gosc.nazwa, umowa: o.gosc.umowa || null, imie: 'gosc-' + o.gosc.id } : null, pisze: !!(klucz && o.gosc && o.gosc.umowa === 'okno/3') };
-        } else throw new Error('nie znam takiego czytania: ' + String(m.what) + '; znane: spis, rzecz, ksztalty, ja');
+        } else if (m.what === 'ustawienia') {
+          // Narzędzie czyta pokrętła po nazwie, także własne: liczy gospodarz, tymi samymi drzwiami co twarz.
+          const nazwy = Array.isArray(m.nazwy) ? m.nazwy.filter((n) => typeof n === 'string' && /^[a-z0-9_.]{3,250}$/.test(n)).slice(0, 200) : [];
+          const d = await czytaj('/api/srodowisko/ustawienia?nazwy=' + nazwy.join(',') + (typeof m.dla === 'string' && /^[0-9a-z]{26}$/.test(m.dla) ? '&dla=' + m.dla : ''));
+          dane = { wartosci: d.wartosci, akt: d.akt, format: d.format };
+        } else throw new Error('nie znam takiego czytania: ' + String(m.what) + '; znane: spis, rzecz, ksztalty, ja, ustawienia');
         odp({ type: 'result', id: m.id, ok: true, data: dane });
       } catch (blad) { odp({ type: 'result', id: m.id, ok: false, error: String(blad && blad.message || blad).slice(0, 300) }); }
     }
@@ -349,7 +354,9 @@
   function ruchyPropozycji(id, co, kluczPola) {
     const odm = pole(kluczPola, 'Odrzuć z powodem', 'Dlaczego nie (zostanie przy propozycji)', (w, o) => ruch({ co: 'odrzuc', propozycja: id, powod: w }, 'Propozycja odrzucona.', o));
     const ruchy = el('div', { klasa: 'ruchy' },
-      el('button', { klasa: 'glowny', tekst: 'Przyjmij', 'aria-label': 'Przyjmij: ' + co, klik: (e) => ruch({ co: 'przyjmij', propozycja: id }, 'Propozycja przyjęta.', { zrodlo: e.currentTarget }) }),
+      // Propozycja, która włącza zestawy, pamięta ich wersje: gdy któryś zmienił się od jej złożenia, drzwi odmawiają
+      // i mówią który. Drugie kliknięcie przyjmuje świadomie to, co jest dziś.
+      el('button', { klasa: 'glowny', tekst: 'Przyjmij', 'aria-label': 'Przyjmij: ' + co, klik: (e) => { const g = e.currentTarget; return ruch({ co: 'przyjmij', propozycja: id, ...(g.dataset.mimo ? { mimo_zmian: true } : {}) }, 'Propozycja przyjęta.', { zrodlo: g, naOdmowe: (odp) => { if (odp && Array.isArray(odp.zmienione)) { g.dataset.mimo = '1'; g.textContent = 'Przyjmij w dzisiejszej wersji'; } } }); } }),
       el('button', { tekst: 'Odrzuć', 'aria-label': 'Odrzuć: ' + co, klik: (e) => ruch({ co: 'odrzuc', propozycja: id }, 'Propozycja odrzucona.', { zrodlo: e.currentTarget }) }),
       el('button', { tekst: 'z powodem', 'aria-label': 'Odrzuć z powodem: ' + co, klik: odm.pokaz }));
     return { ruchy, pudlo: odm.pudlo };
@@ -684,27 +691,39 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && kr.id && !e.defaultPrevented) zamknijKarte(); });
 
   // --- pokrętła: wygląd i odczucie są danymi w Miejscu (public/pokretla.mjs, drzwi /api/srodowisko/ustawienia) -------
-  // Ta strona bierze z nich palety i krój, mówi je narzędziom w oknach (wiadomość look: przy otwarciu i po każdej
-  // zmianie, w biegu) i daje ręce prosty panel: każde zadeklarowane pokrętło z polem według typu. Adres z ?bezpiecznie
+  // Ta strona bierze z nich palety i kroje, mówi je narzędziom w oknach (wiadomość look: przy otwarciu i po każdej
+  // zmianie, w biegu) i daje ręce panel: każde zadeklarowane pokrętło z polem według typu. W trakcie kręcenia zmiana
+  // jest podglądem (bez zapisu; widzą ją też inne karty tego adresu), zapis idzie przy puszczeniu. Adres z ?bezpiecznie
   // zostawia wygląd domyślny.
-  let P = null, modulPokretel = null, ust = null, odciskUstawien = null, pytamOUstawienia = false;
+  let P = null, modulPokretel = null, podglad = null, ust = null, odciskUstawien = null, pytamOUstawienia = false;
+  let pelneKiedy = 0, pelneZegar = null, pelneOdRazu = false;
+  const PANEL_NAJCZESCIEJ_MS = 15000;
   const bezpiecznie = new URLSearchParams(location.search).has('bezpiecznie');
   const systemCiemny = () => matchMedia('(prefers-color-scheme: dark)').matches;
+  const krojRoli = (rola) => { const k = P.kroj(rola); return { rodzina: k.rodzina, ...(k.grubosc !== undefined ? { grubosc: k.grubosc } : {}), ...(k.osie ? { osie: k.osie } : {}) }; };
+  // Wygląd dla okna narzędzia: wszystkie role palety, które zna ta strona (z tablicy i z deklaracji w Miejscu), kroje
+  // obu ról jako wartości typu kroj i natężenie ruchu.
   function wygladDlaOkna() {
     const kolory = {};
-    for (const n of modulPokretel.KOLORY) kolory[n] = String(P.kolor(n, systemCiemny()));
-    return { jaskinia: 1, type: 'look', v: 1, ciemny: P.ciemna(systemCiemny()), kolory, kroj: String(P.w('wyglad.kroj.rodzina')), ruch: Number(P.w('wyglad.ruch.natezenie')) };
+    for (const rola of P.role()) { const k = P.kolor(rola, systemCiemny()); if (typeof k === 'string') kolory[rola] = k; }
+    return { jaskinia: 1, type: 'look', v: 2, ciemny: P.ciemna(systemCiemny()), kolory, kroj: { tekst: krojRoli('tekst'), imiona: krojRoli('imiona') }, ruch: Number(P.w('odczucie.ruch.natezenie')) };
   }
   function powiedzWyglad(o) { if (P && o && o.ramka.contentWindow) o.ramka.contentWindow.postMessage(wygladDlaOkna(), '*'); }
   function zastosujWyglad() {
     if (!P) return;
     const st = document.documentElement.style;
-    for (const n of modulPokretel.KOLORY) st.setProperty('--' + n, String(P.kolor(n, systemCiemny())));
+    for (const rola of P.role()) { const k = P.kolor(rola, systemCiemny()); if (typeof k === 'string') st.setProperty('--' + rola, k); }
     st.setProperty('color-scheme', P.ciemna(systemCiemny()) ? 'dark' : 'light');
-    document.body.style.fontFamily = String(P.w('wyglad.kroj.rodzina'));
+    const css = modulPokretel.krojNaCss(P.kroj('tekst'));
+    document.body.style.fontFamily = css.rodzina;
+    document.body.style.fontWeight = css.grubosc;
+    document.body.style.fontVariationSettings = css.osie;
     for (const o of okna.values()) powiedzWyglad(o);
   }
   const odciskUst = () => { let ile = 0, ostatnia = 0; for (const r of rzeczy) if (modulPokretel.RODZAJE_USTAWIEN.includes(r.rodzaj)) { ile++; if (r.wersja > ostatnia) ostatnia = r.wersja; } return ile + ':' + ostatnia + ':' + (klucz ? 1 : 0); };
+  // Wygląd od razu i tanio: po zmianie strona pyta tylko o pokrętła, które zna (tablica i role nauczone z deklaracji).
+  // Pełna lista wszystkich deklaracji, z której rysuje się panel, przychodzi przy wejściu, po własnym zapisie z panelu
+  // i poza tym najwyżej raz na kilkanaście sekund: jej koszt rośnie z tym, co ktokolwiek zadeklarował w Miejscu.
   async function odswiezUstawienia() {
     if (!P || !opis || pytamOUstawienia) return;
     pytamOUstawienia = true;
@@ -712,36 +731,88 @@
       for (let obieg = 0; obieg < 3; obieg++) {
         const odcisk = odciskUst();
         if (odcisk === odciskUstawien) break;
-        ust = await czytaj('/api/srodowisko/ustawienia?deklaracje=tak');
+        if (!pelneKiedy) { odciskUstawien = odcisk; pelneOdRazu = true; zaplanujPelne(); break; }
+        const u = await czytaj('/api/srodowisko/ustawienia?nazwy=' + P.nazwy());
         odciskUstawien = odcisk;
-        if (!bezpiecznie) P.przyjmij(ust);
-        rysujUstawienia();
+        if (!bezpiecznie) P.przyjmij(u);
+        zaplanujPelne();
       }
     } catch { /* bez ustawień z Miejsca strona zostaje przy wyglądzie, który ma */ } finally { pytamOUstawienia = false; }
   }
-  // Panel dla ręki: jedno miejsce, które stroi wszystko, co ktokolwiek zadeklarował. Zapis idzie przy puszczeniu
-  // suwaka albo zatwierdzeniu pola (jedna zmiana to jeden zapis), a "wróć" odkłada wartość, czyli oddaje odziedziczoną.
-  const PROSTE = ['kolor', 'liczba', 'czas', 'wybor', 'tak-nie', 'tekst'];
+  function zaplanujPelne() {
+    if (pelneZegar) { if (!pelneOdRazu) return; clearTimeout(pelneZegar); pelneZegar = null; }
+    const zaIle = pelneOdRazu ? 0 : Math.max(0, pelneKiedy + PANEL_NAJCZESCIEJ_MS - Date.now());
+    pelneOdRazu = false;
+    pelneZegar = setTimeout(async () => {
+      pelneZegar = null;
+      pelneKiedy = Date.now();
+      try {
+        ust = await czytaj('/api/srodowisko/ustawienia?deklaracje=tak');
+        // Role palety zadeklarowane w Miejscu: strona uczy się ich, odtąd pyta o nie po nazwie i mówi je oknom narzędzi.
+        let nowe = false;
+        for (const d of ust.deklaracje || []) if (d.typ === 'kolor' && typeof d.nazwa === 'string' && (d.nazwa.startsWith(modulPokretel.PALETA.jasna) || d.nazwa.startsWith(modulPokretel.PALETA.ciemna)) && P.znaj(d)) nowe = true;
+        const zmiana = bezpiecznie ? false : P.przyjmij(ust);
+        if (nowe && !zmiana) zastosujWyglad();
+        rysujUstawienia();
+      } catch { /* panel zostaje przy tym, co ma */ }
+    }, zaIle);
+  }
+  // Panel dla ręki: jedno miejsce, które stroi wszystko, co ktokolwiek zadeklarował. Kręcenie jest podglądem, zapis
+  // idzie przy puszczeniu suwaka albo zatwierdzeniu pola (jedna zmiana to jeden zapis), a "wróć" odkłada wartość,
+  // czyli oddaje odziedziczoną.
+  const PROSTE = ['kolor', 'liczba', 'czas', 'wybor', 'tak-nie', 'tekst', 'cien', 'kroj', 'sprezyna'];
   function poleUstawienia(d, x) {
-    const ustaw = (w) => ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, wartosc: w } }, 'Ustawione: ' + d.nazwa + '.');
-    const cechy = { 'aria-label': d.nazwa, disabled: klucz ? null : true };
+    const nieczynne = klucz ? null : true;
+    const podejrzyj = (w) => { if (bezpiecznie) return; P.podejrzyj(d.nazwa, w); if (podglad) podglad.nadaj(d.nazwa, w); };
+    const ustaw = async (w) => {
+      pelneOdRazu = true;
+      const o = await ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, wartosc: w } }, 'Ustawione: ' + d.nazwa + '.');
+      // Zapis ze skutkiem: podgląd gaśnie sam, gdy ta sama wartość przyjdzie z Miejsca. Propozycja albo odmowa: gaśnie od razu.
+      if (!o || o.skutek === 'propozycja') { P.koniecPodgladu(d.nazwa); if (podglad) podglad.koniec(d.nazwa); }
+    };
+    const cechy = { 'aria-label': d.nazwa, disabled: nieczynne };
+    const w0 = x.wartosc;
+    const obiekt = w0 && typeof w0 === 'object' && !Array.isArray(w0) ? w0 : {};
+    const pod = (nazwa, tekst) => el('span', { klasa: 'bok', tekst });
     let pole;
-    if (d.typ === 'kolor') { pole = el('input', { type: 'color', value: String(x.wartosc).slice(0, 7), ...cechy }); pole.addEventListener('change', () => ustaw(pole.value)); }
+    if (d.typ === 'kolor') { pole = el('input', { type: 'color', value: String(w0).slice(0, 7), ...cechy }); pole.addEventListener('input', () => podejrzyj(pole.value)); pole.addEventListener('change', () => ustaw(pole.value)); }
     else if (d.typ === 'liczba' || d.typ === 'czas') {
       const z = d.zakres || {};
       // pole liczbowe ma własną nazwę: niżej `pole` staje się parą suwak i liczba, a słuchacze mają czytać liczbę
-      const liczbowe = el('input', { type: 'number', value: String(x.wartosc), step: z.krok ? String(z.krok) : 'any', ...cechy });
+      const liczbowe = el('input', { type: 'number', value: String(w0), step: z.krok ? String(z.krok) : 'any', ...cechy });
       liczbowe.addEventListener('change', () => { const w = Number(liczbowe.value); if (liczbowe.value !== '' && Number.isFinite(w)) ustaw(w); });
       pole = liczbowe;
       if (Number.isFinite(z.od) && Number.isFinite(z.do)) {
-        const suwak = el('input', { type: 'range', min: String(z.od), max: String(z.do), step: z.krok ? String(z.krok) : 'any', value: String(x.wartosc), 'aria-label': d.nazwa + ' (suwak)', disabled: klucz ? null : true });
-        suwak.addEventListener('input', () => { liczbowe.value = suwak.value; });
+        const suwak = el('input', { type: 'range', min: String(z.od), max: String(z.do), step: z.krok ? String(z.krok) : 'any', value: String(w0), 'aria-label': d.nazwa + ' (suwak)', disabled: nieczynne });
+        suwak.addEventListener('input', () => { liczbowe.value = suwak.value; podejrzyj(Number(suwak.value)); });
         suwak.addEventListener('change', () => ustaw(Number(suwak.value)));
-        pole = el('span', { klasa: 'ust-para' }, suwak, liczbowe, d.jednostka ? el('span', { klasa: 'bok', tekst: d.jednostka }) : (d.typ === 'czas' ? el('span', { klasa: 'bok', tekst: 'ms' }) : null));
+        pole = el('span', { klasa: 'ust-para' }, suwak, liczbowe, d.jednostka ? pod(d.nazwa, d.jednostka) : (d.typ === 'czas' ? pod(d.nazwa, 'ms') : null));
       }
-    } else if (d.typ === 'wybor') { pole = el('select', cechy, (d.wartosci || []).map((w) => el('option', { value: w, selected: w === x.wartosc ? true : null, tekst: w }))); pole.addEventListener('change', () => ustaw(pole.value)); }
-    else if (d.typ === 'tak-nie') { pole = el('input', { type: 'checkbox', checked: x.wartosc === true ? true : null, ...cechy }); pole.addEventListener('change', () => ustaw(pole.checked)); }
-    else { pole = el('input', { type: 'text', value: String(x.wartosc), ...cechy }); pole.addEventListener('change', () => ustaw(pole.value)); }
+    } else if (d.typ === 'wybor') { pole = el('select', cechy, (d.wartosci || []).map((w) => el('option', { value: w, selected: w === w0 ? true : null, tekst: w }))); pole.addEventListener('change', () => ustaw(pole.value)); }
+    else if (d.typ === 'tak-nie') { pole = el('input', { type: 'checkbox', checked: w0 === true ? true : null, ...cechy }); pole.addEventListener('change', () => ustaw(pole.checked)); }
+    else if (d.typ === 'cien') {
+      // cień to jedna wartość: barwa z kryciem (kanał alfa) i trzy liczby; każda zmiana składa całość
+      const kolor = typeof obiekt.kolor === 'string' ? obiekt.kolor : '#00000000';
+      const barwa = el('input', { type: 'color', value: kolor.slice(0, 7), 'aria-label': d.nazwa + ' (barwa)', disabled: nieczynne });
+      const krycie = el('input', { type: 'range', min: '0', max: '1', step: '0.01', value: String(kolor.length === 9 ? parseInt(kolor.slice(7), 16) / 255 : 1), 'aria-label': d.nazwa + ' (krycie)', disabled: nieczynne });
+      const liczby = ['x', 'y', 'rozmycie'].map((n) => el('input', { type: 'number', step: '1', value: String(Number(obiekt[n]) || 0), 'aria-label': d.nazwa + ' (' + n + ')', disabled: nieczynne }));
+      const zloz = () => ({ x: Number(liczby[0].value) || 0, y: Number(liczby[1].value) || 0, rozmycie: Math.max(0, Number(liczby[2].value) || 0), kolor: barwa.value + Math.round(Math.max(0, Math.min(1, Number(krycie.value) || 0)) * 255).toString(16).padStart(2, '0') });
+      for (const p of [barwa, krycie, ...liczby]) { p.addEventListener('input', () => podejrzyj(zloz())); p.addEventListener('change', () => ustaw(zloz())); }
+      pole = el('span', { klasa: 'ust-para' }, barwa, pod(d.nazwa, 'krycie'), krycie, pod(d.nazwa, 'x'), liczby[0], pod(d.nazwa, 'y'), liczby[1], pod(d.nazwa, 'rozmycie'), liczby[2]);
+    } else if (d.typ === 'kroj') {
+      // krój: rodzina jak w CSS i grubość; osie kroju zmiennego zostają, jakie były (zmiana osi ruchem, opis pod /ustawienia)
+      const rodzina = el('input', { type: 'text', value: typeof obiekt.rodzina === 'string' ? obiekt.rodzina : '', 'aria-label': d.nazwa + ' (rodzina)', disabled: nieczynne });
+      const grubosc = el('input', { type: 'number', min: '1', max: '1000', step: '10', value: obiekt.grubosc === undefined ? '' : String(obiekt.grubosc), placeholder: 'grubość', 'aria-label': d.nazwa + ' (grubość)', disabled: nieczynne });
+      const zloz = () => ({ rodzina: rodzina.value, ...(grubosc.value !== '' && Number.isFinite(Number(grubosc.value)) ? { grubosc: Number(grubosc.value) } : {}), ...(obiekt.osie ? { osie: obiekt.osie } : {}) });
+      for (const p of [rodzina, grubosc]) p.addEventListener('change', () => { if (rodzina.value.trim()) ustaw(zloz()); });
+      pole = el('span', { klasa: 'ust-para' }, rodzina, grubosc);
+    } else if (d.typ === 'sprezyna') {
+      const czas = el('input', { type: 'range', min: '0', max: '2000', step: '10', value: String(Number(obiekt.czas) || 0), 'aria-label': d.nazwa + ' (czas)', disabled: nieczynne });
+      const odbicie = el('input', { type: 'range', min: '0', max: '1', step: '0.01', value: String(Number(obiekt.odbicie) || 0), 'aria-label': d.nazwa + ' (odbicie)', disabled: nieczynne });
+      const zloz = () => ({ czas: Number(czas.value) || 0, odbicie: Math.max(0, Math.min(1, Number(odbicie.value) || 0)) });
+      for (const p of [czas, odbicie]) { p.addEventListener('input', () => podejrzyj(zloz())); p.addEventListener('change', () => ustaw(zloz())); }
+      pole = el('span', { klasa: 'ust-para' }, pod(d.nazwa, 'jak szybko'), czas, pod(d.nazwa, 'jak odbija'), odbicie);
+    } else { pole = el('input', { type: 'text', value: String(w0), ...cechy }); pole.addEventListener('change', () => ustaw(pole.value)); }
     return pole;
   }
   function rysujUstawienia() {
@@ -752,23 +823,29 @@
     for (const d of ust.deklaracje) { const g = d.grupa || 'Inne'; if (!grupy.has(g)) grupy.set(g, []); grupy.get(g).push(d); }
     const wiersz = (d) => {
       const x = ust.wartosci[d.nazwa] || { wartosc: d.domyslna, skad: 'domyslna' };
-      const skad = x.skad === 'wartosc' ? 'ustawione' : x.skad === 'zestaw' ? 'z zestawu ' + x.zestaw : 'domyślne';
+      const skad = (x.skad === 'wartosc' ? 'ustawione' : x.skad === 'zestaw' ? 'z zestawu ' + x.zestaw : x.skad === 'brak' ? 'brak wartości' : 'domyślne') + (x.z ? ', idzie za ' + x.z : '');
       return el('li', { klasa: 'ust-wiersz' },
         el('div', { klasa: 'ust-opis' }, el('code', { tekst: d.nazwa }), el('span', { klasa: 'bok', tekst: ' ' + skad }), el('p', { tekst: d.opis })),
         el('div', { klasa: 'ust-pole' }, PROSTE.includes(d.typ) ? poleUstawienia(d, x) : el('a', { href: '/ustawienia', tekst: 'typ ' + d.typ + ': zmiana ruchem, opis pod /ustawienia' }),
-          x.skad === 'wartosc' && klucz ? el('button', { tekst: 'wróć', title: 'Odłóż tę wartość: wraca odziedziczona albo domyślna', klik: () => ruch({ co: 'odloz', rzecz: x.rzecz, wersja: 'dowolna', powod: 'powrót do wartości odziedziczonej' }, 'Wróciła wartość odziedziczona: ' + d.nazwa + '.') }) : null));
+          x.skad === 'wartosc' && klucz ? el('button', { tekst: 'wróć', title: 'Odłóż tę wartość: wraca odziedziczona albo domyślna', klik: () => { pelneOdRazu = true; return ruch({ co: 'odloz', rzecz: x.rzecz, wersja: 'dowolna', powod: 'powrót do wartości odziedziczonej' }, 'Wróciła wartość odziedziczona: ' + d.nazwa + '.'); } }) : null));
     };
     pudlo.textContent = '';
     pudlo.append(el('h2', {}, 'Ustawienia: wygląd i odczucie ', el('span', { klasa: 'ile', tekst: String(ust.deklaracje.length) })),
-      el('p', { klasa: 'bok', tekst: (klucz ? 'Zmiana to zapis w Miejscu z Twoim imieniem; widać ją od razu tu, na Starcie i w oknach narzędzi.' : 'Żeby stroić, wejdź (guzik "Wejdź" na górze).') + (bezpiecznie ? ' Tryb bezpieczny: ta strona pokazuje wygląd domyślny.' : '') + ' Wyjście z zepsutego wyglądu: adres z ?bezpiecznie.' }),
+      el('p', { klasa: 'bok', tekst: (klucz ? 'Zmiana to zapis w Miejscu z Twoim imieniem; widać ją od razu tu, na Starcie i w oknach narzędzi. W trakcie kręcenia widzisz podgląd, zapis idzie przy puszczeniu.' : 'Żeby stroić, wejdź (guzik "Wejdź" na górze).') + (bezpiecznie ? ' Tryb bezpieczny: ta strona pokazuje wygląd domyślny.' : '') }),
+      el('p', { klasa: 'bok' }, bezpiecznie ? el('a', { href: location.pathname, tekst: 'Wróć do wyglądu z Miejsca' }) : el('a', { href: '?bezpiecznie', tekst: 'Wygląd domyślny' }), ' (wyjście z każdego nieczytelnego wyglądu; ten sam guzik stoi u góry strony).'),
+      ...(Array.isArray(ust.uwagi) ? ust.uwagi.map((u) => el('p', { klasa: 'bok', tekst: u })) : []),
       ...[...grupy].map(([g, lista]) => { const det = el('details', { open: otwarte.has(g) ? true : null }, el('summary', {}, g + ' ', el('span', { klasa: 'ile', tekst: String(lista.length) })), el('ul', { klasa: 'lista ust' }, lista.map(wiersz))); det.dataset.grupa = g; return det; }));
     pudlo.hidden = false;
   }
   import('/pokretla.mjs').then((m) => {
     modulPokretel = m;
     P = new m.Pokretla({ bezpiecznie, naZmiane: zastosujWyglad });
+    podglad = m.polaczPodglad(P);
     zastosujWyglad();
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', zastosujWyglad);
+    // Widoczne wyjście do wyglądu domyślnego i z powrotem: stałe barwy (srodowisko.css), nie barwy motywu.
+    const gora = document.querySelector('header.gora');
+    if (gora) gora.append(el('a', { klasa: 'wyjscie', href: bezpiecznie ? location.pathname : '?bezpiecznie', tekst: bezpiecznie ? '◑' : '◐', title: bezpiecznie ? 'Wróć do wyglądu z Miejsca' : 'Wygląd domyślny: wyjście z każdego nieczytelnego wyglądu', 'aria-label': bezpiecznie ? 'Wróć do wyglądu z Miejsca' : 'Wygląd domyślny' }));
     odswiezUstawienia();
   }).catch(() => { /* bez tablicy pokręteł strona zostaje przy stylu z pliku */ });
 

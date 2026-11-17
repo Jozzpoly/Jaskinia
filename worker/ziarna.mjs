@@ -21,12 +21,19 @@ const zd = (nazwa, stan, opis, jak, etap) => ({ nazwa: 'zdolnosc-' + nazwa, rodz
 // Wygląd od gospodarza (wiadomość look): narzędzie ubiera się w motyw Miejsca w biegu, bez przeładowania.
 // Ten kawałek wchodzi do obu przykładowych gości; cudze narzędzie może go skopiować z /umowa-okna.
 const GOSC_WYGLAD = `function ubierz(m) {
-  const k = m.kolory || {}, s = document.documentElement.style;
+  const k = m.kolory || {}, s = document.documentElement.style, b = document.body.style;
   s.setProperty('color-scheme', m.ciemny ? 'dark' : 'light');
-  if (k.tlo) document.body.style.background = k.tlo;
-  if (k.tekst) document.body.style.color = k.tekst;
+  // każda rola palety, także ta, której to narzędzie nie zna z nazwy, trafia do zmiennej --<rola>
+  for (const rola of Object.keys(k)) if (/^[a-z][a-z0-9_]*$/.test(rola) && typeof k[rola] === 'string') s.setProperty('--' + rola, k[rola]);
+  if (k.tlo) b.background = k.tlo;
+  if (k.tekst) b.color = k.tekst;
   if (k.akcent) s.setProperty('accent-color', k.akcent);
-  if (typeof m.kroj === 'string') document.body.style.fontFamily = m.kroj;
+  const kr = m.kroj && typeof m.kroj === 'object' ? m.kroj.tekst : null;
+  if (kr && typeof kr.rodzina === 'string') {
+    b.fontFamily = kr.rodzina;
+    b.fontWeight = kr.grubosc ? String(kr.grubosc) : '';
+    b.fontVariationSettings = kr.osie ? Object.keys(kr.osie).map((n) => '"' + n + '" ' + kr.osie[n]).join(', ') : '';
+  }
 }`;
 
 // Przykładowy gość: jedna strona HTML, która rozmawia z gospodarzem umową okna (pokolenie 2).
@@ -245,6 +252,7 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
         nowa: { typ: 'tekst', opis: 'identyfikator, który dostanie nowa rzecz po przyjęciu' },
         wersja: { typ: 'liczba', opis: 'wersja zmienianej rzeczy z chwili propozycji' },
         wymaga: { typ: 'wybor', wartosci: ['wlasciciel'], opis: 'gdy ruch dotyczy czegoś, co zmienia tylko właściciel: przyjąć może tylko on' },
+        przypiete: { typ: 'dowolne', opis: '{id zestawu: wersja} z chwili propozycji, gdy ruch włącza zestawy: przyjęcie odmawia, jeśli któryś zmienił się potem' },
         stan: { typ: 'wybor', wartosci: ['czeka', 'przyjeta', 'odrzucona', 'wycofana', 'wygasla'], wymagana: true },
         powod: { typ: 'tekst' },
         rozstrzygnal: { typ: 'tekst' },
@@ -321,22 +329,23 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
       } }),
     k('pokretlo', { dla: 'pokretlo/1', tytul: 'nazwa', klucz: ['nazwa'], opis: 'Pokrętło: deklaracja jednej rzeczy, którą da się stroić (kolor, czas ruchu, próg gestu). Mówi, jak się nazywa, jakiego jest typu, jaką ma wartość domyślną i co zmienia. Dokłada je każdy: twarz, narzędzie w oknie, agent. Wartości i wszystkie pokrętła naraz: /ustawienia.',
       cechy: {
-        nazwa: { typ: 'tekst', wymagana: true, opis: 'od dwóch do sześciu członów rozdzielonych kropką, np. wyglad.kolor.tlo; nazwa jest tożsamością pokrętła' },
+        nazwa: { typ: 'tekst', wymagana: true, opis: 'od dwóch do sześciu członów rozdzielonych kropką, np. wyglad.paleta.jasna.tlo; pierwszy człon mówi, czym to jest dla człowieka (wyglad, odczucie, nazwa narzędzia); nazwa jest tożsamością pokrętła' },
         typ: { typ: 'wybor', wymagana: true, wartosci: Object.keys(TYPY_POKRETEL), opis: 'typ wartości; co każdy znaczy: /ustawienia' },
-        domyslna: { typ: 'dowolne', wymagana: true, opis: 'wartość, dopóki nikt pokrętła nie ruszył' },
+        domyslna: { typ: 'dowolne', wymagana: true, opis: 'wartość, dopóki nikt pokrętła nie ruszył; może iść za innym pokrętłem tego samego typu: {"z": "<nazwa>"}' },
         opis: { typ: 'tekst', wymagana: true, opis: 'jedno zdanie o tym, co pokrętło zmienia; czyta je ręka i agent' },
         grupa: { typ: 'tekst', opis: 'gdzie stoi w oknie ustawień, np. Wygląd / Paleta jasna' },
         zakres: { typ: 'dowolne', opis: 'zakres suwaka {od, do, krok} dla liczby i czasu; podpowiedź, nie granica' },
         twarde: { typ: 'dowolne', opis: 'twarda klamra {od, do} dla liczby i czasu; chroni tylko przed rozpadem, wartość poza nią jest odrzucana' },
         wartosci: { typ: 'lista', z: 'tekst', opis: 'dozwolone wartości przy typie wybor' },
         jednostka: { typ: 'tekst', opis: 'np. px albo ×; czas jest zawsze w milisekundach' },
+        dotyczy: { typ: 'lista', z: 'tekst', opis: 'których elementów twarzy dotyczy (np. karta, kamera, ciagniecie): twarz może pokazać te pokrętła przy elemencie' },
         zrodlo: { typ: 'tekst', opis: 'kto zadeklarował: twarz, narzędzie albo tablica pokręteł w kodzie' },
       } }),
     k('wartosc', { dla: 'wartosc/1', tytul: 'pokretlo', klucz: ['pokretlo', 'zasieg'], uklad: true, lezy_z: 'zasieg', opis: 'Wartość pokrętła w zasięgu. Zasięgiem jest dowolna rzecz: obszar (główny znaczy całe Miejsce), widok, okno, uczestnik, profil. Jedna wartość na parę pokrętło i zasięg, więc każda zmiana jest nową wersją z autorem, a cofnięcie wraca poprzednią. Leży tam, gdzie jej zasięg (gdy zasięgiem jest obszar: w nim), więc prawo do strojenia jest prawem obszaru.',
       cechy: {
         pokretlo: { typ: 'tekst', wymagana: true, opis: 'nazwa zadeklarowanego pokrętła' },
         zasieg: { typ: 'rzecz', wymagana: true, opis: 'rzecz, dla której wartość obowiązuje; pominięta przy zapisie znaczy obszar główny, czyli całe Miejsce' },
-        wartosc: { typ: 'dowolne', wymagana: true, opis: 'wartość zgodna z typem pokrętła' },
+        wartosc: { typ: 'dowolne', wymagana: true, opis: 'wartość zgodna z typem pokrętła albo odwołanie {"z": "<nazwa pokrętła tego samego typu>"}' },
       } }),
     k('zestaw', { dla: 'zestaw/1', tytul: 'nazwa', opis: 'Zestaw: nazwany komplet wartości pokręteł, czyli motyw albo preset. Włącza się go w zasięgu wartością pokrętła srodowisko.zestawy (lista zestawów; późniejszy wygrywa). Zmiana zestawu dociera od razu wszędzie, gdzie jest włączony.',
       cechy: {
@@ -448,10 +457,10 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
     zd('cofniecie-gestu', 'cienko', 'Cofnięcie gestu: jeden gest ręki, który dotyka wielu rzeczy, cofa się jednym krokiem, a zapisany układ da się przywołać.', 'Ruch może nieść znak gestu; co: cofnij-gest wraca wszystko, co gest ruszył (to, co w nim powstało, odkłada), wszystko albo nic, i samo jest gestem, więc da się je ponowić. Cofa się tylko to, czego nikt po geście nie ruszył. Widok da się odczytać w wybranej chwili (/api/srodowisko/widok-w-chwili), a zapisany układ (chwila/1) przywrócić jedną czynnością (co: przywroc-uklad), którą też da się cofnąć. Start ma guziki cofnij i ponów oraz zapis i powrót do układu; stos gestów leży w pamięci przeglądarki, więc przeżywa przeładowanie. Czego nie ma: czynności zbiorczej w jednym żądaniu (gest z wielu ruchów nie jest atomowy przy zapisie, tylko przy cofaniu), cofania cudzej zmiany stojącej na drodze, suwaka czasu.'),
     zd('klocki-konstrukcji', 'brak', 'Klocki konstrukcji w danych: reguła układu, drabina przedstawień i Pole są rzeczami, a twarz tylko je czyta i rysuje.', 'Dziś drabina (kiedy karta pokazuje podpis, opis, gałęzie) i reguła układu ciekłego są w kodzie Startu, a położenie nie ma ramy ani pochodzenia (ręka, reguła, propozycja). Druga twarz musiałaby przepisać konstrukcję.'),
     zd('twarz-obok-twarzy', 'brak', 'Twarz obok twarzy: nowa twarz staje obok starej na tych samych rzeczach, a to, która jest codzienna, jest ustawieniem do cofnięcia.', 'Dwie strony (gospodarz i Start) czytają te same rzeczy i te same pokrętła. Nie ma wersji twarzy widocznej pod adresem ani przełącznika twarzy domyślnej jako danej.'),
-    zd('wyglad-w-oknie', 'cienko', 'Wygląd przechodzi do okien: narzędzie w oknie dostaje paletę, krój i natężenie ruchu od gospodarza, w biegu, bez przeładowania.', 'Wiadomość look w umowie okna, zaraz po hi i po każdej zmianie ustawień; obaj przykładowi goście się w nią ubierają. Dziś każde okno dostaje wygląd Miejsca, a nie wartości policzone dla siebie. Ramka nie była jeszcze sprawdzona w przeglądarce pod adresem.'),
-    zd('tania-petla', 'cienko', 'Tania pętla: zmiana dociera do otwartych stron tak tanio, żeby strojenie mogło trwać cały dzień w limicie konta.', 'Start po zmianie czyta samą różnicę i pyta o ustawienia tylko wtedy, gdy zmieniło się ustawienie; granica wejścia (20000 rzeczy) ma znak ucięcia. Strona gospodarza dalej czyta cały opis po każdej zmianie, wejście czyta całe Miejsce zamiast wycinka, a rozgłoszenia nie są zbierane.'),
+    zd('wyglad-w-oknie', 'cienko', 'Wygląd przechodzi do okien: narzędzie w oknie dostaje paletę, krój i natężenie ruchu od gospodarza, w biegu, bez przeładowania.', 'Wiadomość look w umowie okna (wersja 2), zaraz po hi i po każdej zmianie ustawień: wszystkie role palety, także te zadeklarowane w Miejscu po wydaniu kodu, kroje dwóch ról jako wartości typu kroj i natężenie ruchu; obaj przykładowi goście się w nią ubierają. Narzędzie czyta pokrętła po nazwie, także własne (read ustawienia). Dziś każde okno dostaje wygląd Miejsca, a nie wartości policzone dla siebie. Ramka nie była jeszcze sprawdzona w przeglądarce pod adresem.'),
+    zd('tania-petla', 'cienko', 'Tania pętla: zmiana dociera do otwartych stron tak tanio, żeby strojenie mogło trwać cały dzień w limicie konta.', 'Start po zmianie czyta samą różnicę i pyta o ustawienia tylko wtedy, gdy zmieniło się ustawienie; granica wejścia (20000 rzeczy) ma znak ucięcia. Twarze pytają o ustawienia po nazwach, więc koszt nie rośnie z tym, co ktoś zadeklarował obok; strona gospodarza czyta opis i pełną listę pokręteł najwyżej raz na kilkanaście sekund (od razu tylko po własnym zapisie). Podgląd w trakcie kręcenia idzie z karty do karty i nie kosztuje nic. Wejście dalej czyta całe Miejsce zamiast wycinka, a rozgłoszenia nie są zbierane.'),
     zd('stan-oka', 'brak', 'Stan oka przy słowie: uwaga zostawiona ręką niesie to, co widział ten, kto ją zostawił (numer aktu, wersja twarzy, widok, urządzenie).', 'Słowo przy rzeczy stoi, ale nie mówi, na co dokładnie patrzył autor, więc uwagi o wyglądzie i odczuciu nie da się odtworzyć.'),
-    zd('ustawienia', 'cienko', 'Ustawienia jako dane: wszystko, co da się stroić, ma deklarację (typ, zakres), wartość z zasięgiem i historią oraz nazwane zestawy, zmieniane w działającym Miejscu.', 'Pokrętło (pokretlo/1) to deklaracja z typem, wartością domyślną, zakresem suwaka i twardą klamrą; wartość (wartosc/1) obowiązuje w zasięgu, którym jest dowolna rzecz, i leży tam, gdzie zasięg, więc prawo do strojenia jest prawem obszaru; zestaw (zestaw/1) to motyw albo preset włączany w zasięgu; profil (profil/1) to nakładka dla urządzenia albo sposobu pracy. Liczenie idzie od najbliższego zasięgu w górę do Miejsca, a wartość niezgodna z deklaracją nie dochodzi do twarzy. Wszystko naraz: /ustawienia i /api/srodowisko/ustawienia. Pierwsze pokrętła (palety, krój, czasy ruchu, próg przeciągania, cień) biorą się z jednej tablicy w kodzie. Czego nie ma: okna ustawień z suwakami dla ręki (jest tylko prosty panel na stronie gospodarza), kroju jako pliku (rzecz nosi tylko nazwę kroju z urządzenia), reguły układu i drabiny przedstawień jako danych, zasięgu osoby dla właściciela. Cztery ustawienia obszaru (ile_wolno, uwaga, widzi, uklada) zostają cechami obszaru. Format (ustawienia-1) nie przeszedł jeszcze ataku linii wyglądu.'),
+    zd('ustawienia', 'cienko', 'Ustawienia jako dane: wszystko, co da się stroić, ma deklarację (typ, zakres), wartość z zasięgiem i historią oraz nazwane zestawy, zmieniane w działającym Miejscu.', 'Pokrętło (pokretlo/1) to deklaracja z typem, wartością domyślną, zakresem suwaka i twardą klamrą; wartość (wartosc/1) obowiązuje w zasięgu, którym jest dowolna rzecz, i leży tam, gdzie zasięg, więc prawo do strojenia jest prawem obszaru; zestaw (zestaw/1) to motyw albo preset włączany w zasięgu; profil (profil/1) to nakładka dla urządzenia albo sposobu pracy. Liczenie idzie od najbliższego zasięgu w górę do Miejsca, a wartość niezgodna z deklaracją nie dochodzi do twarzy. Wszystko naraz: /ustawienia i /api/srodowisko/ustawienia. Pierwsze pokrętła (palety, kroje dwóch ról, czasy ruchu, próg przeciągania, cień) biorą się z jednej tablicy w kodzie. Wartość może iść za innym pokrętłem ({z: nazwa}), więc motyw ustawia kilka barw bazowych, a role idą za nimi i nowa rola nie rozjeżdża motywu; nazwy mówią, czym rzecz jest dla człowieka (wyglad, odczucie), a nie która twarz ją rysuje (umowa po ataku linii wyglądu, 18 XI 2026). Czego nie ma: okna ustawień z suwakami dla ręki (jest tylko prosty panel na stronie gospodarza), kroju jako pliku (rzecz nosi tylko nazwę kroju z urządzenia), reguły układu i drabiny przedstawień jako danych, zasięgu osoby dla właściciela. Cztery ustawienia obszaru (ile_wolno, uwaga, widzi, uklada) zostają cechami obszaru. Format (ustawienia-1) nie przeszedł jeszcze ataku linii wyglądu.'),
     zd('gosc-pisze', 'cienko', 'Gość, który pisze: narzędzie w oknie zakłada i zmienia rzeczy pod własnym imieniem (domyślnie jako propozycja) i czyta tylko to, co gościowi wolno.', 'Ruch z okna (umowa okno/3) zapisuje się pod imieniem gosc-<id>, a ten, kto otworzył okno, stoi przy nim jako kontekst. Gość ma w obszarze tyle prawa co agent i nigdy więcej niż otwierający. Nie ma jeszcze zgody dla wskazanego narzędzia we wskazanym obszarze, a czyta dalej tyle, co strona, która go otworzyła.'),
     zd('narzedzia-agenta', 'brak', 'Narzędzia Miejsca w ręku agenta: czasowniki ze spisu stoją na liście narzędzi agenta (serwer narzędzi), więc agent używa ich bez czytania opisu i bez adresu w poleceniu.', 'Dziś spis czasowników jest tekstem wpisanym w kod, a agent musi przeczytać /co-tu-jest i sam złożyć żądanie.'),
     zd('wersje-do-uruchomienia', 'brak', 'Wersje i buildy przychodzą same: nowa wersja labu albo działający build staje się rzeczą ze znakiem nowe i wejściem do uruchomienia.', 'Dziś same przychodzą fakty o repozytoriach i gałęziach, tak świeże jak odświeżenie starej Jaskini; wersji do uruchomienia nie ma, a znak nowe nie istnieje.'),
