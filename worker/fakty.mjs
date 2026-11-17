@@ -33,6 +33,7 @@ export async function zbierz({ fetchFn = fetch, token = null, owner = WLASCICIEL
     for (const r of lista) {
       if (r.private) continue;
       repos.push({
+        id: Number.isSafeInteger(r.id) ? r.id : null, homepage: r.homepage || null,
         nazwa: r.name, opis: r.description || null, ostatni_push: r.pushed_at, utworzone: r.created_at,
         // GitHub liczy tu razem issues i pull requesty
         otwarte_issues_i_pr: r.open_issues_count, pages: !!r.has_pages, archiwum: !!r.archived,

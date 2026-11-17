@@ -32,6 +32,8 @@ button, .guzik { font: inherit; font-size: .85rem; color: var(--tekst); backgrou
 button:hover, .guzik:hover { border-color: var(--akcent); color: var(--akcent); }
 button.glowny { background: var(--akcent); border-color: var(--akcent); color: var(--tlo); font-weight: 600; }
 button.glowny:hover { filter: brightness(1.08); color: var(--tlo); }
+a.guzik.glowny { background: var(--akcent); border-color: var(--akcent); color: var(--tlo); font-weight: 600; }
+a.guzik.glowny:hover { filter: brightness(1.08); color: var(--tlo); }
 ul.lista { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--linia); }
 ul.lista li { padding: .32rem 0; border-bottom: 1px solid var(--linia); display: flex; gap: .6rem; justify-content: space-between; align-items: baseline; min-width: 0; }
 ul.lista li > :first-child { min-width: 0; overflow-wrap: anywhere; }
