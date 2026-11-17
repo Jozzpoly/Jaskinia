@@ -144,3 +144,18 @@ test('W9. obszar, do którego nie ma wstępu, nie jest wymieniony - nazwa też b
   assert.ok(s.dla('agent-probny').rzecz(zamkniety.obszar), 'obszar dla uczestników zostaje widoczny');
   assert.ok(s.dla(null).spis({ rodzaj: 'obszar/1' }).every((o) => o.cechy.nazwa !== 'Dla uczestnikow'));
 });
+
+test('W10. dziennik jest drugą drogą do tych samych faktów i też przechodzi przez okulary', async () => {
+  // Trzecia dziura z ataku na własną granicę, inna w rodzaju niż dwie pierwsze: lista "co się zmieniło" pyta
+  // wprost akty, nie spis, więc filtr jej nie dotyczył. Nazwa była już '?', ale identyfikator wychodził - a
+  // identyfikator jest uchwytem. Zostaje po takich wierszach liczba, bo sam ruch i tak słychać po numerze aktu.
+  const { s, prywatny } = await swiat();
+  const { opisDane } = await import('./opis.mjs');
+  const u = opisDane(s.dla('agent-probny'), { kto: 'agent-probny' });
+  assert.ok(u.zmiany.lista.every((z) => z.id !== prywatny.rzecz && z.id !== prywatny.obszar), 'żadnego identyfikatora z zamkniętego obszaru');
+  assert.ok(u.zmiany.ukryte >= 2, `liczba ukrytych zmian jest powiedziana wprost (jest ${u.zmiany.ukryte})`);
+  assert.ok(u.zmiany.lista.every((z) => z.tytul !== '?'), 'nie zostaje wiersz-widmo z pytajnikiem zamiast nazwy');
+  const wl = opisDane(s.dla('jozz'), { kto: 'jozz' });
+  assert.equal(wl.zmiany.ukryte, 0, 'właściciel nie ma nic ukrytego');
+  assert.ok(wl.zmiany.lista.some((z) => z.id === prywatny.rzecz), 'i widzi tę samą zmianę z nazwą');
+});
