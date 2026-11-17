@@ -67,6 +67,8 @@ test('1c. prawo: zmiana RODZAJU istniejącej rzeczy (uczestnik/1 -> projekt/1) n
   const u = s.spis({ rodzaj: 'uczestnik/1' }).find((x) => x.cechy.imie === 'srodowisko');
   const bezposrednio = await R(s, 'agent-a', { co: 'poloz', rzecz: u.id, wersja: u.wersja, rodzaj: 'uczestnik/1', cechy: { ...u.cechy, opis: 'zmienione' } });
   assert.equal(bezposrednio.skutek, 'propozycja', 'wprost: ruch zastrzeżony dla właściciela staje się propozycją do niego (reguła z 17 XI, wcześniej 403)');
+  // jeden uczestnik może mieć jedną czekającą propozycję na rzecz (reguła z 17 XI), więc pierwszą wycofuje
+  assert.equal((await R(s, 'agent-a', { co: 'odrzuc', propozycja: bezposrednio.propozycja })).skutek, 'wycofana');
   const przez = await R(s, 'agent-a', { co: 'poloz', rzecz: u.id, wersja: u.wersja, rodzaj: 'projekt/1', cechy: { nazwa: 'ex-uczestnik' } });
   assert.equal(przez.skutek, 'propozycja', 'przez zmianę rodzaju też tylko propozycja do właściciela; a wyszło: ' + JSON.stringify(przez));
   assert.equal(s.rzecz(u.id).rodzaj, 'uczestnik/1', 'rzecz została uczestnikiem');

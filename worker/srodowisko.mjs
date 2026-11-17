@@ -52,6 +52,8 @@ export const DOMYSLNE = { ile_wolno: 'proponowac', uwaga: 'znak', widzi: 'uczest
 export const ROLE = ['wlasciciel', 'agent', 'automat'];
 // Rodzaje, których kształt i rzeczy trzymają całość w ryzach: zmienia je tylko właściciel.
 const KSZTALTY_RDZENIA = ['ksztalt/1', 'obszar/1', 'uczestnik/1', 'propozycja/1'];
+// Ile propozycji jednego uczestnika może czekać naraz: lista "czeka na właściciela" ma zostać listą, nie zalewem.
+export const NAJWIECEJ_CZEKAJACYCH = 20;
 // Co da się zrobić z rzeczą jednym ruchem i jak nazywa się skutek.
 const SKUTKI = { poloz: 'polozone', odloz: 'odlozone', przywroc: 'przywrocone', cofnij: 'cofniete' };
 
@@ -702,6 +704,13 @@ export class Srodowisko {
       return this._zatwierdz(kto, [{ p, id, rodzaj, obszar, cechy, odlozone, ksztalt: spr.ksztalt }], slad,
         { skutek: SKUTKI[co], rzecz: id, adres: '/rzecz/' + id, ...(zWersji ? { z_wersji: zWersji } : {}), ...uwagi });
     }
+    // Propozycja kosztuje uwagę właściciela, więc jeden uczestnik nie może ich mnożyć bez końca: jedna czekająca na
+    // rzecz i najwyżej NAJWIECEJ_CZEKAJACYCH naraz (uwaga drugiej linii do PR 35: agent w pętli zalałby listę "czeka").
+    if (stara) {
+      const juz = this.spis({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka', rzecz: stara.id }, limit: 1 })[0];
+      if (juz) return blad(409, `masz już czekającą propozycję zmiany tej rzeczy (${juz.id}); wycofaj ją (co: odrzuc) albo poczekaj na rozstrzygnięcie`, { propozycja: juz.id });
+    }
+    if (this.ile({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka' } }) >= NAJWIECEJ_CZEKAJACYCH) return blad(429, `masz już ${NAJWIECEJ_CZEKAJACYCH} czekających propozycji; wycofaj którąś (co: odrzuc) albo poczekaj, aż zostaną rozstrzygnięte`);
     // propozycja: leży tam, gdzie leży rzecz, której dotyczy (albo tam, gdzie miała powstać nowa)
     const propId = await idZ('propozycja', kto, op);
     const obszarProp = stara ? stara.obszar : obszar;
