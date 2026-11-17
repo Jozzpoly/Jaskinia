@@ -97,15 +97,18 @@ export function przyjmijGniazdo(ws, { kto = null, podglad = false, akt = 0, gnia
 // przedstawia się pierwszą wiadomością; klucz sprawdzamy tak samo jak przy każdych drzwiach (skrót, nie treść).
 // `gniazda` i `akt` to funkcje, bo w czasie liczenia skrótu lista połączeń i numer aktu mogą się zmienić.
 export async function przyjmijWiadomosc(ws, surowe, { env = {}, gniazda = () => [], podglad = false, akt = () => 0, teraz = Date.now() } = {}) {
+  // Napis "ping" stoi poza licznikiem. Pod adresem odpowiada na niego samo połączenie (automatyczna odpowiedź przy
+  // hibernacji): obiekt się nie budzi, nic to nie kosztuje i ta funkcja w ogóle się nie uruchamia. Gdyby tej wygody
+  // zabrakło, odpowiadamy tutaj tak samo, bez liczenia, żeby sprawdzian w Node opisywał ten sam świat co adres
+  // (atak drugiej linii, 17 XI: 90 razy "ping" nie zamyka połączenia, a sprawdzian Z6 sugerował, że zamknie).
+  // Każda następna para automatycznej odpowiedzi zniknie licznikowi z oczu tak samo: dokładając ją, dopisz ją tutaj.
+  if (surowe === 'ping') { try { ws.send('pong'); } catch { /* gniazdo zniknęło */ } return; }
   const s = stanGniazda(ws);
-  // Każda wiadomość budzi obiekt i liczy się do dobowego limitu, więc gniazdo, które nimi zalewa, traci połączenie.
+  // Każda inna wiadomość budzi obiekt i liczy się do dobowego limitu, więc gniazdo, które nimi zalewa, traci połączenie.
   if (!s.okno || teraz - s.okno > MINUTA) { s.okno = teraz; s.n = 0; }
   s.n = (s.n || 0) + 1;
   zapamietaj(ws, s);
   if (s.n > NAJWIECEJ_NA_MINUTE) { zamknij(ws, KOD_ZA_DUZO, 'za dużo wiadomości'); return; }
-  // Zwykle na "ping" odpowiada samo połączenie, bez budzenia obiektu; gdyby tej wygody zabrakło, odpowiadamy tutaj,
-  // żeby strona nie uznała żywego połączenia za martwe.
-  if (surowe === 'ping') { try { ws.send('pong'); } catch { /* gniazdo zniknęło */ } return; }
   if (typeof surowe !== 'string' || surowe.length > 2000) return;
   let m = null;
   try { m = JSON.parse(surowe); } catch { return; }
