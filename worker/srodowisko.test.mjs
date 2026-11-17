@@ -492,3 +492,27 @@ test('granice: zagnieżdżenie obszarów, surowe wartości, czas i adres', async
   assert.equal((await adres('HTTPS://EXAMPLE.COM/')).skutek, 'polozone');
   assert.equal((await adres('javascript:alert(1)')).status, 422);
 });
+
+test('propozycje nie zalewają listy: jedna czekająca na rzecz i najwyżej dwadzieścia naraz od jednego uczestnika', async () => {
+  const { s, nowe } = await swiat();
+  const t = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Rzecz' } });
+  const zmiana = (kto, nazwa) => s.ruch(kto, { op: op(), co: 'poloz', rzecz: t.rzecz, wersja: t.wersja, rodzaj: 'projekt/1', cechy: { nazwa } });
+  const p1 = await zmiana('agent-a', 'Raz');
+  assert.equal(p1.skutek, 'propozycja');
+  const p2 = await zmiana('agent-a', 'Dwa');
+  assert.equal(p2.status, 409, 'druga czekająca propozycja tej samej rzeczy od tego samego uczestnika');
+  assert.equal(p2.propozycja, p1.propozycja);
+  assert.equal((await zmiana('agent-b', 'Od B')).skutek, 'propozycja', 'inny uczestnik ma własną');
+  await s.ruch('agent-a', { op: op(), co: 'odrzuc', propozycja: p1.propozycja });
+  assert.equal((await zmiana('agent-a', 'Dwa')).skutek, 'propozycja', 'po wycofaniu wolno zaproponować od nowa');
+  for (let i = 0; i < 19; i++) assert.equal((await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'projekt/1', obszar: null, cechy: { nazwa: 'Nowa ' + i } })).skutek, 'propozycja');
+  const za = await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'projekt/1', obszar: null, cechy: { nazwa: 'O jedną za dużo' } });
+  assert.equal(za.status, 429);
+  assert.match(za.blad, /20 czekających propozycji/);
+  // propozycja, która zmienia prawa, jest na liście odróżniona od zwykłej, a tekst mówi, że uczestnik to nie klucz
+  const o = s.rzecz(nowe);
+  await s.ruch('agent-b', { op: op(), co: 'poloz', rzecz: nowe, wersja: o.wersja, rodzaj: 'obszar/1', cechy: { ...o.cechy, ile_wolno: 'nic' } });
+  const tekst = coTuJest(s, {});
+  assert.match(tekst, /propozycja od agent-b \[ZMIENIA PRAWA ALBO UCZESTNIKÓW: przyjmuje tylko właściciel\]/);
+  assert.match(tekst, /nie daje nikomu klucza/);
+});

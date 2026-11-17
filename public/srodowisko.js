@@ -167,7 +167,10 @@
     if (czekaIle) t.append(el('section', {}, el('h2', {}, 'Czeka na właściciela ', el('span', { klasa: 'ile', tekst: String(czekaIle) })),
       el('ul', { klasa: 'lista' },
         d.czeka.prosby.map((p) => el('li', {}, el('a', { href: '/rzecz/' + p.id, tekst: p.tresc }), el('span', { klasa: 'bok', tekst: `prośba od ${p.od} · ${kiedy(p.kiedy)}` }))),
-        d.czeka.propozycje.map((p) => el('li', {}, el('a', { href: '/rzecz/' + p.id, tekst: `${p.rzecz ? 'zmiana rzeczy' : 'nowa rzecz'} rodzaju ${p.rodzaj}` }), el('span', { klasa: 'bok', tekst: `propozycja od ${p.od} · ${kiedy(p.kiedy)}` }))))));
+        d.czeka.propozycje.map((p) => el('li', {}, el('a', { href: '/rzecz/' + p.id, tekst: `${p.rzecz ? 'zmiana rzeczy' : 'nowa rzecz'} rodzaju ${p.rodzaj}` }),
+          // propozycja, która zmienia prawa albo uczestników, ma inną wagę niż zmiana nazwy: mówi to od razu
+          p.wymaga === 'wlasciciel' ? el('span', { klasa: 'nowe', tekst: 'zmienia prawa albo uczestników' }) : null,
+          el('span', { klasa: 'bok', tekst: `propozycja od ${p.od} · ${kiedy(p.kiedy)}` }))))));
 
     const swieze = rzeczy.filter((r) => r.wersja > widziany && widziany > 0);
     if (swieze.length) t.append(el('section', {}, el('h2', {}, 'Nowe od Twojej ostatniej wizyty ', el('span', { klasa: 'ile', tekst: String(swieze.length) }),
