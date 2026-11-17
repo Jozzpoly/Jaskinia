@@ -182,7 +182,7 @@ export function ziarna({ wlasciciel }) {
     zd('umowa-okna', 'cienko', 'Umowa okna, pokolenie 2: przyrząd starej Jaskini (hello, state, signals, event, flag) i czytanie rzeczy.', 'Opis: /umowa-okna. Brakuje ruchów z okna, wołania czasowników gościa i okna w przestrzeni Startu.'),
     zd('czasowniki', 'cienko', 'Spis czasowników: jedna lista tego, co da się zrobić, z wejściem i wynikiem.', 'Są czasowniki drzwi i okna. Czasowniki gości są tylko wypisane; wołać ich jeszcze się nie da.'),
     zd('na-zywo', 'cienko', 'Zmiany na żywo: otwarta strona dowiaduje się o cudzej zmianie w kilka sekund, bez przeładowania.', 'Przez odpytywanie co kilka sekund, tylko gdy karta jest widoczna. Docelowo kanał.'),
-    zd('wywoz', 'cienko', 'Wywóz całości: właściciel dostaje wszystko jako jeden plik, a spis da się odbudować z samych głów i dziennika.', 'Dowód obcym czytnikiem (D3) nie jest zrobiony.'),
+    zd('wywoz', 'cienko', 'Wywóz całości: właściciel dostaje wszystko jako jeden plik spod /api/miejsce/eksport, a spis da się odbudować z samych głów i dziennika.', 'Dowód obcym czytnikiem (D3) nie jest zrobiony.'),
     zd('licznik-przeniesienia', 'cienko', 'Licznik przeniesienia: ile jego rzeczy jest już w środku, a ile jeszcze nie.', 'Liczy na razie tylko projekty wzięte z publicznych faktów.'),
     zd('cofanie', 'brak', 'Cofanie ruchów: każdy ruch da się cofnąć jednym krokiem, także po przeładowaniu.', 'Stos cofania z poprzedniej próby wskazuje akt numerem; trzeba go przepisać na tożsamość rzeczy.'),
     zd('drzwi-wlasciciela', 'brak', 'Drzwi dla właściciela: wejście z komputera i telefonu jednym dotknięciem.', 'Na podglądzie są jawne klucze próbne. Metoda: teczka kabelków w pamięci wspólnej.'),

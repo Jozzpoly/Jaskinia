@@ -227,6 +227,17 @@ test('kto co czyta (Menadżer do #10): prywatna wiadomość widzą tylko właśc
   assert.ok(!JSON.stringify(po.dziennik(0, 200, 'astra')).includes('tylko dla Opusa'));
 });
 
+test('wywoz tlumaczy sie sam: obcy czytnik dostaje w pliku to, czego musialby zgadnac (dowod D3)', async () => {
+  const r = nowy();
+  await r.wykonaj('jozz', { op: op(), co: 'zapisz', rodzaj: 'rzecz/1', tresc: '{}' });
+  const e = r.eksport();
+  assert.ok(Array.isArray(e.jak_odbudowac) && e.jak_odbudowac.length >= 5, 'wywoz niesie opis wlasnego formatu');
+  const caly = e.jak_odbudowac.join(' ');
+  for (const slowo of ['zapisy', 'akty', 'glowy', 'wersja rzeczy', 'tytul'])
+    assert.ok(caly.includes(slowo), 'opis formatu mowi o: ' + slowo);
+  assert.ok(caly.includes('pole akt jej glowy'), 'wersja jest nazwana wprost: to na niej obcy czytnik sie wylozyl 17 XI');
+});
+
 test('migracja: baza sprzed prywatności dostaje kolumnę i działa dalej, stare akty są jawne', async () => {
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(':memory:');
