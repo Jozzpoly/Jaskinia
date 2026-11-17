@@ -41,8 +41,13 @@ test('ponowione dostarczenie tej samej czynności: ten sam akt, powiedziane wpro
   const inna = await r.wykonaj('jozz', { op: o, co: 'zapisz', rodzaj: 'uwaga', tresc: 'b' });
   assert.equal(inna.ok, false);
   assert.equal(inna.status, 409);
+  // op jest jednoznaczny w obrębie uczestnika (17 XI 2026): ten sam napis u kogoś innego to jego własna czynność,
+  // a nie konflikt, i nikt nie widzi przez to cudzego aktu
   const cudzy = await r.wykonaj('astra', { op: o, co: 'zapisz', rodzaj: 'uwaga', tresc: 'a' });
-  assert.equal(cudzy.status, 409, 'cudzy op nie staje się moim aktem');
+  assert.equal(cudzy.ok, true);
+  assert.equal(cudzy.powtorzone, false);
+  assert.equal(cudzy.akt.kto, 'astra', 'cudzy op nie staje się moim aktem ani mój jego');
+  assert.notEqual(cudzy.akt.nr, z1.akt.nr);
   // to samo dla głowy: ponowienie przesunięcia nie udaje, że przesunęło drugi raz
   const z = await r.wykonaj('jozz', { op: op(), co: 'zapisz', rodzaj: 'uklad', tresc: '{}' });
   const p = op();
@@ -160,19 +165,24 @@ test('bez ustawienia KLUCZE Miejsce jest zamknięte i mówi dlaczego; zły klucz
   assert.equal((await zap({ ...env, MIEJSCE: undefined }, '', { klucz: KLUCZ_JOZZA })).status, 503);
 });
 
-test('przez Workera: nagłówek x-kto od klienta nie podszyje się pod Jozza; eksport tylko dla właściciela', async () => {
+test('przez Workera: stare drzwi są tylko dla właściciela, a nagłówek x-kto od klienta nie podszyje się pod niego', async () => {
   const env = await envZMiejscem();
+  // agent z własnym kluczem i podrobionym x-kto: Worker nadpisuje nagłówek, a stare drzwi nie wpuszczają agenta
   const r = await zap(env, '/akt', { klucz: KLUCZ_AGENTA, metoda: 'POST', cialo: { op: op(), co: 'zapisz', rodzaj: 'wiadomosc', tresc: 'hej' }, naglowki: { 'x-kto': 'jozz' } });
-  assert.equal(r.status, 200);
-  assert.equal((await r.json()).akt.kto, 'agent-probny');
+  assert.equal(r.status, 403);
+  assert.match((await r.json()).blad, /tylko dla właściciela/);
+  assert.equal((await zap(env, '/dziennik', { klucz: KLUCZ_AGENTA })).status, 403, 'dziennik oddałby treść każdej rzeczy');
   assert.equal((await zap(env, '/eksport', { klucz: KLUCZ_AGENTA })).status, 403);
+  const w = await zap(env, '/akt', { klucz: KLUCZ_JOZZA, metoda: 'POST', cialo: { op: op(), co: 'zapisz', rodzaj: 'wiadomosc', tresc: 'hej' } });
+  assert.equal((await w.json()).akt.kto, 'jozz');
   const e = await (await zap(env, '/eksport', { klucz: KLUCZ_JOZZA })).json();
   assert.equal(e.akty.length, 1);
+  assert.ok(Array.isArray(e.meta), 'wywóz niesie metę');
   const ja = await (await zap(env, '', { klucz: KLUCZ_JOZZA })).json();
   assert.equal(ja.ja, 'jozz');
   assert.equal(ja.wlasciciel, true);
   const nowe = await (await zap(env, '/nowe', { klucz: KLUCZ_JOZZA })).json();
-  assert.equal(nowe.cudze, 1);
+  assert.equal(nowe.cudze, 0);
   const tekst = JSON.stringify(e) + JSON.stringify(nowe);
   assert.ok(!tekst.includes(KLUCZ_JOZZA) && !tekst.includes(KLUCZ_AGENTA), 'klucz nie wraca w żadnej odpowiedzi');
 });

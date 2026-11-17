@@ -7,7 +7,7 @@
 // Cloudflare trzyma tę bazę po stronie serwera, z odtworzeniem do dowolnej chwili z ostatnich 30 dni
 // (point-in-time recovery dla Durable Objects z SQLite).
 import { Rdzen, obsluzMiejsce } from './miejsce.mjs';
-import { Srodowisko } from './srodowisko.mjs';
+import { Srodowisko, AUTOMAT } from './srodowisko.mjs';
 import { ziarna } from './ziarna.mjs';
 import { obsluzSrodowisko } from './srodowisko-http.mjs';
 
@@ -23,13 +23,19 @@ export class Miejsce {
 
   async fetch(request) {
     const sciezka = new URL(request.url).pathname;
-    if (sciezka === '/api/miejsce' || sciezka.startsWith('/api/miejsce/')) return obsluzMiejsce(this.rdzen, request);
+    if (sciezka === '/api/miejsce' || sciezka.startsWith('/api/miejsce/')) {
+      const odp = await obsluzMiejsce(this.rdzen, request);
+      // Po wwozie całości spis środowiska liczy się od nowa z głów i dziennika, a zasiew sprawdza się jeszcze raz:
+      // bez tego wwiezione Miejsce miało pusty spis i odrzucało każde żądanie (znalezisko ataku, 17 XI 2026).
+      if (request.method === 'POST' && sciezka === '/api/miejsce/import' && odp.status === 200) { this.srod.przebuduj(); this.zasiane = null; this.znani = null; }
+      return odp;
+    }
     // Środowisko zasiewa swoje rzeczy przy pierwszym wejściu; kolejne wejścia czekają na ten sam zasiew.
     this.zasiane ??= this.srod.zasiej(ziarna({ wlasciciel: this.rdzen.wlasciciel })).catch((e) => { this.zasiane = null; throw e; });
     await this.zasiane;
     // Uczestnik, którego klucz właściciel ustawił, ma być widoczny jako rzecz, zanim zrobi pierwszy ruch:
     // inaczej czytający widzi w historii imię, którego nie ma wśród uczestników (uwaga sędziego, 17 XI).
-    const imiona = (request.headers.get('x-imiona') || '').split(',').filter((i) => /^[a-z][a-z0-9_-]{0,39}$/.test(i) && i !== this.rdzen.wlasciciel && i !== 'srodowisko');
+    const imiona = (request.headers.get('x-imiona') || '').split(',').filter((i) => /^[a-z][a-z0-9_-]{0,39}$/.test(i) && i !== this.rdzen.wlasciciel && i !== AUTOMAT);
     this.znani ??= new Set();
     const nowi = imiona.filter((i) => !this.znani.has(i));
     if (nowi.length) {

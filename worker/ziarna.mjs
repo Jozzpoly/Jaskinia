@@ -1,7 +1,7 @@
 // Zasiew środowiska: rzeczy, bez których Miejsce nie umie opisać samego siebie (17 XI 2026). Status: próba.
 // To są DANE, nie kod: po zasianiu każdą z tych rzeczy zmienia się ruchem, a zasiew jej nie nadpisze.
 // Kolejność ma znaczenie: najpierw kształt kształtu, potem kształty, potem rzeczy tych rodzajów.
-import { STOPNIE, UWAGI, WIDZI, UKLADA } from './srodowisko.mjs';
+import { STOPNIE, UWAGI, WIDZI, UKLADA, szybkiOdcisk } from './srodowisko.mjs';
 
 const k = (nazwa, cechy) => ({ nazwa: 'ksztalt-' + nazwa, rodzaj: 'ksztalt/1', cechy });
 const zd = (nazwa, stan, opis, jak) => ({ nazwa: 'zdolnosc-' + nazwa, rodzaj: 'zdolnosc/1', cechy: { nazwa: opis.split(':')[0], stan, opis: opis.split(':').slice(1).join(':').trim(), ...(jak ? { jak } : {}) } });
@@ -82,7 +82,8 @@ export function ziarna({ wlasciciel }) {
         opis: { typ: 'tekst', wymagana: true, opis: 'jedno zdanie: czym jest rzecz tego rodzaju' },
         cechy: { typ: 'dowolne', wymagana: true, opis: 'obiekt {nazwa cechy: {typ, opis, wymagana}}; może być pusty' },
         tytul: { typ: 'tekst', opis: 'nazwa cechy, która jest nazwą rzeczy; domyślnie cecha nazwa' },
-        uklad: { typ: 'tak-nie', opis: 'true, gdy rzeczy tego rodzaju są układaniem, a nie treścią' },
+        klucz: { typ: 'lista', z: 'tekst', opis: 'nazwy cech, z których liczy się tożsamość rzeczy: druga rzecz o tym samym kluczu nie powstanie' },
+        uklad: { typ: 'tak-nie', opis: 'true, gdy rzeczy tego rodzaju są układaniem, a nie treścią; ustala to tylko właściciel' },
       } }),
     k('obszar', { dla: 'obszar/1', tytul: 'nazwa', opis: 'Obszar: miejsce z własnymi ustawieniami. Rzecz leży w jednym obszarze, obszar może leżeć w obszarze. Pole na Starcie to obszar z wyglądem.',
       cechy: {
@@ -100,15 +101,17 @@ export function ziarna({ wlasciciel }) {
         cialo: { typ: 'tekst', opis: 'czym ten uczestnik zwykle działa (jego własny opis, nie dowód)' },
         opis: { typ: 'tekst' },
       } }),
-    k('propozycja', { dla: 'propozycja/1', tytul: 'rodzaj', opis: 'Propozycja: ruch uczestnika, który w danym obszarze nie ma prawa do skutku. Czeka, aż ktoś z prawem ją przyjmie albo odrzuci.',
+    k('propozycja', { dla: 'propozycja/1', tytul: 'rodzaj', opis: 'Propozycja: ruch uczestnika, który nie ma prawa do skutku. Leży tam, gdzie rzecz, której dotyczy, i czeka, aż ktoś z prawem ją przyjmie albo odrzuci.',
       cechy: {
         od: { typ: 'tekst', wymagana: true, opis: 'kto proponuje' },
-        co: { typ: 'wybor', wartosci: ['poloz'], wymagana: true },
+        co: { typ: 'wybor', wartosci: ['poloz', 'odloz', 'przywroc', 'cofnij'], wymagana: true },
         rodzaj: { typ: 'tekst', wymagana: true, opis: 'rodzaj rzeczy, której dotyczy ruch' },
         tresc: { typ: 'dowolne', wymagana: true, opis: '{obszar, cechy}: to, co ruch chciał zapisać' },
         rzecz: { typ: 'rzecz', opis: 'zmieniana rzecz; brak, gdy propozycja dokłada nową' },
+        nowa: { typ: 'tekst', opis: 'identyfikator, który dostanie nowa rzecz po przyjęciu' },
         wersja: { typ: 'liczba', opis: 'wersja zmienianej rzeczy z chwili propozycji' },
-        stan: { typ: 'wybor', wartosci: ['czeka', 'przyjeta', 'odrzucona', 'wygasla'], wymagana: true },
+        wymaga: { typ: 'wybor', wartosci: ['wlasciciel'], opis: 'gdy ruch dotyczy czegoś, co zmienia tylko właściciel: przyjąć może tylko on' },
+        stan: { typ: 'wybor', wartosci: ['czeka', 'przyjeta', 'odrzucona', 'wycofana', 'wygasla'], wymagana: true },
         powod: { typ: 'tekst' },
         rozstrzygnal: { typ: 'tekst' },
         rozstrzygnieto: { typ: 'czas' },
@@ -132,7 +135,7 @@ export function ziarna({ wlasciciel }) {
       cechy: {
         nazwa: { typ: 'tekst', wymagana: true },
         opis: { typ: 'tekst', wymagana: true, opis: 'co ten gość pokazuje albo robi' },
-        kod: { typ: 'zapis', opis: 'zapis rodzaju kod/1 z jednym plikiem HTML; powstaje przez POST /api/srodowisko/kod' },
+        kod: { typ: 'zapis', rodzaj: 'kod/1', opis: 'zapis rodzaju kod/1 z jednym plikiem HTML; powstaje przez POST /api/srodowisko/kod' },
         adres: { typ: 'adres', opis: 'adres strony, która żyje poza Jaskinią (np. gra)' },
         umowa: { typ: 'tekst', opis: 'pokolenie umowy okna, którym gość mówi, np. okno/2' },
         czasowniki: { typ: 'dowolne', opis: 'lista {nazwa, opis, wejscie, wynik}: co ten gość umie zrobić na prośbę' },
@@ -176,17 +179,19 @@ export function ziarna({ wlasciciel }) {
     zd('ksztalty', 'stoi', 'Rodzaj jako dana: nowy rodzaj rzeczy dokłada się ruchem (rzecz rodzaju ksztalt/1); sprawdzanie jest przy zapisie, nieznana cecha zostaje zachowana.'),
     zd('trasa', 'stoi', 'Trasa: jedno żądanie do drzwi i rzecz jest w Miejscu, widać ją w spisie i zostaje.'),
     zd('samowyjasnianie', 'stoi', 'Samowyjaśnianie pod adresem: /co-tu-jest mówi gołym tekstem, co tu jest, co się zmieniło, co komu wolno i jak coś dołożyć; powstaje z danych.'),
-    zd('obszary', 'cienko', 'Obszary i prawo do skutku z danych: ten sam ruch daje skutek, propozycję albo odmowę zależnie od ustawienia obszaru.', 'Działa ile_wolno. Ustawienia uwaga, widzi i uklada są zapisane, ale nic jeszcze z nich nie wynika.'),
-    zd('propozycje', 'cienko', 'Propozycje: ruch bez prawa do skutku czeka, aż właściciel go przyjmie albo odrzuci.', 'Nie ma wygasania ani warstwy do obejrzenia przed przyjęciem.'),
+    zd('obszary', 'cienko', 'Obszary i prawo do skutku z danych: ten sam ruch daje skutek, propozycję albo odmowę zależnie od ustawienia obszaru.', 'Działa ile_wolno, liczone w obszarze, w którym rzecz leży, i w tym, do którego trafia. Ustawienia uwaga, widzi i uklada są zapisane, ale nic jeszcze z nich nie wynika. Wszyscy agenci mają w obszarze to samo prawo.'),
+    zd('propozycje', 'cienko', 'Propozycje: ruch bez prawa do skutku czeka, aż przyjmie go albo odrzuci właściciel albo ktoś, kto sam mógłby zrobić ten ruch ze skutkiem; autor może swoją wycofać.', 'Ruch, który zmienia coś zastrzeżonego dla właściciela, też staje się propozycją, tylko do niego. Nie ma wygasania ani warstwy do obejrzenia przed przyjęciem.'),
     zd('goscie', 'cienko', 'Goście z kodem w piaskownicy: jeden plik HTML zapisany w Miejscu, podawany bez dostępu do sieci i do adresu Miejsca.', 'Gość czyta rzeczy przez umowę okna. Jeszcze nie proponuje ruchów z okna i nie ma własnej pamięci.'),
     zd('umowa-okna', 'cienko', 'Umowa okna, pokolenie 2: przyrząd starej Jaskini (hello, state, signals, event, flag) i czytanie rzeczy.', 'Opis: /umowa-okna. Brakuje ruchów z okna, wołania czasowników gościa i okna w przestrzeni Startu.'),
     zd('czasowniki', 'cienko', 'Spis czasowników: jedna lista tego, co da się zrobić, z wejściem i wynikiem.', 'Są czasowniki drzwi i okna. Czasowniki gości są tylko wypisane; wołać ich jeszcze się nie da.'),
     zd('na-zywo', 'cienko', 'Zmiany na żywo: otwarta strona dowiaduje się o cudzej zmianie w kilka sekund, bez przeładowania.', 'Przez odpytywanie co kilka sekund, tylko gdy karta jest widoczna. Docelowo kanał.'),
-    zd('wywoz', 'cienko', 'Wywóz całości: właściciel dostaje wszystko jako jeden plik spod /api/miejsce/eksport, a spis da się odbudować z samych głów i dziennika.', 'Dowód obcym czytnikiem (D3) nie jest zrobiony.'),
+    zd('wywoz', 'cienko', 'Wywóz i wwóz całości: właściciel dostaje wszystko jako jeden plik spod /api/miejsce/eksport; plik sam mówi, jak go czytać, a wwieziony do pustego Miejsca odtwarza to samo środowisko.', 'Obcy czytnik odtworzył spis z samego pliku (dowód D3, 17 XI, sędzia: Opus Code). Powrót do siebie pilnuje sprawdzian budowniczego; nikt obcy go jeszcze nie sądził.'),
     zd('licznik-przeniesienia', 'cienko', 'Licznik przeniesienia: ile jego rzeczy jest już w środku, a ile jeszcze nie.', 'Liczy na razie tylko projekty wzięte z publicznych faktów.'),
-    zd('cofanie', 'brak', 'Cofanie ruchów: każdy ruch da się cofnąć jednym krokiem, także po przeładowaniu.', 'Stos cofania z poprzedniej próby wskazuje akt numerem; trzeba go przepisać na tożsamość rzeczy.'),
+    zd('cofanie', 'cienko', 'Odkładanie i cofanie: rzecz da się odłożyć i przywrócić, a jej treść cofnąć do wcześniejszej wersji; każde jest nową wersją, więc nic nie znika.', 'Działa przez drzwi (co: odloz, przywroc, cofnij). Nie ma jeszcze cofania całego gestu jednym krokiem ani guzika na stronie.'),
+    zd('szukanie', 'cienko', 'Pytanie po cechach i szukanie: listę rzeczy da się zawęzić do wartości cechy i do słowa.', 'Adresy: /rzeczy?rodzaj=…&gdzie.<cecha>=<wartość> i /rzeczy?szukaj=<słowo>. Szukanie patrzy na napisy w cechach, bez odmiany słów.'),
+    zd('klucz-rzeczy', 'cienko', 'Tożsamość z cech: kształt może wskazać klucz, czyli cechy, z których liczy się tożsamość rzeczy; to, co przychodzi z zewnątrz wiele razy, trafia zawsze w tę samą rzecz.', 'Opis: /co-tu-jest, punkt 5c. Żaden zasiany rodzaj jeszcze go nie używa; czeka na automat faktów.'),
     zd('drzwi-wlasciciela', 'brak', 'Drzwi dla właściciela: wejście z komputera i telefonu jednym dotknięciem.', 'Na podglądzie są jawne klucze próbne. Metoda: teczka kabelków w pamięci wspólnej.'),
-    zd('widocznosc', 'brak', 'Widoczność: kto widzi którą rzecz.', 'Na podglądzie wszystko jest publiczne do czytania. W prawdziwym Miejscu czytanie będzie wymagać klucza albo ustawienia widzi: wszyscy.'),
+    zd('widocznosc', 'brak', 'Widoczność: kto widzi którą rzecz.', 'Na podglądzie wszystko jest publiczne do czytania. W prawdziwym Miejscu czytanie będzie wymagać klucza albo ustawienia widzi: wszyscy. Stare drzwi /api/miejsce, które widoczności nie znają, są tylko dla właściciela. Gość w oknie czyta dziś tyle, co strona, która go otworzyła; ma dostać własną tożsamość, zanim wejdzie pierwsza rzecz prywatna.'),
     zd('adres-czytania', 'brak', 'Adres czytania dla ciała bez rąk: osobny żeton tylko do czytania, żeby agent bez nagłówków widział swoją perspektywę.', 'Na podglądzie zastępuje go ?jako=<imię>, bez dowodu tożsamości.'),
     zd('obecnosc', 'brak', 'Obecność: kto jest teraz gdzie i nad czym pracuje, w obie strony, z wyłącznikiem.', 'Świadomie odłożona. Cienka postać jednego organizmu to zmiany na żywo.'),
     zd('fakty-automatem', 'brak', 'Fakty automatem: wersje, buildy i życie projektów przychodzą same, nie ręką agenta.'),
@@ -196,7 +201,8 @@ export function ziarna({ wlasciciel }) {
     zd('najety-mozg', 'brak', 'Mózg najęty przez Jaskinię: agent działający w środku za API właściciela, z pułapem kosztu jako ustawieniem obszaru.', 'Kierunek, nie plan na teraz. Klucz nigdy nie jest daną: zapis trzyma nazwę sekretu.'),
     { nazwa: 'gosc-lista', rodzaj: 'gosc/1',
       cechy: async (s) => {
-        const w = await s.r.wykonaj('srodowisko', { op: 'zasiew-kod-lista', co: 'zapisz', rodzaj: 'kod/1', tresc: GOSC_LISTA }, { slad: 'zasiew' });
+        // op niesie odcisk treści: gdy kod przykładu zmieni się w źródle, powstaje nowy zapis zamiast konfliktu op
+        const w = await s.r.wykonaj('srodowisko', { op: 'zasiew-kod-lista-' + szybkiOdcisk(GOSC_LISTA), co: 'zapisz', rodzaj: 'kod/1', tresc: GOSC_LISTA }, { slad: 'zasiew' });
         if (!w.ok) throw new Error('kod gościa: ' + w.blad);
         return { nazwa: 'Lista rzeczy', opis: 'Najprostszy gość: wszystkie rzeczy pogrupowane według rodzaju. Przykład umowy okna do skopiowania.', kod: w.zapis ?? w.akt.zapis, umowa: 'okno/2' };
       } },

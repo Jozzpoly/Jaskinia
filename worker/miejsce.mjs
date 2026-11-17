@@ -15,9 +15,11 @@
 
 // Wersja formatu wywozu. miejsce-2 (17 XI 2026): akt niesie ślad ciała (`cialo`), rodzaj może mieć pokolenie
 // (`rzecz/2`), a obok starych przestrzeni głów jest `rzecz:<id>` (tożsamość rzeczy, rusza ją tylko warstwa środowiska).
-// Wwóz przyjmuje obie wersje: miejsce-1 to ten sam układ bez tych trzech rzeczy.
-export const WERSJA = 'miejsce-2';
-export const WERSJE_WWOZU = ['miejsce-1', 'miejsce-2'];
+// miejsce-3 (17 XI 2026, po niezależnym ataku): `op` jest jednoznaczny w obrębie uczestnika, nie całego Miejsca,
+// a wywóz niesie też `meta` (znaczniki zasiewu i wskazania obszarów), bez której wwóz nie odtwarzał środowiska.
+// Wwóz przyjmuje wszystkie trzy: starsze są tym samym układem bez tych rzeczy.
+export const WERSJA = 'miejsce-3';
+export const WERSJE_WWOZU = ['miejsce-1', 'miejsce-2', 'miejsce-3'];
 export const LIMIT_TRESCI = 2 * 1024 * 1024; // bajty; wiersz SQLite w Durable Object ma limit 8 MB
 export const LIMIT_DZIENNIKA = 200;
 export const WLASCICIEL = 'jozz';
@@ -52,14 +54,21 @@ function mozePrzesunac(kto, glowa, wlasciciel = WLASCICIEL, warstwa = false) {
   return false;
 }
 
+// `op` jest jednoznaczny w obrębie uczestnika (indeks akty_kto_op), nie całego Miejsca: dwóch uczestników może
+// użyć tego samego napisu i żaden nie zobaczy przez to cudzego aktu (znalezisko niezależnego ataku, 17 XI 2026).
+const TABELA_AKTY = `(nr INTEGER PRIMARY KEY AUTOINCREMENT, op TEXT NOT NULL, odcisk TEXT NOT NULL,
+     kto TEXT NOT NULL, kiedy INTEGER NOT NULL, co TEXT NOT NULL, zapis TEXT, glowa TEXT, z_zapisu TEXT, nowy INTEGER,
+     prywatne INTEGER NOT NULL DEFAULT 0, cialo TEXT)`;
 const SCHEMAT = [
   `CREATE TABLE IF NOT EXISTS zapisy (id TEXT PRIMARY KEY, rodzaj TEXT NOT NULL, tresc TEXT NOT NULL, rozmiar INTEGER NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS akty (nr INTEGER PRIMARY KEY AUTOINCREMENT, op TEXT NOT NULL UNIQUE, odcisk TEXT NOT NULL,
-     kto TEXT NOT NULL, kiedy INTEGER NOT NULL, co TEXT NOT NULL, zapis TEXT, glowa TEXT, z_zapisu TEXT, nowy INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS akty ${TABELA_AKTY}`,
   `CREATE TABLE IF NOT EXISTS glowy (nazwa TEXT PRIMARY KEY, zapis TEXT NOT NULL, akt INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS odczyty (kto TEXT PRIMARY KEY, nr INTEGER NOT NULL, kiedy INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS meta (klucz TEXT PRIMARY KEY, wartosc TEXT NOT NULL)`,
-  // Indeksy dołożone 17 XI 2026, zanim są dane: po danych byłaby to zmiana istniejącej kości (uwaga Opusa Code).
+];
+// Indeksy dołożone 17 XI 2026, zanim są dane: po danych byłaby to zmiana istniejącej kości (uwaga Opusa Code).
+const INDEKSY = [
+  `CREATE UNIQUE INDEX IF NOT EXISTS akty_kto_op ON akty (kto, op)`,
   `CREATE INDEX IF NOT EXISTS akty_zapis ON akty (zapis)`,
   `CREATE INDEX IF NOT EXISTS akty_glowa ON akty (glowa)`,
   `CREATE INDEX IF NOT EXISTS zapisy_rodzaj ON zapisy (rodzaj)`,
@@ -79,6 +88,17 @@ export class Rdzen {
     if (!kolumny().includes('prywatne')) sql.exec(`ALTER TABLE akty ADD COLUMN prywatne INTEGER NOT NULL DEFAULT 0`);
     // migracja 17 XI: ślad ciała przy akcie (czym uczestnik to zrobił; jego własna deklaracja, nie dowód)
     if (!kolumny().includes('cialo')) sql.exec(`ALTER TABLE akty ADD COLUMN cialo TEXT`);
+    // migracja 17 XI (druga): dawna tabela miała `op` jednoznaczny w całym Miejscu, wpisany w jej definicję.
+    // Tego nie da się zdjąć w miejscu, więc tabela jest przepisywana raz, z tymi samymi numerami aktów.
+    const def = sql.exec(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'akty'`).toArray()[0];
+    if (def && /op\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(String(def.sql))) {
+      sql.exec(`ALTER TABLE akty RENAME TO akty_dawne`);
+      sql.exec(`CREATE TABLE akty ${TABELA_AKTY}`);
+      sql.exec(`INSERT INTO akty (nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy, prywatne, cialo)
+        SELECT nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy, prywatne, cialo FROM akty_dawne ORDER BY nr`);
+      sql.exec(`DROP TABLE akty_dawne`);
+    }
+    for (const s of INDEKSY) sql.exec(s);
     const w = sql.exec(`SELECT wartosc FROM meta WHERE klucz = 'schemat'`).toArray()[0];
     if (!w) sql.exec(`INSERT INTO meta (klucz, wartosc) VALUES ('schemat', ?)`, WERSJA);
   }
@@ -100,10 +120,10 @@ export class Rdzen {
     if (!przyg.ok) return przyg;
     const odcisk = await skrot(JSON.stringify([co, przyg.odcisk]));
     // od tej linii synchronicznie: nic nie przeplata się z innym żądaniem
-    const byl = this.q(`SELECT * FROM akty WHERE op = ?`, op)[0];
+    const byl = this.q(`SELECT * FROM akty WHERE kto = ? AND op = ?`, kto, op)[0];
     if (byl) {
-      if (byl.kto === kto && byl.odcisk === odcisk) return { ok: true, powtorzone: true, akt: this.opisAktu(byl) };
-      return blad(409, 'ten op należy już do innej czynności; nowa czynność potrzebuje nowego op', { akt: this.opisAktu(byl) });
+      if (byl.odcisk === odcisk) return { ok: true, powtorzone: true, akt: this.opisAktu(byl) };
+      return blad(409, 'ten op należy już do innej Twojej czynności; nowa czynność potrzebuje nowego op', { akt: this.opisAktu(byl) });
     }
     return co === 'zapisz' ? this.zapisz(kto, op, odcisk, przyg) : this.przesun(kto, op, odcisk, przyg);
   }
@@ -165,13 +185,14 @@ export class Rdzen {
     if (!poprawneImie(kto)) return blad(401, 'nieznany wykonawca');
     const cialo = typeof slad === 'string' && CIALO.test(slad) ? slad : null;
     // 1. powtórzenie tej samej czynności: wszystkie akty już są, z tym samym odciskiem
-    const byle = lista.map((p) => ({ z: this.q(`SELECT * FROM akty WHERE op = ?`, p.op + '.z')[0], p: this.q(`SELECT * FROM akty WHERE op = ?`, p.op + '.p')[0] }));
+    const jeden = (op) => this.q(`SELECT * FROM akty WHERE kto = ? AND op = ?`, kto, op)[0];
+    const byle = lista.map((p) => ({ z: jeden(p.op + '.z'), p: jeden(p.op + '.p') }));
     if (byle.length && byle.every((b) => b.z && b.p)) {
-      const te = byle.every((b, i) => b.z.kto === kto && b.z.odcisk === lista[i].odciskZ && b.p.odcisk === lista[i].odciskP);
-      if (te) return { ok: true, powtorzone: true, wyniki: byle.map((b, i) => ({ glowa: lista[i].glowa, zapis: lista[i].id, wersja: b.p.nr })) };
-      return blad(409, 'ten op należy już do innej czynności; nowa czynność potrzebuje nowego op');
+      const te = byle.every((b, i) => b.z.odcisk === lista[i].odciskZ && b.p.odcisk === lista[i].odciskP);
+      if (te) return { ok: true, powtorzone: true, wyniki: byle.map((b, i) => ({ glowa: lista[i].glowa, zapis: lista[i].id, wersja: b.p.nr, kiedy: b.p.kiedy })) };
+      return blad(409, 'ten op należy już do innej Twojej czynności; nowa czynność potrzebuje nowego op');
     }
-    if (byle.some((b) => b.z || b.p)) return blad(409, 'ten op należy już do innej czynności; nowa czynność potrzebuje nowego op');
+    if (byle.some((b) => b.z || b.p)) return blad(409, 'ten op należy już do innej Twojej czynności; nowa czynność potrzebuje nowego op');
     // 2. porównanie wszystkich głów, zanim cokolwiek zostanie zapisane
     for (const p of lista) {
       const g = this.q(`SELECT zapis, akt FROM glowy WHERE nazwa = ?`, p.glowa)[0];
@@ -184,11 +205,12 @@ export class Rdzen {
       const nowy = !this.q(`SELECT 1 AS j FROM zapisy WHERE id = ?`, p.id).length;
       if (nowy) this.sql.exec(`INSERT INTO zapisy (id, rodzaj, tresc, rozmiar) VALUES (?, ?, ?, ?)`, p.id, p.rodzaj, p.tresc, p.rozmiar);
       const g = this.q(`SELECT zapis FROM glowy WHERE nazwa = ?`, p.glowa)[0];
-      this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, nowy, prywatne, cialo) VALUES (?, ?, ?, ?, 'zapisz', ?, ?, 0, ?)`, p.op + '.z', p.odciskZ, kto, this.teraz(), p.id, nowy ? 1 : 0, cialo);
-      this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, cialo) VALUES (?, ?, ?, ?, 'przesun', ?, ?, ?, ?)`, p.op + '.p', p.odciskP, kto, this.teraz(), p.id, p.glowa, g ? g.zapis : null, cialo);
+      const kiedy = this.teraz(); // jedna chwila na oba akty położenia: to jeden ruch
+      this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, nowy, prywatne, cialo) VALUES (?, ?, ?, ?, 'zapisz', ?, ?, 0, ?)`, p.op + '.z', p.odciskZ, kto, kiedy, p.id, nowy ? 1 : 0, cialo);
+      this.sql.exec(`INSERT INTO akty (op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, cialo) VALUES (?, ?, ?, ?, 'przesun', ?, ?, ?, ?)`, p.op + '.p', p.odciskP, kto, kiedy, p.id, p.glowa, g ? g.zapis : null, cialo);
       const akt = this.ostatniAkt();
       this.sql.exec(`INSERT INTO glowy (nazwa, zapis, akt) VALUES (?, ?, ?) ON CONFLICT(nazwa) DO UPDATE SET zapis = excluded.zapis, akt = excluded.akt`, p.glowa, p.id, akt.nr);
-      wyniki.push({ glowa: p.glowa, zapis: p.id, wersja: akt.nr, z: g ? g.zapis : null });
+      wyniki.push({ glowa: p.glowa, zapis: p.id, wersja: akt.nr, kiedy, z: g ? g.zapis : null });
     }
     return { ok: true, powtorzone: false, wyniki };
   }
@@ -291,19 +313,21 @@ export class Rdzen {
   // brakowalo tylko zdania, ze to one. Dlatego wywoz tlumaczy sie teraz sam: kto go czyta, nie potrzebuje
   // ani kodu Jaskini, ani jej opisu pod adresem.
   static JAK_ODBUDOWAC = [
-    'zapisy: niezmienne tresci; id to odcisk tresci. tresc rzeczy to napis JSON {"obszar": <id albo null>, "cechy": {...}}. Zapisy rodzaju kod/1 to strony gosci, nie rzeczy.',
-    'akty: dziennik. Jeden ruch to para aktow o tym samym op z koncowkami .z (co:"zapisz", wklada tresc) i .p (co:"przesun", ustawia glowe). Pole z_zapisu to poprzedni zapis tej glowy, null przy pierwszej wersji.',
+    'zapisy: niezmienne tresci; id to odcisk tresci. tresc rzeczy to napis JSON {"obszar": <id albo null>, "cechy": {...}}; rzecz odlozona ma tam jeszcze "odlozone": true i czasem "powod". Zapisy rodzaju kod/1 to strony gosci, nie rzeczy.',
+    'akty: dziennik. Jeden ruch to para aktow o tym samym op z koncowkami .z (co:"zapisz", wklada tresc) i .p (co:"przesun", ustawia glowe). Pole z_zapisu to poprzedni zapis tej glowy, null przy pierwszej wersji. op jest jednoznaczny w obrebie uczestnika (pole kto), nie calego Miejsca.',
     'glowy: stan biezacy. Glowa o nazwie "rzecz:<id>" to rzecz o tozsamosci <id>; jej pole zapis wskazuje aktualna tresc. Zapisy, ktorych nie wskazuje zadna glowa, to stare wersje albo strony gosci.',
-    'wersja rzeczy = pole akt jej glowy (numer aktu, ktory ja tam ustawil), a NIE liczba przesuniec. Tej samej liczby zada drzwi przy zmianie rzeczy.',
+    'wersja rzeczy = pole akt jej glowy (numer aktu, ktory ja tam ustawil), a NIE liczba przesuniec. Tej samej liczby zada drzwi przy zmianie rzeczy. Kolejny numer wersji (1, 2, 3...) to liczba aktow przesun tej glowy.',
     'tytul rzeczy: rzeczy rodzaju ksztalt/1 maja ceche dla (opisywany rodzaj) i tytul (nazwa cechy, ktora jest nazwa rzeczy tego rodzaju).',
-    'nic nie jest usuwane: zastapienie to przesuniecie glowy na nowy zapis, a stary zostaje w magazynie.',
+    'nic nie jest usuwane: zastapienie to przesuniecie glowy na nowy zapis, a stary zostaje w magazynie. Odlozenie rzeczy to tez nowa wersja, nie usuniecie.',
+    'meta: klucze "ziarno:<nazwa>" wskazuja rzeczy, ktore srodowisko zasialo samo; "obszar_glowny" i "obszar_nowe" wskazuja dwa obszary, ktorych potrzebuje do liczenia praw. Wwoz odtwarza mete razem z reszta.',
   ];
 
   eksport() {
     return { ok: true, format: 'jaskinia-miejsce', wersja: WERSJA, zebrane: new Date(this.teraz()).toISOString(),
       jak_odbudowac: Rdzen.JAK_ODBUDOWAC,
       zapisy: this.q(`SELECT * FROM zapisy ORDER BY id`), akty: this.q(`SELECT * FROM akty ORDER BY nr`),
-      glowy: this.q(`SELECT * FROM glowy ORDER BY nazwa`), odczyty: this.q(`SELECT * FROM odczyty ORDER BY kto`) };
+      glowy: this.q(`SELECT * FROM glowy ORDER BY nazwa`), odczyty: this.q(`SELECT * FROM odczyty ORDER BY kto`),
+      meta: this.q(`SELECT * FROM meta WHERE klucz != 'schemat' ORDER BY klucz`) };
   }
 
   // Import całości z eksportu: przeprowadzka na inny adres, odtworzenie z kopii na dysku, praca bez nas.
@@ -324,18 +348,22 @@ export class Rdzen {
     }
     const nry = new Set(), opy = new Set();
     for (const a of e.akty) {
-      if (!Number.isInteger(a.nr) || nry.has(a.nr) || typeof a.op !== 'string' || opy.has(a.op) || !poprawneImie(a.kto) || !['zapisz', 'przesun'].includes(a.co) || !ids.has(a.zapis))
+      const klucz = a.kto + '\n' + a.op; // op jest jednoznaczny w obrębie uczestnika
+      if (!Number.isInteger(a.nr) || nry.has(a.nr) || typeof a.op !== 'string' || opy.has(klucz) || !poprawneImie(a.kto) || !['zapisz', 'przesun'].includes(a.co) || !ids.has(a.zapis))
         return blad(422, `akt ${a.nr} jest niespójny (numer, op, wykonawca, czynność albo zapis)`);
-      nry.add(a.nr); opy.add(a.op);
+      nry.add(a.nr); opy.add(klucz);
     }
     for (const g of e.glowy) if (!GLOWA.test(g.nazwa) || !ids.has(g.zapis) || !nry.has(g.akt)) return blad(422, `głowa ${g.nazwa} wskazuje coś, czego nie ma`);
+    const meta = Array.isArray(e.meta) ? e.meta : [];
+    for (const m of meta) if (!m || typeof m.klucz !== 'string' || typeof m.wartosc !== 'string' || m.klucz.length > 200 || m.wartosc.length > 4000) return blad(422, 'meta: każdy wpis ma mieć napisy klucz i wartosc');
     // od tej linii nic nie może się nie udać z powodu danych: wszystko sprawdzone
     for (const z of e.zapisy) this.sql.exec(`INSERT INTO zapisy (id, rodzaj, tresc, rozmiar) VALUES (?, ?, ?, ?)`, z.id, z.rodzaj, z.tresc, enc.encode(z.tresc).length);
     for (const a of e.akty) this.sql.exec(`INSERT INTO akty (nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy, prywatne, cialo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       a.nr, a.op, String(a.odcisk || ''), a.kto, Number(a.kiedy), a.co, a.zapis, a.glowa ?? null, a.z_zapisu ?? null, a.nowy ?? null, a.prywatne ? 1 : 0, typeof a.cialo === 'string' && CIALO.test(a.cialo) ? a.cialo : null);
     for (const g of e.glowy) this.sql.exec(`INSERT INTO glowy (nazwa, zapis, akt) VALUES (?, ?, ?)`, g.nazwa, g.zapis, g.akt);
     for (const o of e.odczyty) if (poprawneImie(o.kto) && Number.isInteger(o.nr)) this.sql.exec(`INSERT INTO odczyty (kto, nr, kiedy) VALUES (?, ?, ?)`, o.kto, o.nr, Number(o.kiedy) || this.teraz());
-    return { ok: true, zapisy: e.zapisy.length, akty: e.akty.length, glowy: e.glowy.length };
+    for (const m of meta) if (m.klucz !== 'schemat') this.ustawMeta(m.klucz, m.wartosc);
+    return { ok: true, zapisy: e.zapisy.length, akty: e.akty.length, glowy: e.glowy.length, meta: meta.length };
   }
 }
 
@@ -350,6 +378,10 @@ export async function obsluzMiejsce(rdzen, request) {
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   });
   const ciało = async () => { try { return await request.json(); } catch { return null; } };
+  // Te drzwi są sprzed środowiska i nie znają widoczności rzeczy: dziennik oddałby treść każdej rzeczy każdemu
+  // z kluczem. Dlatego od 17 XI 2026 są tylko dla właściciela (wywóz, wwóz, wgląd w dziennik); wszystko inne idzie
+  // przez /api/srodowisko. Wyjątkiem jest zamknięta ścieżka mostu, którą woła sam Worker.
+  if (kto !== rdzen.wlasciciel && !sciezka.startsWith('most/')) return odp(blad(403, 'drzwi /api/miejsce są tylko dla właściciela; rzeczy czyta się i zmienia przez /api/srodowisko (opis: /co-tu-jest)'));
   if (request.method === 'GET') {
     if (sciezka === '') { let most = null; try { most = JSON.parse(rdzen.meta('most_ostatni')); } catch { /* brak */ } return odp({ ...rdzen.stan(), ja: kto, wlasciciel: kto === rdzen.wlasciciel, most }); }
     if (sciezka === 'dziennik') return odp(rdzen.dziennik(Number(url.searchParams.get('od') || 0), Number(url.searchParams.get('ile') || LIMIT_DZIENNIKA), kto));

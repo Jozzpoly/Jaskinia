@@ -44,11 +44,15 @@
   let nrOkna = 0;
 
   // --- okna gości ----------------------------------------------------------------------------------------------
+  // Trzy poziomy zaufania do tego, co otwieramy w ramce:
+  //   'kod'   : kod gościa zapisany w Miejscu (piaskownica bez własnego adresu, pamięci i sieci);
+  //   'obcy'  : adres podany przez kogoś innego niż właściciel (skrypty tak, własna pamięć i wyskakujące okna nie);
+  //   'swoj'  : adres w rzeczy, którą dołożył i ostatnio zmienił właściciel (gra ma własną pamięć pod swoim adresem).
+  const PIASKOWNICE = { kod: 'allow-scripts allow-pointer-lock', obcy: 'allow-scripts allow-pointer-lock', swoj: 'allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups' };
   function otworz({ klucz, tytul, adres, piaskownica, gosc = null }) {
     for (const [id, o] of okna) if (o.klucz === klucz) return pokaz(id, true);
     const id = 'okno-' + ++nrOkna;
-    const ramka = el('iframe', { src: adres, title: tytul, referrerpolicy: 'no-referrer', allow: 'fullscreen; gamepad',
-      sandbox: piaskownica ? 'allow-scripts allow-pointer-lock' : 'allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups' });
+    const ramka = el('iframe', { src: adres, title: tytul, referrerpolicy: 'no-referrer', allow: 'fullscreen; gamepad', sandbox: PIASKOWNICE[piaskownica] || PIASKOWNICE.obcy });
     const mowi = el('span', { klasa: 'mowi' });
     const tyt = el('span', { klasa: 'tytul', tekst: tytul });
     const sekcja = el('section', { klasa: 'okno', 'aria-label': tytul },
@@ -183,7 +187,10 @@
     if (czekaIle) t.append(el('section', {}, el('h2', {}, 'Czeka na właściciela ', el('span', { klasa: 'ile', tekst: String(czekaIle) })),
       el('ul', { klasa: 'lista' },
         d.czeka.prosby.map((p) => el('li', {}, el('a', { href: '/rzecz/' + p.id, tekst: p.tresc }), el('span', { klasa: 'bok', tekst: `prośba od ${p.od} · ${kiedy(p.kiedy)}` }))),
-        d.czeka.propozycje.map((p) => el('li', {}, el('a', { href: '/rzecz/' + p.id, tekst: `${p.rzecz ? 'zmiana rzeczy' : 'nowa rzecz'} rodzaju ${p.rodzaj}` }), el('span', { klasa: 'bok', tekst: `propozycja od ${p.od} · ${kiedy(p.kiedy)}` }))))));
+        d.czeka.propozycje.map((p) => el('li', {}, el('a', { href: '/rzecz/' + p.id, tekst: `${p.rzecz ? 'zmiana rzeczy' : 'nowa rzecz'} rodzaju ${p.rodzaj}` }),
+          // propozycja, która zmienia prawa albo uczestników, ma inną wagę niż zmiana nazwy: mówi to od razu
+          p.wymaga === 'wlasciciel' ? el('span', { klasa: 'nowe', tekst: 'zmienia prawa albo uczestników' }) : null,
+          el('span', { klasa: 'bok', tekst: `propozycja od ${p.od} · ${kiedy(p.kiedy)}` }))))));
 
     const swieze = rzeczy.filter((r) => r.wersja > widziany && widziany > 0);
     if (swieze.length) t.append(el('section', {}, el('h2', {}, 'Nowe od Twojej ostatniej wizyty ', el('span', { klasa: 'ile', tekst: String(swieze.length) }),
@@ -218,27 +225,36 @@
     k.append(el('div', { klasa: 'nazwa', tekst: r.tytul }));
     if (typeof c.opis === 'string' && c.opis) k.append(el('div', { klasa: 'opis', tekst: c.opis }));
     const ruchy = el('div', { klasa: 'ruchy' });
-    if (typeof c.zagraj === 'string' && /^https:\/\//.test(c.zagraj)) ruchy.append(el('button', { klasa: 'glowny', tekst: 'Zagraj', klik: () => otworz({ klucz: 'p:' + r.id, tytul: r.tytul, adres: c.zagraj, piaskownica: false }) }));
+    const swoja = odWlasciciela(r);
+    if (typeof c.zagraj === 'string' && /^https:\/\//.test(c.zagraj)) ruchy.append(el('button', { klasa: 'glowny', tekst: 'Zagraj', title: swoja ? c.zagraj : 'Adres podał ' + r.zmienil + ', nie właściciel: otworzy się bez własnej pamięci. ' + c.zagraj, klik: () => otworz({ klucz: 'p:' + r.id, tytul: r.tytul, adres: c.zagraj, piaskownica: swoja ? 'swoj' : 'obcy' }) }));
     if (typeof c.zrodlo === 'string' && /^https:\/\//.test(c.zrodlo)) ruchy.append(el('a', { klasa: 'guzik', href: c.zrodlo, target: '_blank', rel: 'noopener', tekst: 'źródło' }));
     if (ruchy.childNodes.length) k.append(ruchy);
     k.append(el('div', { klasa: 'meta' }, r.wersja > widziany && widziany > 0 ? el('span', { klasa: 'nowe', tekst: 'nowe' }) : null,
-      c.zycie ? el('span', { tekst: 'żyje: ' + kiedy(c.zycie) }) : el('span', { tekst: 'brak daty życia' }), el('a', { href: '/rzecz/' + r.id, tekst: 'szczegóły' })));
+      c.zycie ? el('span', { tekst: 'żyje: ' + kiedy(c.zycie) }) : el('span', { tekst: 'brak daty życia' }),
+      // skąd rzecz pochodzi: kto ją dołożył i kto ostatnio zmienił; rzecz nie od właściciela jest oznaczona
+      el('span', { klasa: swoja ? null : 'nowe', tekst: swoja ? 'od właściciela' : 'dołożył ' + r.utworzyl + (r.zmienil !== r.utworzyl ? ', zmienił ' + r.zmienil : '') }),
+      el('a', { href: '/rzecz/' + r.id, tekst: 'szczegóły' })));
     return k;
   }
+  // Rzecz "od właściciela": on ją dołożył i on ostatnio zmienił. Każdą inną mógł dołożyć albo zmienić agent.
+  const odWlasciciela = (r) => Boolean(opis && opis.wlasciciel && r.utworzyl === opis.wlasciciel && r.zmienil === opis.wlasciciel);
   function kartaGoscia(r) {
     const c = r.cechy;
     const kod = typeof c.kod === 'string' && /^[0-9a-f]{64}$/.test(c.kod) ? '/gosc/' + c.kod : null;
     const adres = !kod && typeof c.adres === 'string' && /^https:\/\//.test(c.adres) ? c.adres : null;
     const k = el('article', { klasa: 'karta' }, el('div', { klasa: 'nazwa', tekst: r.tytul }), el('div', { klasa: 'opis', tekst: typeof c.opis === 'string' ? c.opis : '' }));
     k.style.borderLeftColor = 'var(--akcent)';
-    k.append(el('div', { klasa: 'ruchy' }, kod || adres ? el('button', { klasa: 'glowny', tekst: 'Otwórz', klik: () => otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: Boolean(kod), gosc: { id: r.id, nazwa: r.tytul } }) }) : el('span', { klasa: 'ciche', tekst: 'bez kodu i adresu' })),
+    k.append(el('div', { klasa: 'ruchy' }, kod || adres ? el('button', { klasa: 'glowny', tekst: 'Otwórz', klik: () => otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul } }) }) : el('span', { klasa: 'ciche', tekst: 'bez kodu i adresu' })),
       el('div', { klasa: 'meta' }, r.wersja > widziany && widziany > 0 ? el('span', { klasa: 'nowe', tekst: 'nowe' }) : null, el('span', { tekst: `dołożył ${r.utworzyl} · ${kiedy(r.utworzono)}` }), el('a', { href: '/rzecz/' + r.id, tekst: 'szczegóły' })));
     return k;
   }
 
   async function odswiez() {
     const [o, s] = await Promise.all([czytaj('/api/srodowisko/opis'), czytaj('/api/srodowisko/spis')]);
-    opis = o; rzeczy = s.rzeczy; akt = o.miejsce.akt;
+    // spis przychodzi kawałkami po 1000; czytamy do końca, żeby strona nie udawała, że pierwszy kawałek to wszystko
+    const wszystkie = s.rzeczy;
+    for (let kawalek = s; !kawalek.wszystko && wszystkie.length < 20000;) { kawalek = await czytaj('/api/srodowisko/spis?pomin=' + wszystkie.length); wszystkie.push(...kawalek.rzeczy); if (!kawalek.rzeczy.length) break; }
+    opis = o; rzeczy = wszystkie; akt = o.miejsce.akt;
     if (!widziany) { widziany = akt; localStorage.setItem(PAMIEC, String(akt)); }
     rysuj();
   }
