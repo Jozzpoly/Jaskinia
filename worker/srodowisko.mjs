@@ -266,6 +266,8 @@ const SPIS_SCHEMAT = [
      utworzyl TEXT NOT NULL, utworzono INTEGER NOT NULL, zmienil TEXT NOT NULL, zmieniono INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS rzeczy_rodzaj ON rzeczy (rodzaj)`,
   `CREATE INDEX IF NOT EXISTS rzeczy_obszar ON rzeczy (obszar)`,
+  // Pytanie "co zmieniło się po akcie N" zadaje każda otwarta strona po każdej zmianie: bez indeksu czytałoby cały spis.
+  `CREATE INDEX IF NOT EXISTS rzeczy_akt ON rzeczy (akt)`,
   `CREATE TABLE IF NOT EXISTS odniesienia (od TEXT NOT NULL, cecha TEXT NOT NULL, cel TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS odniesienia_cel ON odniesienia (cel)`,
   `CREATE INDEX IF NOT EXISTS odniesienia_od ON odniesienia (od)`,
@@ -315,9 +317,11 @@ export class Srodowisko {
 
   // Wybór rzeczy: rodzaj (z pokoleniem albo sama nazwa), obszar, wartości cech (`gdzie`), tekst (`szukaj`) i to,
   // czy pokazywać odłożone (domyślnie nie; 'tak': tylko odłożone; 'razem': jedne i drugie).
-  _warunek({ rodzaj = null, obszar, gdzie = null, szukaj = null, odlozone = 'nie' } = {}) {
+  _warunek({ rodzaj = null, obszar, gdzie = null, szukaj = null, odlozone = 'nie', po = null } = {}) {
     const war = [], par = [];
     let trzebaTresci = false;
+    // `po`: tylko rzeczy zmienione po akcie o tym numerze (z `odlozone: 'razem'` także te, które po nim odłożono)
+    if (Number.isSafeInteger(po) && po >= 0) { war.push('r.akt > ?'); par.push(po); }
     if (rodzaj) {
       // Sama nazwa (bez pokolenia) znaczy wszystkie pokolenia. Porównanie po początku napisu, nie wzorcem LIKE,
       // bo podkreślnik w nazwie rodzaju byłby w nim dżokerem. Zły zapis rodzaju nie pasuje do niczego.

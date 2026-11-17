@@ -44,6 +44,8 @@ function filtrZAdresu(s, p) {
   if (Object.keys(gdzie).length) f.gdzie = gdzie;
   if (p.get('szukaj')) f.szukaj = p.get('szukaj').slice(0, 200);
   if (['tak', 'razem'].includes(p.get('odlozone'))) f.odlozone = p.get('odlozone');
+  // po=<akt>: tylko to, co zmieniło się po tym akcie; tak otwarta strona dogania Miejsce bez czytania całego spisu
+  if (liczba(p.get('po')) !== null) f.po = liczba(p.get('po'));
   return f;
 }
 
