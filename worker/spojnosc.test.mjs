@@ -24,7 +24,7 @@ test('SP1. świeżo zasiane Miejsce jest spójne, a wynik mówi, przy którym ak
   assert.equal(w.ile_niezgodnych, 0, JSON.stringify(w.niezgodne));
   assert.equal(w.urwane, false);
   assert.equal(w.akt, s.ostatniNr());
-  assert.match(w.mowi, /żadna nie kłóci się ze swoim kształtem/);
+  assert.match(w.mowi, /żadna żywa nie kłóci się ze swoim kształtem/);
 });
 
 test('SP2. przeniesienie rzeczy, od której bierze się obszar, zostawia sierotę — i sprawdzian ją nazywa', async () => {
@@ -102,4 +102,25 @@ test('SP7. sprawdzian jest w spisie czasowników: kawałek bez wpisu w spisie ni
   const c = czasowniki(s).find((x) => x.nazwa === 'spojnosc');
   assert.ok(c, 'czasownik spojnosc stoi w spisie, więc agent znajdzie drzwi bez pytania nikogo');
   assert.match(c.ktoredy, /\/api\/srodowisko\/spojnosc/);
+});
+
+test('SP8. odłożona niezgodność nie liczy się do zdania o dziś, ale jest powiedziana osobno — bo przywrócenie odda ją krzywą', async () => {
+  const { s, widok, projekt, nowe } = await swiat();
+  const m = await s.ruch('jozz', { op: 'spojnosc-odl-1', co: 'poloz', rodzaj: 'miejsce/1', cechy: { widok: widok.id, rzecz: projekt, x: 1, y: 2 } });
+  await s.ruch('jozz', { op: 'spojnosc-odl-2', co: 'poloz', rodzaj: 'widok/1', rzecz: widok.id, obszar: nowe, wersja: 'dowolna', cechy: widok.cechy });
+  const zywa = sprawdzSpojnosc(s);
+  assert.equal(zywa.ile_niezgodnych_zywych, 1, 'dopóki rzecz leży, niezgodność jest żywa');
+
+  const o = await s.ruch('jozz', { op: 'spojnosc-odl-3', co: 'odloz', rzecz: m.rzecz, wersja: 'dowolna', powod: 'schowana' });
+  assert.equal(o.ok, true, JSON.stringify(o));
+  const po = sprawdzSpojnosc(s);
+  assert.equal(po.ile_niezgodnych_zywych, 0, 'rzecz schowana nie jest tym, co dziś krzywe');
+  assert.equal(po.niezgodnych_odlozonych, 1);
+  assert.match(po.mowi, /żadna żywa nie kłóci się/);
+  assert.match(po.mowi, /przywrócenie odda je w tym samym, złym obszarze/);
+
+  // i to nie jest przesada: przywrócenie naprawdę oddaje rzecz w starym obszarze, bo przywroc nie przelicza lezy_z
+  const p = await s.ruch('jozz', { op: 'spojnosc-odl-4', co: 'przywroc', rzecz: m.rzecz, wersja: 'dowolna' });
+  assert.equal(p.ok, true, JSON.stringify(p));
+  assert.equal(sprawdzSpojnosc(s).ile_niezgodnych_zywych, 1, 'wróciła krzywa');
 });

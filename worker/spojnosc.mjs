@@ -79,20 +79,28 @@ export function sprawdzSpojnosc(s, { ile = DOMYSLNIE_ILE, pomin = 0, rodzaj = nu
   }
 
   const n = Math.max(1, Math.min(1000, Math.trunc(Number(najwyzej)) || 200));
+  // Rzecz odłożona jest poza drogą: nie liczy się do zdania o tym, co dziś jest krzywe. Ale `przywroc` wraca do
+  // obszaru sprzed odłożenia, a nie przelicza go z `lezy_z` (tak samo jak `cofnij`), więc odłożona niezgodność
+  // WRÓCI krzywa. Dlatego stoi w osobnej liczbie i w osobnym zdaniu, a nie znika i nie miesza się z żywymi.
+  // Znalezione pod żywym adresem 17 XI: po odłożeniu rzeczy sprawdzian dalej mówił "1 kłóci się", co brzmiało
+  // jak nienaprawiona usterka, a było rzeczą schowaną.
+  const zywych = niezgodne.length - odlozonych;
+  const ogon = odlozonych ? ` Osobno ${odlozonych} odłożonych rzeczy jest niezgodnych: dziś nie przeszkadzają, ale przywrócenie odda je w tym samym, złym obszarze.` : '';
   return {
     akt: s.ostatniNr(),
     sprawdzone, urwane, nastepne: urwane ? odKtorej + sprawdzone : null,
     bez_ksztaltu: bezKsztaltu,
     ile_niezgodnych: niezgodne.length,
+    ile_niezgodnych_zywych: zywych,
     niezgodnych_odlozonych: odlozonych,
     rodziny,
     niezgodne: niezgodne.slice(0, n),
     wszystkie_wypisane: niezgodne.length <= n,
     // Zdanie dla człowieka i dla agenta, który nie będzie czytał pól po kolei.
     mowi: urwane
-      ? `Przejrzane ${sprawdzone} rzeczy i to NIE jest całość; niezgodnych ${niezgodne.length}. Dalszy ciąg: pomin=${odKtorej + sprawdzone}. Dopóki przebieg jest urwany, "zero niezgodności" nic nie znaczy.`
-      : niezgodne.length === 0
-        ? `Przejrzane wszystkie ${sprawdzone} rzeczy przy akcie ${s.ostatniNr()}; żadna nie kłóci się ze swoim kształtem.${bezKsztaltu ? ` ${bezKsztaltu} leży poza jakimkolwiek kształtem, więc o nich sprawdzian nic nie wie.` : ''}`
-        : `Przejrzane wszystkie ${sprawdzone} rzeczy przy akcie ${s.ostatniNr()}; ${niezgodne.length} kłóci się ze swoim kształtem (lezy_z: ${rodziny.lezy_z}, treść: ${rodziny.ksztalt}).`,
+      ? `Przejrzane ${sprawdzone} rzeczy i to NIE jest całość; niezgodnych ${niezgodne.length} (żywych ${zywych}). Dalszy ciąg: pomin=${odKtorej + sprawdzone}. Dopóki przebieg jest urwany, "zero niezgodności" nic nie znaczy.`
+      : zywych === 0
+        ? `Przejrzane wszystkie ${sprawdzone} rzeczy przy akcie ${s.ostatniNr()}; żadna żywa nie kłóci się ze swoim kształtem.${ogon}${bezKsztaltu ? ` ${bezKsztaltu} leży poza jakimkolwiek kształtem, więc o nich sprawdzian nic nie wie.` : ''}`
+        : `Przejrzane wszystkie ${sprawdzone} rzeczy przy akcie ${s.ostatniNr()}; ${zywych} kłóci się ze swoim kształtem (lezy_z: ${rodziny.lezy_z}, treść: ${rodziny.ksztalt}).${ogon}`,
   };
 }

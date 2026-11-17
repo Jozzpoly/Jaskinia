@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "akt": 1485,
+  "sprawdzone": 666,
+  "urwane": false,
+  "nastepne": null,
+  "bez_ksztaltu": 0,
+  "ile_niezgodnych": 0,
+  "niezgodnych_odlozonych": 0,
+  "rodziny": {
+    "lezy_z": 0,
+    "ksztalt": 0
+  },
+  "niezgodne": [],
+  "wszystkie_wypisane": true,
+  "mowi": "Przejrzane wszystkie 666 rzeczy przy akcie 1485; żadna nie kłóci się ze swoim kształtem."
+}
