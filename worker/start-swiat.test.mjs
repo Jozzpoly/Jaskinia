@@ -42,6 +42,10 @@ test('S2. świat: projekty, rodziny i gałęzie z listy rzeczy; miejsca tylko z 
   assert.equal(s.miejsca.get(id('repo1')).skala, SKALA.max);
   assert.equal(s.ileSlow.get(id('repo1')), 2);
   assert.equal(zbudujSwiat(rzeczy).miejsca.size, 0, 'bez widoku nie ma miejsc z ręki');
+  // miejsce zapisane w innym obszarze niż widok nie przeszło przez prawo tego obszaru: Start go nie bierze
+  const obce = [...probka(), { ...miejsce(9, id('repo4'), 7, 7), obszar: id('obszarnowe') }];
+  assert.equal(zbudujSwiat(obce, { widok: WIDOK }).miejsca.size, 0);
+  assert.equal(zbudujSwiat(obce, { widok: WIDOK, obszarWidoku: id('obszarnowe') }).miejsca.size, 1);
 });
 
 test('S3. siatka domyślna: nic na siebie nie nachodzi, rodzina leży razem, a nowe commity niczego nie przestawiają', () => {
@@ -60,7 +64,7 @@ test('S3. siatka domyślna: nic na siebie nie nachodzi, rodzina leży razem, a n
   for (const n of [5, 6, 7, 8]) { const o = siatka.get(id('repo' + n)); const cx = o.x + o.w / 2, cy = o.y + o.h / 2; assert.equal(cx > x0 && cx < x1 && cy > y0 && cy < y1, false); }
 });
 
-test('S4. stan stały: miejsce z ręki wygrywa z siatką i mówi, że jest z ręki; podpis rodziny obejmuje jej rzeczy, gdziekolwiek leżą', () => {
+test('S4. stan stały: miejsce z ręki wygrywa z siatką i mówi, że jest z ręki; podpis rodziny zostaje nad jej rzeczami z siatki', () => {
   const rzeczy = probka();
   rzeczy.push(miejsce(1, id('repo1'), 5000, 4000, { skala: 2 }));
   const s = zbudujSwiat(rzeczy, { widok: WIDOK });
@@ -70,7 +74,24 @@ test('S4. stan stały: miejsce z ręki wygrywa z siatką i mówi, że jest z rę
   assert.equal(u.prostokaty.get(id('repo2')).zReki, false);
   const maszyny = u.rodziny.find((r) => r.nazwa === 'Maszyny');
   assert.equal(maszyny.ile, 4);
-  assert.ok(maszyny.x + maszyny.w >= 5000 + KARTA.w, 'podpis rodziny sięga do rzeczy wyniesionej ręką');
+  assert.ok(maszyny.x + maszyny.w < 4000, 'rzecz wyniesiona ręką nie ciągnie podpisu rodziny za sobą');
+  // gdy cała rodzina leży z ręki, podpis obejmuje je wszystkie
+  const wszystkieZReki = probka();
+  [1, 2, 3, 4].forEach((n, i) => wszystkieZReki.push(miejsce(20 + n, id('repo' + n), 8000 + i * 400, 100)));
+  const u2 = ukladStaly(zbudujSwiat(wszystkieZReki, { widok: WIDOK }));
+  const m2 = u2.rodziny.find((r) => r.nazwa === 'Maszyny');
+  assert.ok(m2.x >= 8000 - KARTA.w && m2.x + m2.w >= 9200);
+  // rzecz z siatki nie znika pod rzeczą położoną ręką dokładnie na jej miejscu: odsuwa się na ukos
+  const bez = ukladStaly(zbudujSwiat(probka(), { widok: WIDOK }));
+  const slot = bez.prostokaty.get(id('repo2'));
+  const przykryte = probka();
+  przykryte.push(miejsce(30, id('repo7'), slot.x + slot.w / 2, slot.y + slot.h / 2));
+  const u3 = ukladStaly(zbudujSwiat(przykryte, { widok: WIDOK }));
+  const a = u3.prostokaty.get(id('repo2')), b = u3.prostokaty.get(id('repo7'));
+  const sx = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), sy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  assert.ok(!(sx > 0 && sy > 0) || sx * sy <= 0.4 * a.w * a.h, 'rzecz z siatki wyszła spod rzeczy z ręki');
+  assert.equal(a.odsunieta, true);
+  assert.deepEqual([b.x + b.w / 2, b.y + b.h / 2], [slot.x + slot.w / 2, slot.y + slot.h / 2], 'rzeczy z ręki nie ruszamy');
   assert.ok(u.rodziny.some((r) => r.nazwa === 'Bez rodziny' && r.ile === 1));
   assert.ok(u.granice.w >= 5000);
 });

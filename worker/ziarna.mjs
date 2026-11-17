@@ -176,7 +176,7 @@ export function ziarna({ wlasciciel }) {
         nazwa: { typ: 'tekst', wymagana: true },
         opis: { typ: 'tekst' },
       } }),
-    k('miejsce', { dla: 'miejsce/1', klucz: ['widok', 'rzecz'], opis: 'Miejsce rzeczy w widoku: gdzie leży i jak duża jest z ręki. Jedna rzecz ma w jednym widoku jedno miejsce (klucz: widok i rzecz), więc każde przesunięcie jest nową wersją tego samego miejsca, a historia mówi, kto i kiedy ją tam położył. Rzecz bez miejsca leży w siatce domyślnej widoku.',
+    k('miejsce', { dla: 'miejsce/1', klucz: ['widok', 'rzecz'], uklad: true, lezy_z: 'widok', opis: 'Miejsce rzeczy w widoku: gdzie leży i jak duża jest z ręki. Jedna rzecz ma w jednym widoku jedno miejsce (klucz: widok i rzecz), więc każde przesunięcie jest nową wersją tego samego miejsca, a historia mówi, kto i kiedy ją tam położył. Rzecz bez miejsca leży w siatce domyślnej widoku. Miejsce leży zawsze w obszarze swojego widoku (lezy_z), więc to ustawienie tego obszaru mówi, czy agent układa sam, czy proponuje; to jest układanie, nie treść (uklad).',
       cechy: {
         widok: { typ: 'rzecz', rodzaj: 'widok/1', wymagana: true },
         rzecz: { typ: 'rzecz', wymagana: true, opis: 'rzecz, która tu leży' },

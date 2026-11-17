@@ -74,7 +74,7 @@ $('komunikat').addEventListener('click', () => { $('komunikat').hidden = true; }
 function poZmianie() {
   const rzeczy = [...drzwi.rzeczy.values()];
   widok = rzeczy.find((r) => r.rodzaj.startsWith('widok/') && r.cechy.nazwa === 'Start') || rzeczy.find((r) => r.rodzaj.startsWith('widok/')) || null;
-  swiat = zbudujSwiat(rzeczy, { widok: widok ? widok.id : null });
+  swiat = zbudujSwiat(rzeczy, { widok: widok ? widok.id : null, obszarWidoku: widok ? widok.obszar ?? null : null });
   // położenie, które ręka właśnie zrobiła, zostaje na wierzchu, dopóki Miejsce nie odpowie
   for (const [id, m] of wToku) swiat.miejsca.set(id, { ...(swiat.miejsca.get(id) || {}), ...m });
   if (wybrany && !swiat.projekty.some((p) => p.id === wybrany)) wybrany = null;
@@ -109,6 +109,13 @@ function zawin(tekst, czcionka, szer, ileLinii) {
   const slowa = String(tekst).split(/\s+/).filter(Boolean), linie = [];
   let linia = '', ucieto = false;
   for (const s of slowa) {
+    // słowo, które samo nie mieści się w linii, zostaje ucięte z wielokropkiem, a nie ściśnięte
+    if (!linia && ctx.measureText(s).width > szer) {
+      let k = s;
+      while (k.length > 1 && ctx.measureText(k + '…').width > szer) k = k.slice(0, -1);
+      linie.push(k + '…'); ucieto = true; linia = '';
+      break;
+    }
     const proba = linia ? linia + ' ' + s : s;
     if (ctx.measureText(proba).width <= szer || !linia) { linia = proba; continue; }
     linie.push(linia); linia = s;
@@ -117,7 +124,7 @@ function zawin(tekst, czcionka, szer, ileLinii) {
   if (!ucieto && linia) linie.push(linia);
   if (linie.length > ileLinii) { linie.length = ileLinii; ucieto = true; }
   const zaSzeroka = linie.some((l) => ctx.measureText(l).width > szer);
-  if (ucieto && linie.length) linie[linie.length - 1] = linie[linie.length - 1].replace(/[\s.,;:]*$/, '') + '…';
+  if (ucieto && linie.length && !linie[linie.length - 1].endsWith('…')) linie[linie.length - 1] = linie[linie.length - 1].replace(/[\s.,;:]*$/, '') + '…';
   w = { linie, zaSzeroka, ucieto };
   if (pamiecLinii.size > 4000) pamiecLinii.clear();
   pamiecLinii.set(klucz, w);
@@ -460,7 +467,7 @@ async function poloz(id, miejsce, zdanie) {
   wToku.set(id, m);
   swiat.miejsca.set(id, { ...(bylo || {}), ...m });
   przelicz(); rysujKarte(); popros();
-  const o = await drzwi.ruch({ co: 'poloz', rodzaj: 'miejsce/1', wersja: 'dowolna', ...(widok.obszar ? { obszar: widok.obszar } : {}), cechy: { widok: widok.id, rzecz: id, x: m.x, y: m.y, ...(m.skala !== 1 ? { skala: Math.round(m.skala * 100) / 100 } : {}) } });
+  const o = await drzwi.ruch({ co: 'poloz', rodzaj: 'miejsce/1', wersja: 'dowolna', cechy: { widok: widok.id, rzecz: id, x: m.x, y: m.y, ...(m.skala !== 1 ? { skala: Math.round(m.skala * 100) / 100 } : {}) } });
   wToku.delete(id);
   const propozycja = o.ok && o.dane.skutek === 'propozycja';
   if (!o.ok || propozycja) {

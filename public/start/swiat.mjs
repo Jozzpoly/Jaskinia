@@ -34,7 +34,7 @@ export function jakoProjekt(r) {
 }
 
 // Z listy rzeczy: projekty, rodziny, gałęzie po projekcie i miejsca z ręki w podanym widoku.
-export function zbudujSwiat(rzeczy, { widok = null } = {}) {
+export function zbudujSwiat(rzeczy, { widok = null, obszarWidoku = null } = {}) {
   const projekty = [], rodziny = new Map(), galezie = new Map(), miejsca = new Map();
   let ileSlow = new Map();
   for (const r of rzeczy) {
@@ -44,7 +44,9 @@ export function zbudujSwiat(rzeczy, { widok = null } = {}) {
     else if (r.rodzaj.startsWith('galaz/') && typeof c.repo === 'string') {
       if (!galezie.has(c.repo)) galezie.set(c.repo, []);
       galezie.get(c.repo).push({ id: r.id, nazwa: tekst(c.nazwa) || '?', kiedy: tekst(c.kiedy), temat: tekst(c.temat) });
-    } else if (r.rodzaj.startsWith('miejsce/') && widok && c.widok === widok && typeof c.rzecz === 'string' && Number.isFinite(c.x) && Number.isFinite(c.y)) {
+    } else if (r.rodzaj.startsWith('miejsce/') && widok && c.widok === widok && (r.obszar ?? null) === (obszarWidoku ?? null) && typeof c.rzecz === 'string' && Number.isFinite(c.x) && Number.isFinite(c.y)) {
+      // liczy się tylko miejsce, które leży w obszarze swojego widoku: położenie zapisane gdzie indziej nie przeszło
+      // przez prawo tego obszaru
       miejsca.set(c.rzecz, { id: r.id, wersja: r.wersja, x: c.x, y: c.y, skala: Number.isFinite(c.skala) ? Math.max(SKALA.min, Math.min(SKALA.max, c.skala)) : 1, kto: r.zmienil, kiedy: r.zmieniono });
     } else if (r.rodzaj.startsWith('slowo/') && Array.isArray(c.dotyczy)) {
       for (const id of c.dotyczy) if (typeof id === 'string') ileSlow.set(id, (ileSlow.get(id) || 0) + 1);
@@ -103,18 +105,37 @@ const obejmij = (prostokaty) => {
 export function ukladStaly(swiat) {
   const siatka = siatkaDomyslna(swiat);
   const prostokaty = new Map();
+  const zReki = [];
   for (const p of swiat.projekty) {
     const m = swiat.miejsca.get(p.id);
-    if (m) prostokaty.set(p.id, { x: m.x - (KARTA.w * m.skala) / 2, y: m.y - (KARTA.h * m.skala) / 2, w: KARTA.w * m.skala, h: KARTA.h * m.skala, zReki: true });
-    else prostokaty.set(p.id, { ...siatka.get(p.id), zReki: false });
+    if (!m) continue;
+    const pr = { x: m.x - (KARTA.w * m.skala) / 2, y: m.y - (KARTA.h * m.skala) / 2, w: KARTA.w * m.skala, h: KARTA.h * m.skala, zReki: true };
+    prostokaty.set(p.id, pr);
+    zReki.push(pr);
+  }
+  // Rzecz z siatki, którą zakryłaby rzecz położona ręką, odsuwa się na ukos, aż spod niej wyjdzie: nic nie znika pod
+  // czymś innym tylko dlatego, że ręka położyła tam inną rzecz. Rzeczy z ręki nie ruszamy nigdy.
+  const zakryta = (pr) => zReki.some((r) => {
+    const sx = Math.min(pr.x + pr.w, r.x + r.w) - Math.max(pr.x, r.x), sy = Math.min(pr.y + pr.h, r.y + r.h) - Math.max(pr.y, r.y);
+    return sx > 0 && sy > 0 && sx * sy > 0.4 * pr.w * pr.h;
+  });
+  for (const p of swiat.projekty) {
+    if (prostokaty.has(p.id)) continue;
+    const pr = { ...siatka.get(p.id), zReki: false };
+    for (let i = 0; i < 8 && zakryta(pr); i++) { pr.x += KARTA.w * 0.22; pr.y += KARTA.h * 0.3; pr.odsunieta = true; }
+    prostokaty.set(p.id, pr);
   }
   const wgRodziny = new Map();
   for (const p of swiat.projekty) {
     const k = p.rodzina && swiat.rodziny.has(p.rodzina) ? p.rodzina : '';
-    if (!wgRodziny.has(k)) wgRodziny.set(k, []);
-    wgRodziny.get(k).push(prostokaty.get(p.id));
+    if (!wgRodziny.has(k)) wgRodziny.set(k, { wszystkie: [], zSiatki: [] });
+    const pr = prostokaty.get(p.id);
+    wgRodziny.get(k).wszystkie.push(pr);
+    if (!pr.zReki) wgRodziny.get(k).zSiatki.push(pr);
   }
-  const rodziny = [...wgRodziny].map(([k, lista]) => ({ id: k || null, nazwa: k ? swiat.rodziny.get(k).nazwa : 'Bez rodziny', pytanie: k ? swiat.rodziny.get(k).pytanie : null, ile: lista.length, ...obejmij(lista) }));
+  // Podpis rodziny stoi nad jej rzeczami z siatki; rzecz wyniesiona ręką nie ciągnie go za sobą przez pół świata.
+  // Gdy cała rodzina leży z ręki, podpis obejmuje je wszystkie.
+  const rodziny = [...wgRodziny].map(([k, g]) => ({ id: k || null, nazwa: k ? swiat.rodziny.get(k).nazwa : 'Bez rodziny', pytanie: k ? swiat.rodziny.get(k).pytanie : null, ile: g.wszystkie.length, ...obejmij(g.zSiatki.length ? g.zSiatki : g.wszystkie) }));
   return { prostokaty, rodziny, granice: obejmij([...prostokaty.values()]) };
 }
 
