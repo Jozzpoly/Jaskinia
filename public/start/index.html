@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Start działa pod adresem Miejsca, więc ma te same granice co strona gospodarza: żadnego kodu z zewnątrz, gry tylko w ramkach. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-src 'self' https:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Jaskinia: Start</title>
+<link rel="stylesheet" href="/start/start.css">
+</head>
+<body>
+<canvas id="plotno"></canvas>
+<header class="pasek" id="pasek">
+  <a class="znak" href="/" title="Strona gospodarza: lista rzeczy, propozycje, obszary, stan budowy">Jaskinia</a>
+  <span class="proba" title="To jest szkielet: pokazuje kierunek, a nie gotowy Start">Start · szkielet</span>
+  <span class="stan" id="stan">łączę…</span>
+  <span class="rozporka"></span>
+  <label class="suwak" title="Stan stały: rzeczy leżą tam, gdzie je położyłeś. Stan ciekły: wypełniają okno, ważniejsze większe. Suwak zatrzymuje się w dowolnym miejscu pomiędzy.">
+    <span>stały</span>
+    <input id="suwak" type="range" min="0" max="100" value="100" aria-label="Od stanu stałego do ciekłego">
+    <span>ciekły</span>
+  </label>
+  <button id="przelacz" type="button" title="Przełącz między stanem stałym a ciekłym; rzeczy płyną na nowe miejsca">nadmuchaj</button>
+  <button id="caly" type="button" title="Pokaż wszystko w oknie">cały widok</button>
+  <button id="pomoc-guzik" type="button" aria-expanded="false" aria-controls="pomoc" title="Jak się tym posługiwać">?</button>
+  <button id="wejscie" type="button">Wejdź</button>
+</header>
+<div id="wejscie-panel" class="panel" hidden></div>
+<div id="pomoc" class="panel pomoc" hidden>
+  <h2>Jak się tym posługiwać</h2>
+  <ul>
+    <li><b>Przesuwanie widoku:</b> przeciągnij puste miejsce (albo środkowym przyciskiem); na dotyku jednym palcem.</li>
+    <li><b>Przybliżanie:</b> kółko w miejscu kursora; na dotyku dwa palce. Z bliska projekt pokazuje swoje gałęzie.</li>
+    <li><b>Stan stały:</b> przeciągnij projekt, żeby go położyć. Zapis idzie dopiero, gdy puścisz. Nic nie rusza się samo.</li>
+    <li><b>Stan ciekły:</b> upuść projekt na inny, żeby zamieniły się miejscami. Ciekły liczy się z położeń stałego.</li>
+    <li><b>Dotknięcie projektu:</b> karta z tym, czym jest, skąd się tu wziął, wejściem do grania i miejscem na słowo.</li>
+    <li><b>Dwuklik:</b> otwiera grę, jeśli projekt ma wejście.</li>
+    <li>Żeby układać, trzeba wejść (guzik Wejdź). Kto nie jest właścicielem, układa jako propozycję albo sam, zależnie od ustawienia obszaru.</li>
+  </ul>
+  <p class="ciche">Czego szkielet jeszcze nie umie: rzeczy nie odpychają się przy przesuwaniu, nie ma grup, zaznaczania wielu rzeczy, nazwanych ułożeń ani narzędzi w przestrzeni. Położenia są rzeczami w Miejscu (rodzaj miejsce), więc agent czyta je tekstem pod adresem <a href="/rzeczy?rodzaj=miejsce/1">/rzeczy?rodzaj=miejsce/1</a>.</p>
+</div>
+<aside id="karta" class="karta" hidden></aside>
+<p id="komunikat" class="komunikat" role="status" aria-live="polite" hidden></p>
+<section id="okno-gry" class="okno" hidden aria-label="Okno gry">
+  <div class="okno-pasek"><span class="tytul" id="okno-tytul"></span><a class="guzik" id="okno-karta" target="_blank" rel="noopener">nowa karta</a><button id="okno-zamknij" type="button" aria-label="Zamknij okno gry">×</button></div>
+  <div id="okno-ramka"></div>
+</section>
+<!-- To samo co na płótnie, jako zwykła lista: dla czytnika ekranu, dla klawiatury i dla agenta, który czyta stronę jako tekst. -->
+<nav id="lista" class="lista" aria-label="Projekty na Starcie"></nav>
+<noscript><p class="komunikat zly">Start rysuje się skryptem. Bez niego to samo jest tekstem pod adresem /co-tu-jest.</p></noscript>
+<script type="module" src="/start/start.mjs"></script>
+</body>
+</html>

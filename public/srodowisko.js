@@ -346,7 +346,7 @@
     if (kr.id && kr.akt !== akt) odswiezKarte();
   }
   function rysujTresc(t, d, czekaIle) {
-    if (d.miejsce.podglad) t.append(el('p', { klasa: 'uwaga', tekst: 'Podgląd: wszystko tutaj jest publiczne do czytania i niczego prywatnego tu nie ma. To jest środowisko, w którym Jaskinia ma rosnąć; Start jeszcze nie istnieje.' }));
+    if (d.miejsce.podglad) t.append(el('p', { klasa: 'uwaga', tekst: 'Podgląd: wszystko tutaj jest publiczne do czytania i niczego prywatnego tu nie ma. To jest środowisko, w którym Jaskinia ma rosnąć; Start stoi obok jako szkielet (guzik Start u góry).' }));
     const ja = jestemWlascicielem();
     // 1. Czeka na właściciela: to, na co ręka ma odpowiedzieć, jest pierwsze.
     if (czekaIle) t.append(el('section', {}, el('h2', {}, 'Czeka na właściciela ', el('span', { klasa: 'ile', tekst: String(czekaIle) })),
@@ -828,5 +828,8 @@
     if (!gniazdo) { proba = 0; polacz(); }
     if (zalegle) { zalegle = false; zaplanujDogonienie(0); }
   });
-  odswiez().then(() => { polacz(); setTimeout(puls, czeka); }, (blad) => { $('tresc').textContent = ''; $('tresc').append(el('p', { klasa: 'uwaga', tekst: 'Nie udało się przeczytać Miejsca: ' + blad.message })); $('stan').textContent = 'brak połączenia'; });
+  // Adres z #rzecz=<id> otwiera od razu kartę tej rzeczy: tak Start odsyła do pełnej karty (cechy, historia).
+  const kartaZAdresu = () => { const m = /^#rzecz=([0-9a-z]{26})$/.exec(location.hash); if (m && opis) otworzKarte(m[1], null); };
+  addEventListener('hashchange', kartaZAdresu);
+  odswiez().then(() => { polacz(); setTimeout(puls, czeka); kartaZAdresu(); }, (blad) => { $('tresc').textContent = ''; $('tresc').append(el('p', { klasa: 'uwaga', tekst: 'Nie udało się przeczytać Miejsca: ' + blad.message })); $('stan').textContent = 'brak połączenia'; });
 })();
