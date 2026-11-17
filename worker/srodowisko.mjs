@@ -33,6 +33,9 @@ const RODZAJ = /^[a-z][a-z0-9_.-]{0,79}\/[1-9][0-9]{0,5}$/;
 const RODZAJ_LUB_NAZWA = /^[a-z][a-z0-9_.-]{0,79}(\/[1-9][0-9]{0,5})?$/;
 const ID = /^[0-9a-z]{26}$/;
 const ZAPIS = /^[0-9a-f]{64}$/;
+const GEST = /^[A-Za-z0-9_-]{8,24}$/;
+// Ile rzeczy rusza jedna czynność zbiorcza (cofnięcie gestu, powrót do zapisanego układu).
+export const NAJWIECEJ_W_GESCIE = 1000;
 const CECHA = /^[a-z][a-z0-9_]{0,39}$/;
 const ALFABET = '0123456789abcdefghjkmnpqrstvwxyz';
 
@@ -421,6 +424,8 @@ export class Srodowisko {
       // "co na to wskazuje" też jest treścią: odniesienie z obszaru, którego ten ktoś nie widzi, zdradzałoby,
       // że tam coś jest, i nawet czym się interesuje.
       wskazujaNa: (id) => cel.wskazujaNa(id).filter((x) => cel.rzecz(x.od, { dla: kto }) !== null),
+      // Widok w wybranej chwili też jest czytaniem: położenia i chwila przechodzą przez te same okulary.
+      widokNa: (widok, akt) => cel.widokNa(widok, akt, { dla: kto }),
       // Pamiętane liczby są liczone DLA KOGOŚ, odkąd czytanie zależy od tego, kto czyta. Wspólny klucz podałby
       // zwiedzającemu liczbę policzoną dla uczestnika (albo odwrotnie) i to byłby wyciek przez licznik, nie przez listę.
       pamietaj: (klucz, licz) => cel.pamietaj(`${klucz}|dla:${kto ?? ''}`, licz),
@@ -876,6 +881,13 @@ export class Srodowisko {
     if (kto && kto.startsWith(PRZEDROSTEK_GOSCIA)) return blad(403, `imiona zaczynające się od ${PRZEDROSTEK_GOSCIA} należą do gości w oknach; uczestnik z kluczem nie działa pod takim imieniem`);
     if (!cialo || typeof cialo !== 'object' || Array.isArray(cialo)) return blad(400, 'ciało żądania ma być obiektem JSON');
     if (!opKlienta(cialo.op)) return blad(400, 'op: Twój własny identyfikator tej czynności, 8 do 100 znaków z [A-Za-z0-9_-]; przy ponowieniu podaj ten sam, wtedy nic nie zrobi się dwa razy');
+    // Gest: ruchy z tym samym znakiem są jedną czynnością ręki i cofają się razem (co: cofnij-gest). Znak wchodzi do
+    // identyfikatora czynności jądra (g:<gest>:<op>), więc akty gestu leżą obok siebie i jądro nie musi go znać.
+    if ('gest' in cialo) {
+      if (typeof cialo.gest !== 'string' || !GEST.test(cialo.gest)) return blad(400, 'gest: znak czynności, do której należy ten ruch: 8 do 24 znaków z [A-Za-z0-9_-]; ruchy z tym samym znakiem cofają się razem (co: cofnij-gest)');
+      if (cialo.op.length > 80) return blad(400, 'op: przy ruchu ze znakiem gestu najwyżej 80 znaków');
+      cialo = { ...cialo, op: 'g:' + cialo.gest + ':' + cialo.op };
+    }
     const co = cialo.co;
     // Ruch z okna: aktorem jest gość (gosc-<id jego rzeczy>), a ten, kto otworzył okno, zostaje przy akcie jako kontekst.
     // Dziennik nie mówi wtedy, że uczestnik zrobił coś, co zrobiło narzędzie w jego oknie. Prawo liczy się dla obu
@@ -901,7 +913,9 @@ export class Srodowisko {
     if (co === 'poloz') return this._wKolejce(() => this._poloz(aktor, cialo, ctx));
     if (co === 'odloz' || co === 'przywroc' || co === 'cofnij') return this._wKolejce(() => this._przestaw(aktor, cialo, ctx));
     if (co === 'przyjmij' || co === 'odrzuc') return this._wKolejce(() => this._rozstrzygnij(aktor, cialo, ctx));
-    return blad(400, 'co: poloz (dołóż albo zmień rzecz), odloz, przywroc, cofnij (rzecz do wcześniejszej wersji), przyjmij albo odrzuc (rozstrzygnij propozycję)');
+    if (co === 'cofnij-gest') return this._wKolejce(() => this._cofnijGest(aktor, cialo, ctx));
+    if (co === 'przywroc-uklad') return this._wKolejce(() => this._przywrocUklad(aktor, cialo, ctx));
+    return blad(400, 'co: poloz (dołóż albo zmień rzecz), odloz, przywroc, cofnij (rzecz do wcześniejszej wersji), przyjmij albo odrzuc (rozstrzygnij propozycję), cofnij-gest (cały gest jednym krokiem), przywroc-uklad (powrót do zapisanego układu)');
   }
 
   _maRzecz = (id) => this.rzecz(id);
@@ -1157,6 +1171,159 @@ export class Srodowisko {
     }
     if (cel.akt === stara.wersja) return blad(409, 'to jest bieżąca wersja tej rzeczy; nie ma czego cofać');
     return this._zmien(kto, c.op, slad, { ...wspolne, co: 'cofnij', rodzaj: cel.rodzaj, obszar: cel.obszar, cechy: cel.cechy, odlozone: cel.odlozone, powod: cel.powod, zWersji: cel.akt });
+  }
+
+  // --- gest: wiele zmian jako jedna czynność ręki ------------------------------------------------------------------
+  // Jedno przeciągnięcie, zamiana albo powrót do zapisanego układu rusza wiele rzeczy, a ręka chce to cofnąć jednym
+  // krokiem (standard jakości właściciela: cofanie, także po przeładowaniu strony). Jądro nie zna gestu i nie musi:
+  // ruch może nieść znak `gest`, a środowisko składa wtedy identyfikator czynności jądra jako g:<gest>:<op>. Klient
+  // dwukropka w op użyć nie może, więc znak nie zderzy się ze zwykłym op, a akty jednego gestu jednego wykonawcy leżą
+  // obok siebie w indeksie (kto, op). Cofnięcie gestu wraca każdej ruszonej rzeczy zapis sprzed gestu (rzecz, która
+  // w geście powstała, odkłada), wszystko albo nic, i samo jest gestem, więc da się je ponowić. Cofa się tylko to,
+  // czego nikt po geście nie ruszył: cofnięcie nie nadpisuje cudzej zmiany.
+  _aktyGestu(kto, gest) {
+    return this.q(`SELECT nr, glowa, z_zapisu, kiedy FROM akty WHERE kto = ? AND op >= ? AND op < ? AND co = 'przesun' AND glowa LIKE 'rzecz:%' ORDER BY nr`, kto, 'g:' + gest + ':', 'g:' + gest + ';');
+  }
+  _ostatnieGesty(kto, odAktu) {
+    return this.q(`SELECT nr, op, glowa, kiedy FROM akty WHERE kto = ? AND op >= 'g:' AND op < 'g;' AND co = 'przesun' AND glowa LIKE 'rzecz:%' AND nr > ? ORDER BY nr DESC LIMIT 4000`, kto, odAktu);
+  }
+  // Stan rzeczy przy akcie o numerze `akt`: ostatnia wersja ustawiona nie później niż on; null, gdy rzeczy jeszcze nie było.
+  _stanNa(id, akt) {
+    const a = this.q(`SELECT nr, zapis FROM akty WHERE glowa = ? AND co = 'przesun' AND nr <= ? ORDER BY nr DESC LIMIT 1`, 'rzecz:' + id, akt)[0];
+    if (!a) return null;
+    const t = this._zeZapisu(a.zapis);
+    return t ? { rzecz: id, akt: a.nr, ...t } : null;
+  }
+  _zeZapisu(zapis) {
+    const z = this.q(`SELECT rodzaj, tresc FROM zapisy WHERE id = ?`, zapis)[0];
+    if (!z) return null;
+    let t = {};
+    try { t = JSON.parse(z.tresc) || {}; } catch { /* zostaje puste */ }
+    if (!t || typeof t !== 'object') t = {};
+    return { rodzaj: z.rodzaj, obszar: t.obszar ?? null, cechy: t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {}, odlozone: t.odlozone === true, powod: typeof t.powod === 'string' ? t.powod : null };
+  }
+
+  // Co gest ruszył: dla każdej rzeczy zapis sprzed gestu (null: powstała w nim) i akt, którym gest ją zostawił.
+  gestDla(kto, gest) {
+    if (typeof gest !== 'string' || !GEST.test(gest) || !poprawneImie(kto)) return [];
+    const m = new Map();
+    for (const a of this._aktyGestu(kto, gest)) {
+      const id = a.glowa.slice(6), x = m.get(id);
+      if (!x) m.set(id, { rzecz: id, przed: a.z_zapisu ?? null, po: a.nr, kiedy: new Date(a.kiedy).toISOString() });
+      else { x.po = a.nr; x.kiedy = new Date(a.kiedy).toISOString(); }
+    }
+    return [...m.values()];
+  }
+
+  // Ostatnie gesty uczestnika, od najnowszego: znak, ile rzeczy ruszył, kiedy i którym aktem się skończył.
+  gestyDla(kto, ile = 20) {
+    if (!poprawneImie(kto)) return [];
+    const m = new Map();
+    for (const a of this._ostatnieGesty(kto, Math.max(0, this.ostatniNr() - 20000))) {
+      const gest = String(a.op).split(':')[1];
+      let g = m.get(gest);
+      if (!g) { if (m.size >= Math.max(1, Math.min(100, ile | 0 || 20))) continue; g = { gest, rzeczy: new Set(), akt: a.nr, kiedy: new Date(a.kiedy).toISOString() }; m.set(gest, g); }
+      g.rzeczy.add(a.glowa);
+    }
+    return [...m.values()].map((g) => ({ ...g, rzeczy: g.rzeczy.size }));
+  }
+
+  // Położenia widoku takie, jakie były przy akcie `akt` (to, co doszło później, jeszcze nie istnieje; to, co było
+  // wtedy odłożone, nie jest pokazane). Z `dla`: oczami czytającego, tak jak dawna wersja rzeczy - chwila, w której
+  // widok leżał w obszarze niewidocznym dla czytającego, nie jest dla niego do odczytania.
+  widokNa(widok, akt, { dla = undefined } = {}) {
+    if (typeof widok !== 'string' || !ID.test(widok) || !Number.isInteger(akt) || akt < 0) return [];
+    if (dla !== undefined) {
+      if (this.rzecz(widok, { dla }) === null) return [];
+      const zle = this._niewidoczneDla(dla), wtedy = this._stanNa(widok, akt);
+      if (!wtedy || (zle && zle.includes(wtedy.obszar ?? null))) return [];
+    }
+    const wynik = [];
+    for (const rz of this.wszystkie({ rodzaj: 'miejsce', gdzie: { widok }, odlozone: 'razem', ...(dla === undefined ? {} : { dla }) })) {
+      const d = this._stanNa(rz.id, akt);
+      if (d && !d.odlozone) wynik.push({ rzecz: rz.id, akt: d.akt, cechy: d.cechy });
+    }
+    return wynik;
+  }
+
+  // Zapis wielu rzeczy naraz, wszystko albo nic. `cele`: [{ rz, rodzaj, obszar, cechy, odlozone, powod }], gdzie rz
+  // to rzecz w stanie dzisiejszym. Każda zmiana przechodzi to samo sprawdzenie treści i tę samą ocenę prawa co zwykły
+  // ruch i każda musi mieć skutek: czynność, która w części byłaby propozycją, nie robi się wcale.
+  async _zapiszWiele(kto, op, slad, cele, wynik) {
+    const przez = przezZ(slad), widzi = this._oczy(kto, przez);
+    const lista = [];
+    for (const [i, c] of cele.entries()) {
+      let { rodzaj, obszar, cechy, odlozone, powod } = c;
+      const n = this._zNatury(rodzaj, cechy);
+      if (n && !n.brak) obszar = n.obszar;
+      const spr = this._sprawdzTresc(rodzaj, cechy, obszar, c.rz, odlozone, widzi);
+      if (!spr.ok) return blad(409, `rzecz ${c.rz.id} nie przechodzi dzisiejszego sprawdzenia w stanie, do którego miała wrócić: ${spr.blad}`, { rzecz: c.rz.id });
+      for (const k of [kto, ...(przez ? [przez] : [])]) {
+        const o = this.ocen(k, { stara: c.rz, rodzaj, obszar, cechy });
+        if (o.tryb !== 'skutek') return blad(o.tryb === 'odmowa' ? o.status : 403, `tej czynności nie da się zrobić w całości: zmiana rzeczy ${c.rz.id} nie miałaby tu skutku${o.powod ? ' (' + o.powod + ')' : ''}`, { rzecz: c.rz.id });
+      }
+      const p = await this.r.przygotujPolozenie({ op: `${op}.${i}`, rodzaj, tresc: trescRzeczy({ obszar, cechy, odlozone, powod, zNatury: n ? n.cecha : null }), glowa: 'rzecz:' + c.rz.id, wersja: c.rz.wersja });
+      if (!p.ok) return p;
+      lista.push({ p, id: c.rz.id, rodzaj, obszar, cechy, odlozone, ksztalt: spr.ksztalt });
+    }
+    if (!lista.length) return { ok: true, powtorzone: false, ...wynik, rzeczy: 0 };
+    return this._zatwierdz(kto, lista, slad, { ...wynik, rzeczy: lista.length });
+  }
+  // Czy ta czynność (ten uczestnik, ten op) już raz coś zapisała: wtedy jej ponowienie niczego nie robi drugi raz.
+  _juzZapisala(kto, op) { return this.q(`SELECT 1 AS j FROM akty WHERE kto = ? AND op = ?`, kto, op + '.0.p').length > 0; }
+
+  async _cofnijGest(kto, c, slad) {
+    if (typeof c.cofany !== 'string' || !GEST.test(c.cofany)) return blad(400, 'cofany: znak gestu, który ma być cofnięty (ten sam, który niosły jego ruchy w polu gest)');
+    const bez = this._bezPrawa(kto, przezZ(slad));
+    if (bez) return bez;
+    if (this._juzZapisala(kto, c.op)) return { ok: true, powtorzone: true, skutek: 'cofniety-gest', gest: c.cofany };
+    let czyj = kto;
+    if ('czyj' in c) {
+      if (this.rola(kto) !== 'wlasciciel') return blad(403, 'cudzy gest cofa tylko właściciel');
+      if (!poprawneImie(c.czyj)) return blad(400, 'czyj: imię uczestnika, którego gest ma być cofnięty');
+      czyj = c.czyj;
+    }
+    const ruszone = this.gestDla(czyj, c.cofany);
+    if (!ruszone.length) return blad(404, `nie ma gestu ${c.cofany} wśród czynności uczestnika ${czyj}`);
+    if (ruszone.length > NAJWIECEJ_W_GESCIE) return blad(413, `gest ruszył ${ruszone.length} rzeczy, a jednym krokiem cofa się najwyżej ${NAJWIECEJ_W_GESCIE}`);
+    const widzi = this._oczy(kto, przezZ(slad));
+    const zmienione = [], cele = [];
+    for (const x of ruszone) {
+      const rz = widzi(x.rzecz);
+      if (!rz || rz.wersja !== x.po) { zmienione.push(x.rzecz); continue; }
+      if (x.przed === null) { if (!rz.odlozone) cele.push({ rz, rodzaj: rz.rodzaj, obszar: rz.obszar, cechy: rz.cechy, odlozone: true, powod: 'cofnięty gest, w którym ta rzecz powstała' }); continue; }
+      const d = this._zeZapisu(x.przed);
+      if (!d) { zmienione.push(x.rzecz); continue; }
+      cele.push({ rz, ...d });
+    }
+    if (zmienione.length) return blad(409, `${zmienione.length === 1 ? 'jedna rzecz z tego gestu zmieniła się' : 'część rzeczy z tego gestu zmieniła się'} po nim (albo nie jest już dla Ciebie dostępna); cofnięcie całego gestu nadpisałoby późniejszą zmianę, więc nie cofam niczego`, { zmienione });
+    return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'cofniety-gest', gest: c.cofany });
+  }
+
+  // Powrót do zapisanego układu (rzecz chwila/1: nazwa, widok, akt): położenia widoku wracają do stanu z tamtej chwili.
+  // Zapisuje się tylko różnica, jedną czynnością; ze znakiem gestu sam powrót daje się cofnąć.
+  async _przywrocUklad(kto, c, slad) {
+    if (typeof c.chwila !== 'string' || !ID.test(c.chwila)) return blad(400, 'chwila: identyfikator zapisanego układu (rzecz rodzaju chwila/1)');
+    const bez = this._bezPrawa(kto, przezZ(slad));
+    if (bez) return bez;
+    if (this._juzZapisala(kto, c.op)) return { ok: true, powtorzone: true, skutek: 'przywrocony-uklad', chwila: c.chwila };
+    const widzi = this._oczy(kto, przezZ(slad));
+    const ch = widzi(c.chwila);
+    if (!ch || nazwaRodzaju(ch.rodzaj) !== 'chwila' || ch.odlozone) return blad(404, `nie ma zapisanego układu ${c.chwila}`);
+    const { akt, widok } = ch.cechy;
+    if (!Number.isInteger(akt) || akt < 0 || akt > this.ostatniNr()) return blad(422, 'zapisany układ wskazuje akt, którego w tym Miejscu nie ma');
+    const polozenia = this.wszystkie({ rodzaj: 'miejsce', gdzie: { widok }, odlozone: 'razem' });
+    if (polozenia.length > NAJWIECEJ_W_GESCIE) return blad(413, `widok ma ${polozenia.length} położeń, a jedną czynnością wraca najwyżej ${NAJWIECEJ_W_GESCIE}`);
+    const cele = [];
+    for (const p of polozenia) {
+      const rz = widzi(p.id);
+      if (!rz) continue;
+      const d = this._stanNa(rz.id, akt);
+      if (!d) { if (!rz.odlozone) cele.push({ rz, rodzaj: rz.rodzaj, obszar: rz.obszar, cechy: rz.cechy, odlozone: true, powod: 'nie było tego położenia w przywróconym układzie' }); continue; }
+      if (d.rodzaj === rz.rodzaj && d.odlozone === !!rz.odlozone && JSON.stringify(d.cechy) === JSON.stringify(rz.cechy)) continue;
+      cele.push({ rz, ...d });
+    }
+    return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'przywrocony-uklad', chwila: ch.id, akt });
   }
 
   // Wspólny koniec każdej zmiany rzeczy: sprawdzenie treści, ocena prawa, potem zapis albo propozycja.

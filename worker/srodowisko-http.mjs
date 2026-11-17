@@ -92,6 +92,13 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     if (sciezka.startsWith('/rzecz/')) { const t = stronaRzeczy(w, sciezka.slice(7), { kto: opcje.kto || (podglad ? opcje.jako : null) }); return t === null ? tekst('Nie ma takiej rzeczy. Lista wszystkich: /rzeczy\n', 404) : tekst(t); }
     if (sciezka === '/api/srodowisko/opis') return json({ ok: true, ...opisDane(w, opcje) });
     if (sciezka === '/api/srodowisko/puls') return json({ ok: true, akt: w.ostatniNr() });
+    // Moje ostatnie gesty (do guzika "cofnij" i do pytania "co ostatnio zrobiłem") i widok w wybranej chwili.
+    if (sciezka === '/api/srodowisko/gesty') return kto ? json({ ok: true, kto, gesty: w.gestyDla(kto, liczba(p.get('ile')) || 20) }) : json({ ok: false, status: 401, blad: 'gesty są czynnościami uczestnika: do ich listy potrzebny jest klucz' });
+    if (sciezka === '/api/srodowisko/widok-w-chwili') {
+      const widok = p.get('widok') || '', akt = liczba(p.get('akt'));
+      if (!/^[0-9a-z]{26}$/.test(widok) || akt === null) return json({ ok: false, status: 400, blad: 'widok: identyfikator widoku (26 znaków); akt: numer aktu, przy którym pokazać jego położenia' });
+      return json({ ok: true, widok, akt, polozenia: w.widokNa(widok, akt) });
+    }
     // Ustawienia policzone dla zasięgu, oczami czytającego: jedno żądanie daje twarzy wszystkie wartości pokręteł.
     if (sciezka === '/api/srodowisko/ustawienia') return json(policzUstawienia(w, { dla: p.get('dla') || null, nakladki: (p.get('nakladki') || '').split(',').filter(Boolean), deklaracje: p.get('deklaracje') === 'tak' }));
     if (sciezka === '/api/srodowisko/spis') {

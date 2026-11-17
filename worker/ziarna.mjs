@@ -350,6 +350,13 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
         nazwa: { typ: 'tekst', wymagana: true },
         opis: { typ: 'tekst' },
       } }),
+    k('chwila', { dla: 'chwila/1', tytul: 'nazwa', uklad: true, lezy_z: 'widok', opis: 'Zapisany układ: nazwana chwila widoku. Pamięta tylko widok i numer aktu; powrót do niej (co: przywroc-uklad) ustawia położenia tak, jak wtedy leżały, i sam daje się cofnąć. Leży tam, gdzie jej widok.',
+      cechy: {
+        nazwa: { typ: 'tekst', wymagana: true },
+        widok: { typ: 'rzecz', rodzaj: 'widok', wymagana: true, opis: 'widok, którego układ jest zapisany' },
+        akt: { typ: 'liczba', wymagana: true, opis: 'numer aktu z chwili zapisu (pole akt z każdego odczytu)' },
+        opis: { typ: 'tekst' },
+      } }),
     k('rodzina', { dla: 'rodzina/1', tytul: 'nazwa', klucz: ['znak'], opis: 'Rodzina projektów: pytanie, wokół którego krąży kilka repozytoriów. Fakt przyniesiony przez obserwatora ze starej Jaskini.',
       cechy: {
         znak: { typ: 'tekst', wymagana: true, opis: 'krótki identyfikator rodziny w pliku faktów starej Jaskini, np. zywe; z niego liczy się tożsamość rzeczy' },
@@ -438,7 +445,7 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
     zd('tozsamosc-po-zmianie', 'brak', 'Tożsamość, która przeżywa zmianę: rzecz zostaje sobą po zmianie nazwy u źródła, a dwie rzeczy da się połączyć albo jedną rozdzielić, z rodowodem i bez gubienia wskazań.', 'Dziś zmiana nazwy repozytorium u źródła daje nową rzecz, a stara jest odkładana (kluczem jest nazwa). Łączenia i dzielenia nie ma.'),
     // Wiersze dołożone 17 XI po sprawdzeniu, czy grunt przyjmie wykończenie (wygląd, ręka, mięsistość): to, czego warstwa
     // odczuwalna potrzebuje od gruntu, ma stać tutaj, a nie w czyjejś głowie.
-    zd('cofniecie-gestu', 'brak', 'Cofnięcie gestu: jeden gest ręki, który dotyka wielu rzeczy, cofa się jednym krokiem, a zapisany układ da się przywołać.', 'Jądro zatwierdza listę zmian naraz (wszystko albo nic), ale gest nie ma znaku w dzienniku, więc nie da się go wskazać ani cofnąć w całości. Nie ma guzika na stronie ani odczytu widoku w wybranej chwili.'),
+    zd('cofniecie-gestu', 'cienko', 'Cofnięcie gestu: jeden gest ręki, który dotyka wielu rzeczy, cofa się jednym krokiem, a zapisany układ da się przywołać.', 'Ruch może nieść znak gestu; co: cofnij-gest wraca wszystko, co gest ruszył (to, co w nim powstało, odkłada), wszystko albo nic, i samo jest gestem, więc da się je ponowić. Cofa się tylko to, czego nikt po geście nie ruszył. Widok da się odczytać w wybranej chwili (/api/srodowisko/widok-w-chwili), a zapisany układ (chwila/1) przywrócić jedną czynnością (co: przywroc-uklad), którą też da się cofnąć. Start ma guziki cofnij i ponów oraz zapis i powrót do układu; stos gestów leży w pamięci przeglądarki, więc przeżywa przeładowanie. Czego nie ma: czynności zbiorczej w jednym żądaniu (gest z wielu ruchów nie jest atomowy przy zapisie, tylko przy cofaniu), cofania cudzej zmiany stojącej na drodze, suwaka czasu.'),
     zd('klocki-konstrukcji', 'brak', 'Klocki konstrukcji w danych: reguła układu, drabina przedstawień i Pole są rzeczami, a twarz tylko je czyta i rysuje.', 'Dziś drabina (kiedy karta pokazuje podpis, opis, gałęzie) i reguła układu ciekłego są w kodzie Startu, a położenie nie ma ramy ani pochodzenia (ręka, reguła, propozycja). Druga twarz musiałaby przepisać konstrukcję.'),
     zd('twarz-obok-twarzy', 'brak', 'Twarz obok twarzy: nowa twarz staje obok starej na tych samych rzeczach, a to, która jest codzienna, jest ustawieniem do cofnięcia.', 'Dwie strony (gospodarz i Start) czytają te same rzeczy i te same pokrętła. Nie ma wersji twarzy widocznej pod adresem ani przełącznika twarzy domyślnej jako danej.'),
     zd('wyglad-w-oknie', 'cienko', 'Wygląd przechodzi do okien: narzędzie w oknie dostaje paletę, krój i natężenie ruchu od gospodarza, w biegu, bez przeładowania.', 'Wiadomość look w umowie okna, zaraz po hi i po każdej zmianie ustawień; obaj przykładowi goście się w nią ubierają. Dziś każde okno dostaje wygląd Miejsca, a nie wartości policzone dla siebie. Ramka nie była jeszcze sprawdzona w przeglądarce pod adresem.'),
