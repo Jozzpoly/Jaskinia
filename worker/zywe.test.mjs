@@ -308,6 +308,18 @@ test('Z12. pamięć numeru aktu i liczb: po każdym ruchu, odłożeniu, wwozie i
     assert.equal(s.ile(f), s.wszystkie(f).length, 'pytanie ' + JSON.stringify(f));
   }
   assert.deepEqual(s.liczby(), r.q(`SELECT rodzaj, COUNT(*) AS ile FROM rzeczy WHERE odlozone = 0 GROUP BY rodzaj ORDER BY rodzaj`).map((w) => ({ rodzaj: w.rodzaj, ile: w.ile })));
+  // obiekt zasnął i wstał: nowa warstwa nad tą samą bazą bierze przekrój z tabeli, bez liczenia spisu od nowa
+  const zBazy2 = (zapytanie) => r.q(zapytanie)[0].n;
+  assert.equal(zBazy2(`SELECT SUM(ile) AS n FROM przekroj WHERE odlozone = 0`), ileZBazy(), 'tabela przekroju zgadza się ze spisem');
+  let przegladow = 0;
+  const surowy = r.sql.exec;
+  r.sql.exec = (z, ...p) => { if (/FROM rzeczy\b[^]*GROUP BY/i.test(z)) przegladow++; return surowy(z, ...p); };
+  const obudzona = new Srodowisko(r);
+  assert.equal(obudzona.ile({}), ileZBazy());
+  assert.equal(obudzona.ile({ odlozone: 'tak' }), s.ile({ odlozone: 'tak' }));
+  assert.equal(obudzona.ile({ obszar: obszarNowe }), s.wszystkie({ obszar: obszarNowe }).length);
+  assert.equal(przegladow, 0, 'po obudzeniu nikt nie liczy całego spisu');
+  r.sql.exec = surowy;
   // zapis starymi drzwiami jądra też kasuje pamięć numeru aktu
   const stare = await r.wykonaj('jozz', { op: 'zywe-test-z12-stare', co: 'zapisz', rodzaj: 'notatka/1', tresc: '{"a":1}' });
   assert.equal(stare.ok, true, JSON.stringify(stare));
