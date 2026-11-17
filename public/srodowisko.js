@@ -258,6 +258,9 @@
 
   const guzikDotkniecia = () => (mozaDotknac() ? el('button', { klasa: 'glowny', tekst: 'Wejdź dotknięciem', title: 'Passkey: urządzenie potwierdza, że to Ty, bez wklejania klucza', klik: () => dotknij('wejdz') }) : null);
 
+  // Dokładanie dzieci, które mogą nie istnieć. Zwykły append(null) wpisuje na stronę słowo "null".
+  const dolacz = (gdzie, dzieci) => gdzie.append(...dzieci.filter(Boolean));
+
   function rysujWejscie() {
     const d = opis, p = $('wejscie-panel'), g = $('wejscie');
     const imie = d.czytasz_jako.imie;
@@ -275,8 +278,8 @@
       // Właściciel, który jest w środku, może dołożyć urządzenie: to jedyny moment, w którym wolno to zrobić.
       if (d.czytasz_jako.rola === 'wlasciciel' && window.Drzwi && window.Drzwi.umieDotkniecie()) {
         const pole = el('input', { type: 'text', id: 'pole-urzadzenia', placeholder: 'np. telefon', 'aria-label': 'Nazwa urządzenia' });
-        p.append(el('p', { tekst: 'Dodaj urządzenie, żeby następnym razem wejść jednym dotknięciem. Klucz prywatny zostaje na urządzeniu.' }),
-          el('div', { klasa: 'rzad' }, pole, el('button', { tekst: 'Dodaj to urządzenie', klik: () => dotknij('zaloz', pole.value) })));
+        dolacz(p, [el('p', { tekst: 'Dodaj urządzenie, żeby następnym razem wejść jednym dotknięciem. Klucz prywatny zostaje na urządzeniu.' }),
+          el('div', { klasa: 'rzad' }, pole, el('button', { tekst: 'Dodaj to urządzenie', klik: () => dotknij('zaloz', pole.value) }))]);
       }
       return;
     }
@@ -297,11 +300,15 @@
         ? 'Tu nie potrzebujesz żadnego klucza: guzik „Wejdź jako właściciel próbny" wpuszcza jednym naciśnięciem. Drzwi jednym dotknięciem czekają na pierwsze urządzenie — wejdź, otwórz ten panel jeszcze raz i wybierz „Dodaj to urządzenie".'
         : 'Tu nie potrzebujesz żadnego klucza: guzik „Wejdź jako właściciel próbny" wpuszcza jednym naciśnięciem. Pole na klucz jest dla agentów bez przeglądarki.')
       : 'Wejście jest potrzebne tylko do zmian. Klucz zostaje w tej przeglądarce.';
-    p.append(el('p', { tekst: zdanie }),
+    // UWAGA: append(null) wpisuje na stronę gołe słowo "null". Guzik, którego nie ma, musi zniknąć, a nie
+    // zostawić po sobie napis - zobaczone okiem na podglądzie 17 XI, dokładnie tam, gdzie właściciel szukał wejścia.
+    dolacz(p, [
+      el('p', { tekst: zdanie }),
       guzikDotkniecia(),
       d.klucz_probny_wlasciciela ? el('button', { klasa: 'glowny', tekst: 'Wejdź jako właściciel próbny', title: 'Na podglądzie klucze próbne są jawne; nic tu nie jest prywatne', klik: () => wejdz(d.klucz_probny_wlasciciela) }) : null,
       d.klucz_probny ? el('button', { tekst: 'Wejdź jako agent próbny', klik: () => wejdz(d.klucz_probny) }) : null,
-      el('div', { klasa: 'rzad' }, pole, el('button', { tekst: 'Wejdź kluczem', klik: () => wejdz(pole.value) })));
+      el('div', { klasa: 'rzad' }, pole, el('button', { tekst: 'Wejdź kluczem', klik: () => wejdz(pole.value) })),
+    ]);
   }
   // Wpuszczony znaczy: Miejsce zna moje imię z dowodu. Dowodem jest klucz w nagłówku ALBO sesja z drzwi
   // właściciela (ciastko), której ta strona w ogóle nie widzi - dlatego pytamy opisu, a nie schowka.
