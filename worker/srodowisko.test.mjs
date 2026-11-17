@@ -377,20 +377,20 @@ test('odkładanie, przywracanie i cofanie: każde jest nową wersją, nic nie zn
 
 test('klucz: tożsamość rzeczy liczy się z cech, więc to samo z zewnątrz trafia zawsze w tę samą rzecz', async () => {
   const { s } = await swiat();
-  const zly = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'repo/1', opis: 'Repozytorium.', tytul: 'nazwa', klucz: ['numer'], cechy: { numer: { typ: 'liczba' }, nazwa: { typ: 'tekst' } } } });
+  const zly = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'skrzynka/1', opis: 'Repozytorium.', tytul: 'nazwa', klucz: ['numer'], cechy: { numer: { typ: 'liczba' }, nazwa: { typ: 'tekst' } } } });
   assert.equal(zly.status, 422, 'cecha klucza musi być wymagana');
-  const k = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'repo/1', opis: 'Repozytorium.', tytul: 'nazwa', klucz: ['numer'], cechy: { numer: { typ: 'liczba', wymagana: true }, nazwa: { typ: 'tekst' } } } });
+  const k = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'skrzynka/1', opis: 'Repozytorium.', tytul: 'nazwa', klucz: ['numer'], cechy: { numer: { typ: 'liczba', wymagana: true }, nazwa: { typ: 'tekst' } } } });
   assert.equal(k.ok, true, JSON.stringify(k));
-  const a = await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'repo/1', cechy: { numer: 7, nazwa: 'jv-web' } });
-  const drugi = await s.ruch('agent-b', { op: op(), co: 'poloz', rodzaj: 'repo/1', cechy: { numer: 7, nazwa: 'jv-web-2' } });
+  const a = await s.ruch('agent-a', { op: op(), co: 'poloz', rodzaj: 'skrzynka/1', cechy: { numer: 7, nazwa: 'jv-web' } });
+  const drugi = await s.ruch('agent-b', { op: op(), co: 'poloz', rodzaj: 'skrzynka/1', cechy: { numer: 7, nazwa: 'jv-web-2' } });
   assert.equal(drugi.status, 409, 'rzecz o tym kluczu już jest: ruch prosi o wersję');
   assert.equal(drugi.rzecz, a.rzecz);
-  const zm = await s.ruch('agent-b', { op: op(), co: 'poloz', rodzaj: 'repo/1', wersja: 'dowolna', cechy: { numer: 7, nazwa: 'jv-web-2' } });
+  const zm = await s.ruch('agent-b', { op: op(), co: 'poloz', rodzaj: 'skrzynka/1', wersja: 'dowolna', cechy: { numer: 7, nazwa: 'jv-web-2' } });
   assert.equal(zm.skutek, 'polozone');
   assert.equal(zm.rzecz, a.rzecz);
-  assert.equal(s.ile({ rodzaj: 'repo/1' }), 1);
+  assert.equal(s.ile({ rodzaj: 'skrzynka/1' }), 1);
   assert.equal(s.rzecz(a.rzecz).cechy.nazwa, 'jv-web-2');
-  assert.equal((await s.ruch('agent-a', { op: op(), co: 'poloz', rzecz: a.rzecz, wersja: zm.wersja, rodzaj: 'repo/1', cechy: { numer: 8, nazwa: 'x' } })).status, 422, 'inna wartość klucza to inna rzecz');
+  assert.equal((await s.ruch('agent-a', { op: op(), co: 'poloz', rzecz: a.rzecz, wersja: zm.wersja, rodzaj: 'skrzynka/1', cechy: { numer: 8, nazwa: 'x' } })).status, 422, 'inna wartość klucza to inna rzecz');
 });
 
 test('pytanie po cechach i szukanie; lista nie myli podkreślnika z dżokerem', async () => {

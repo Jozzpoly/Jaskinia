@@ -113,8 +113,9 @@ function poprawnyCzas(w) {
   return mi >= 1 && mi <= 12 && d >= 1 && d <= new Date(Date.UTC(r, mi, 0)).getUTCDate();
 }
 
-// Adres http albo https, bez białych znaków i znaków sterujących.
-function poprawnyAdres(w) {
+// Adres http albo https, bez białych znaków i znaków sterujących. Wystawione, żeby ten, kto przynosi adresy
+// z zewnątrz (obserwator faktów), sprawdzał je tą samą regułą, a nie jej kopią.
+export function poprawnyAdres(w) {
   if (typeof w !== 'string' || w.length > 2000 || /[\s\u0000-\u001f\u007f]/.test(w) || !/^https?:\/\//i.test(w)) return false;
   try { const u = new URL(w); return u.protocol === 'http:' || u.protocol === 'https:'; } catch { return false; }
 }

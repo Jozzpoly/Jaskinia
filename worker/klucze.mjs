@@ -6,8 +6,9 @@
 import { skrot, poprawneImie } from './miejsce.mjs';
 
 // Imiona, których nie może nosić żaden klucz: pod nimi działa samo środowisko, więc klucz o takim imieniu
-// podszywałby się pod nie w dzienniku (znalezisko niezależnego ataku, 17 XI 2026).
-export const IMIONA_ZASTRZEZONE = ['srodowisko'];
+// podszywałby się pod nie w dzienniku (znalezisko niezależnego ataku, 17 XI 2026). `obserwator` to automat, który
+// przynosi fakty z GitHuba: chodzi zwykłym ruchem, więc jedyną ochroną jest to, że żaden klucz nie może nosić tego imienia.
+export const IMIONA_ZASTRZEZONE = ['srodowisko', 'obserwator'];
 
 export function wczytajKlucze(env = {}) {
   if (!env.KLUCZE) return { ok: false, status: 503, blad: 'Miejsce zamknięte: właściciel nie ustawił kluczy (ustawienie KLUCZE w Cloudflare)' };

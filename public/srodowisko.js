@@ -174,7 +174,10 @@
       el('button', { tekst: 'widziałem', klik: () => { widziany = akt; localStorage.setItem(PAMIEC, String(akt)); rysuj(); } })),
       el('ul', { klasa: 'lista' }, swieze.slice(0, 30).map((r) => el('li', {}, el('a', { href: '/rzecz/' + r.id, tekst: r.tytul }), el('span', { klasa: 'bok', tekst: `${r.rodzaj} · ${r.zmienil} · ${kiedy(r.zmieniono)}` }))))));
 
-    const projekty = rzeczy.filter((r) => r.rodzaj.startsWith('projekt/')).sort((a, b) => String(b.cechy.zycie || '').localeCompare(String(a.cechy.zycie || '')));
+    // Projekty to dzieła (rodzaj projekt) i fakty o repozytoriach, które przyniósł obserwator (rodzaj repo).
+    // Karta czyta jedne i drugie tak samo: nazwa, opis, gdzie zagrać, gdzie źródło, kiedy ostatnio żyło.
+    const jakoProjekt = (r) => (r.rodzaj.startsWith('repo/') ? { ...r, cechy: { ...r.cechy, zagraj: r.cechy.strona, zrodlo: r.cechy.adres, zycie: r.cechy.ostatni_push } } : r);
+    const projekty = rzeczy.filter((r) => r.rodzaj.startsWith('projekt/') || r.rodzaj.startsWith('repo/')).map(jakoProjekt).sort((a, b) => String(b.cechy.zycie || '').localeCompare(String(a.cechy.zycie || '')));
     const pr = d.przeniesienie;
     t.append(el('section', {}, el('h2', {}, 'Projekty ', el('span', { klasa: 'ile', tekst: pr.publiczne_repozytoria ? `${projekty.length} w środku na ${pr.publiczne_repozytoria.ile} publicznych repozytoriów` : `${projekty.length} w środku` })),
       projekty.length ? el('div', { klasa: 'siatka' }, projekty.map(kartaProjektu)) : el('p', { klasa: 'ciche', tekst: 'Jeszcze żadnego. Projekt dokłada się jednym ruchem: /co-tu-jest, punkt 5.' })));
@@ -184,7 +187,7 @@
       goscie.length ? el('div', { klasa: 'siatka' }, goscie.map(kartaGoscia)) : el('p', { klasa: 'ciche', tekst: 'Jeszcze żadnego.' })));
 
     const reszta = new Map();
-    for (const r of rzeczy) { if (r.rodzaj.startsWith('projekt/') || r.rodzaj.startsWith('gosc/') || r.rodzaj.startsWith('zdolnosc/')) continue; if (!reszta.has(r.rodzaj)) reszta.set(r.rodzaj, []); reszta.get(r.rodzaj).push(r); }
+    for (const r of rzeczy) { if (r.rodzaj.startsWith('projekt/') || r.rodzaj.startsWith('repo/') || r.rodzaj.startsWith('gosc/') || r.rodzaj.startsWith('zdolnosc/')) continue; if (!reszta.has(r.rodzaj)) reszta.set(r.rodzaj, []); reszta.get(r.rodzaj).push(r); }
     t.append(el('section', {}, el('h2', {}, 'Pozostałe rzeczy'),
       [...reszta].sort((a, b) => a[0].localeCompare(b[0])).map(([rodzaj, lista]) => el('details', {}, el('summary', {}, rodzaj + ' ', el('span', { klasa: 'ile', tekst: String(lista.length) })),
         el('div', {}, el('ul', { klasa: 'lista' }, lista.map((r) => el('li', {}, el('a', { href: '/rzecz/' + r.id, tekst: r.tytul }), el('span', { klasa: 'bok', tekst: `${r.zmienil} · ${kiedy(r.zmieniono)}` })))))))));
@@ -209,12 +212,15 @@
     k.append(el('div', { klasa: 'meta' }, r.wersja > widziany && widziany > 0 ? el('span', { klasa: 'nowe', tekst: 'nowe' }) : null,
       c.zycie ? el('span', { tekst: 'żyje: ' + kiedy(c.zycie) }) : el('span', { tekst: 'brak daty życia' }),
       // skąd rzecz pochodzi: kto ją dołożył i kto ostatnio zmienił; rzecz nie od właściciela jest oznaczona
-      el('span', { klasa: swoja ? null : 'nowe', tekst: swoja ? 'od właściciela' : 'dołożył ' + r.utworzyl + (r.zmienil !== r.utworzyl ? ', zmienił ' + r.zmienil : '') }),
+      el('span', { klasa: swoja ? null : 'nowe', tekst: swoja ? (r.utworzyl === 'obserwator' ? 'fakt z GitHuba' + (Number.isFinite(c.galezie) ? ', gałęzi: ' + c.galezie : '') : 'od właściciela') : 'dołożył ' + r.utworzyl + (r.zmienil !== r.utworzyl ? ', zmienił ' + r.zmienil : '') }),
       el('a', { href: '/rzecz/' + r.id, tekst: 'szczegóły' })));
     return k;
   }
   // Rzecz "od właściciela": on ją dołożył i on ostatnio zmienił. Każdą inną mógł dołożyć albo zmienić agent.
-  const odWlasciciela = (r) => Boolean(opis && opis.wlasciciel && r.utworzyl === opis.wlasciciel && r.zmienil === opis.wlasciciel);
+  // Tak samo ufamy obserwatorowi faktów: przynosi tylko to, co GitHub mówi o publicznych repozytoriach właściciela,
+  // a żaden klucz nie może nosić jego imienia.
+  const ZAUFANI = ['obserwator'];
+  const odWlasciciela = (r) => Boolean(opis && opis.wlasciciel && [opis.wlasciciel, ...ZAUFANI].includes(r.utworzyl) && [opis.wlasciciel, ...ZAUFANI].includes(r.zmienil));
   function kartaGoscia(r) {
     const c = r.cechy;
     const kod = typeof c.kod === 'string' && /^[0-9a-f]{64}$/.test(c.kod) ? '/gosc/' + c.kod : null;

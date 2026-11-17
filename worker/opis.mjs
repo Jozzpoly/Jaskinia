@@ -29,6 +29,7 @@ export function czasowniki(s) {
     { nazwa: 'widzialem', ktoredy: 'drzwi: POST /api/srodowisko/widzialem', opis: 'zapisz swoją wizytę: następny odczyt /co-tu-jest tym samym kluczem pokaże tylko to, co zmieniło się po niej', wejscie: '{akt?}', wynik: '{widziane_do}' },
     { nazwa: 'ksztalty', ktoredy: 'drzwi: GET /api/srodowisko/ksztalty; tekstem: /rodzaje; okno: read ksztalty', opis: 'wszystkie rodzaje rzeczy z opisem cech', wejscie: '-', wynik: '{ksztalty: [{dla, opis, cechy, …}]}' },
     { nazwa: 'wywoz', ktoredy: 'drzwi: GET /api/miejsce/eksport (tylko właściciel)', opis: 'całe Miejsce jako jeden plik: niezmienne zapisy, dziennik aktów i głowy; z tego da się odtworzyć spis bez kodu Jaskini', wejscie: '-', wynik: '{format: "jaskinia-miejsce", wersja, zebrane, zapisy, akty, glowy, odczyty}' },
+    { nazwa: 'obejdz', ktoredy: 'drzwi: POST /api/srodowisko/obejdz (tylko właściciel; działa, gdy obserwator jest włączony ustawieniem OBSERWATOR=tak); sam budzi się alarmem', opis: 'obserwator faktów obchodzi publiczne repozytoria właściciela na GitHubie: zapisuje tylko to, co się zmieniło, i sprawdza gałęzie kilku repozytoriów na raz', wejscie: '-', wynik: '{ok, stan: "ok"|"czesciowe"|"brak", repozytoria, galezie_sprawdzone, zmienione, bez_zmian, odlozone, luki, zadan}' },
     { nazwa: 'puls', ktoredy: 'drzwi: GET /api/srodowisko/puls', opis: 'numer ostatniego aktu; zmienia się po każdym ruchu', wejscie: '-', wynik: '{akt}' },
     { nazwa: 'opis', ktoredy: 'tekstem: /co-tu-jest; drzwi: GET /api/srodowisko/opis', opis: 'ten tekst (albo to samo jako dane)', wejscie: 'od?, jako?', wynik: 'tekst' },
   ];
@@ -37,6 +38,19 @@ export function czasowniki(s) {
     for (const c of g.cechy.czasowniki) if (c && typeof c.nazwa === 'string') lista.push({ nazwa: obetnij(c.nazwa, 60), ktoredy: `gość "${s.tytul(g)}" (/rzecz/${g.id}); wołanie jeszcze nie działa`, opis: obetnij(c.opis || '', 160), wejscie: obetnij(JSON.stringify(c.wejscie ?? '-'), 120), wynik: obetnij(JSON.stringify(c.wynik ?? '-'), 120) });
   }
   return lista;
+}
+
+// Co obserwator faktów przyniósł i kiedy: z rzeczy miara/1 o nazwie obserwator-faktow (chwila ostatniego UDANEGO
+// obejścia) i z zapisu ostatniej próby, także nieudanej. Gdy nie chodził, mówi to wprost.
+function obserwator(s) {
+  const m = s.spis({ rodzaj: 'miara/1', gdzie: { nazwa: 'obserwator-faktow' }, limit: 1 })[0] || null;
+  let proba = null;
+  try { proba = JSON.parse(s.r.meta('obserwator:proba') || 'null'); } catch { /* zapis uszkodzony: jak brak */ }
+  return {
+    repozytoria: s.ile({ rodzaj: 'repo/1' }), galezie: s.ile({ rodzaj: 'galaz/1' }),
+    ostatnie_udane: m ? { stan_na: m.cechy.stan_na, zrodlo: m.cechy.zrodlo || null } : null,
+    ostatnia_proba: proba && typeof proba === 'object' ? { czas: proba.czas || null, stan: proba.stan || null, luki: proba.luki || null } : null,
+  };
 }
 
 function obszary(s) {
@@ -98,6 +112,7 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
     czeka: { propozycje: cz.propozycje.map((p) => ({ id: p.id, od: p.cechy.od, rodzaj: p.cechy.rodzaj, obszar: p.obszar, rzecz: p.cechy.rzecz || null, kiedy: p.utworzono })), prosby: cz.prosby.map((p) => ({ id: p.id, tresc: p.cechy.tresc, tryb: p.cechy.tryb || 'czeka', od: p.utworzyl, kiedy: p.utworzono })) },
     zdolnosci: s.spis({ rodzaj: 'zdolnosc/1', limit: 500 }).map((z) => ({ id: z.id, nazwa: z.cechy.nazwa, stan: z.cechy.stan, opis: z.cechy.opis, jak: z.cechy.jak || null })),
     przeniesienie: { projekty_w_srodku: (liczby.find((l) => l.rodzaj === 'projekt/1') || { ile: 0 }).ile, publiczne_repozytoria: m ? { ile: m.cechy.wartosc, stan_na: m.cechy.stan_na || null, zrodlo: m.cechy.zrodlo || null } : null },
+    obserwator: obserwator(s),
     czasowniki: czasowniki(s),
     klucz_probny: podglad ? kluczProbny : null,
     probny_imie: podglad ? probnyImie : null,
@@ -151,6 +166,9 @@ export function coTuJest(s, opcje = {}) {
     d.przeniesienie.publiczne_repozytoria
       ? `Licznik przeniesienia: w środku jest ${ile(d.przeniesienie.projekty_w_srodku, 'projekt', 'projekty', 'projektów')} na ${d.przeniesienie.publiczne_repozytoria.ile} publicznych repozytoriów właściciela (stan na ${dzien(d.przeniesienie.publiczne_repozytoria.stan_na || d.miejsce.stan_na)}).`
       : `Licznik przeniesienia: w środku jest ${ile(d.przeniesienie.projekty_w_srodku, 'projekt', 'projekty', 'projektów')}; ile rzeczy właściciela jest jeszcze na zewnątrz, tego Miejsce nie wie (nikt nie dołożył miary).`,
+    d.obserwator.ostatnie_udane
+      ? `Obserwator faktów (GitHub): przyniósł ${ile(d.obserwator.repozytoria, 'repozytorium', 'repozytoria', 'repozytoriów')} i ${ile(d.obserwator.galezie, 'gałąź', 'gałęzie', 'gałęzi')} (rzeczy repo/1 i galaz/1 w obszarze Fakty); ostatnie udane obejście: ${dzien(d.obserwator.ostatnie_udane.stan_na)}; ${obetnij(d.obserwator.ostatnie_udane.zrodlo || 'bez opisu źródła', 420)}.`
+      : `Obserwator faktów (GitHub): jeszcze nie przyniósł żadnych faktów${d.obserwator.ostatnia_proba ? `; ostatnia próba (${dzien(d.obserwator.ostatnia_proba.czas)}) była ${d.obserwator.ostatnia_proba.stan === 'brak' ? 'nieudana' : d.obserwator.ostatnia_proba.stan}, luki: ${obetnij(d.obserwator.ostatnia_proba.luki || 'brak', 300)}` : ', jeszcze nie chodził (budzi go alarm tam, gdzie ustawiono OBSERWATOR=tak, albo właściciel: POST /api/srodowisko/obejdz)'}.`,
     '',
     '3. CO SIĘ ZMIENIŁO',
     d.zmiany.pierwszy_raz
