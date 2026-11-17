@@ -13,12 +13,14 @@ import { obsluzSrodowisko } from './srodowisko-http.mjs';
 import { obejdz } from './obserwator.mjs';
 import { WLASCICIEL as WLASCICIEL_GITHUBA } from './fakty.mjs';
 import { liczacySql, Budzet, naglowekKosztu } from './budzet.mjs';
+import { ADRES_ZYWEGO, przyjmijGniazdo, przyjmijWiadomosc, poZamknieciu, rozglos, zrobMiejsce } from './zywe.mjs';
 
 const MINUTA_MS = 60 * 1000;
 // Plik starej Jaskini zmienia się zwykle dwa razy na dobę: gdy koło gałęzi jest domknięte i nic się nie zmieniło,
 // zaglądamy do niego co godzinę, a nie co kilka minut.
 const SPOKOJNE_KOLO_MIN = 60;
 const ADRES_MIEJSCA = 'miejsce:adres';
+const odmowa = (o) => new Response(JSON.stringify(o, null, 2), { status: o.status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 
 export class Miejsce {
   constructor(ctx, env = {}) {
@@ -34,7 +36,13 @@ export class Miejsce {
     this.zasiane = null;
     this.alarmSprawdzony = false;
     this.host = null;
+    // Samo "ping" dostaje "pong" bez budzenia obiektu: strona sprawdza tak, czy połączenie na żywo jeszcze stoi.
+    try {
+      if (typeof WebSocketRequestResponsePair === 'function' && typeof ctx.setWebSocketAutoResponse === 'function') ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+    } catch { /* bez tej wygody kanał działa dalej */ }
   }
+
+  get _podglad() { return this.env.PODGLAD === 'tak'; }
 
   // Zasiew środowiska: jeden na instancję, kolejne wejścia czekają na ten sam.
   _zasiew() {
@@ -93,12 +101,28 @@ export class Miejsce {
     } catch { /* alarm to wygoda: bez niego dalej działa ręczne obejście */ }
   }
 
+  // Otwarte połączenia na żywo. W sprawdzianach ctx ma tylko bazę, więc brak tej zdolności znaczy: żadnych połączeń.
+  _gniazda() {
+    try { return typeof this.ctx.getWebSockets === 'function' ? this.ctx.getWebSockets() : []; } catch { return []; }
+  }
+
+  // Każda zmiana w Miejscu idzie do otwartych połączeń jako sam numer ostatniego aktu. Treść każdy czyta potem
+  // swoimi drzwiami i ze swoimi prawami, więc kanał nie jest drugą drogą do danych. `calosc` mówi stronie, że
+  // Miejsce zostało podmienione w całości (wwóz) i trzeba przeczytać wszystko od nowa.
+  _rozglosZmiane(przed, dodatkowe = {}) {
+    const teraz = this.srod.ostatniNr();
+    if (teraz === przed && !dodatkowe.calosc) return 0;
+    const gniazda = this._gniazda();
+    return gniazda.length ? rozglos(gniazda, { t: 'akt', akt: teraz, ...dodatkowe }, { podglad: this._podglad }) : 0;
+  }
+
   // Budzenie obserwatora faktów. Błąd obejścia nie zatrzymuje budzenia: następny alarm ustawia się zawsze.
   // Tam, gdzie obserwator nie ma wstępu, alarm gaśnie sam (nie ustawia następnego).
   async alarm() {
     if (!this._wolnoObserwatorowi()) return;
     let rzadko = false;
     const znacznik = this.budzet.otworz();
+    const przed = this.srod.ostatniNr();
     try {
       await this._zasiew();
       // Po dojściu do dobowego limitu zapisów obserwator czeka do jutra: fakty poczekają, wspólny budżet nie.
@@ -109,6 +133,8 @@ export class Miejsce {
     } catch (e) {
       console.error('obserwator: obejście nie wyszło: ' + String((e && e.message) || e).slice(0, 200));
     } finally {
+      // to, co obserwator przyniósł, otwarte strony widzą od razu, tak jak ruch ręki albo agenta
+      try { this._rozglosZmiane(przed); } catch { /* rozgłoszenie to wygoda */ }
       this.budzet.zamknij(znacznik);
       const co = rzadko ? Math.max(this._coMinut(), SPOKOJNE_KOLO_MIN) : this._coMinut();
       try { await this.ctx.storage?.setAlarm?.(Date.now() + co * MINUTA_MS); } catch { /* następne wejście ustawi alarm od nowa */ }
@@ -120,23 +146,28 @@ export class Miejsce {
     const znacznik = this.budzet.otworz();
     const odp = await this._obsluz(request);
     const koszt = this.budzet.zamknij(znacznik);
-    try { odp.headers.set('x-koszt', naglowekKosztu(koszt)); } catch { /* odpowiedź, której nagłówków nie da się zmienić, zostaje bez miary */ }
+    if (odp.status !== 101) {
+      try { odp.headers.set('x-koszt', naglowekKosztu(koszt)); } catch { /* odpowiedź, której nagłówków nie da się zmienić, zostaje bez miary */ }
+    }
     return odp;
   }
 
   async _obsluz(request) {
     const sciezka = new URL(request.url).pathname;
     this._zapamietajAdres(request);
+    if (sciezka === ADRES_ZYWEGO) return this._zywe(request);
+    // Tylko żądania, które mogą coś zmienić, płacą za sprawdzenie numeru aktu przed i po.
+    const zmienia = request.method !== 'GET';
     // Bezpiecznik: po dojściu do dobowego limitu zapisów Miejsce tylko czyta (budzet.mjs).
-    if (request.method !== 'GET' && this.budzet.przekroczony()) {
-      const o = this.budzet.odmowa();
-      return new Response(JSON.stringify(o, null, 2), { status: o.status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
-    }
+    if (zmienia && this.budzet.przekroczony()) return odmowa(this.budzet.odmowa());
+    const przed = zmienia ? this.srod.ostatniNr() : 0;
     if (sciezka === '/api/miejsce' || sciezka.startsWith('/api/miejsce/')) {
       const odp = await obsluzMiejsce(this.rdzen, request);
       // Po wwozie całości spis środowiska liczy się od nowa z głów i dziennika, a zasiew sprawdza się jeszcze raz:
       // bez tego wwiezione Miejsce miało pusty spis i odrzucało każde żądanie (znalezisko ataku, 17 XI 2026).
-      if (request.method === 'POST' && sciezka === '/api/miejsce/import' && odp.status === 200) { this.srod.przebuduj(); this.zasiane = null; this.znani = null; }
+      const wwoz = request.method === 'POST' && sciezka === '/api/miejsce/import' && odp.status === 200;
+      if (wwoz) { this.srod.przebuduj(); this.zasiane = null; this.znani = null; }
+      if (zmienia) this._rozglosZmiane(przed, wwoz ? { calosc: true } : {});
       return odp;
     }
     // Środowisko zasiewa swoje rzeczy przy pierwszym wejściu; kolejne wejścia czekają na ten sam zasiew.
@@ -151,6 +182,45 @@ export class Miejsce {
       await this.srod.zasiej(nowi.map((imie) => ({ nazwa: 'uczestnik-' + imie, rodzaj: 'uczestnik/1', cechy: { imie, rola: 'agent', opis: 'Uczestnik znany z klucza ustawionego przez właściciela.' } })));
       nowi.forEach((i) => this.znani.add(i));
     }
-    return obsluzSrodowisko(this.srod, request, { podglad: this.env.PODGLAD === 'tak', kluczProbny: this.env.KLUCZ_PROBNY_AGENTA || null, obejdz: this._wolnoObserwatorowi() ? (dodatkowe) => this._obejdz(dodatkowe) : null, budzet: this.budzet.opis() });
+    const odp = await obsluzSrodowisko(this.srod, request, {
+      podglad: this._podglad, kluczProbny: this.env.KLUCZ_PROBNY_AGENTA || null, kluczProbnyWlasciciela: this.env.KLUCZ_PROBNY_WLASCICIELA || null,
+      obejdz: this._wolnoObserwatorowi() ? (dodatkowe) => this._obejdz(dodatkowe) : null, budzet: this.budzet.opis(),
+    });
+    if (zmienia) this._rozglosZmiane(przed);
+    return odp;
+  }
+
+  // Drzwi kanału na żywo. Zwraca albo odmowę, albo gniazdo dla łączącego; samo przyjęcie jest osobno, żeby dało się
+  // je sprawdzić bez środowiska Cloudflare.
+  async _otworzZywe(request) {
+    if ((request.headers.get('upgrade') || '').toLowerCase() !== 'websocket') return { ok: false, status: 426, blad: 'to są drzwi kanału na żywo: potrzebne połączenie WebSocket (nagłówek Upgrade: websocket)' };
+    if (typeof WebSocketPair !== 'function' || typeof this.ctx.acceptWebSocket !== 'function') return { ok: false, status: 501, blad: 'to środowisko nie umie połączeń na żywo' };
+    await this._zasiew();
+    if (!zrobMiejsce(this._gniazda())) return { ok: false, status: 503, blad: 'za dużo połączeń na żywo naraz; spróbuj za chwilę' };
+    const para = new WebSocketPair();
+    const klient = para[0], serwer = para[1];
+    // Przyjęcie w sposób, który pozwala obiektowi zasnąć między wiadomościami: połączenie stoi, a czas nie biegnie.
+    this.ctx.acceptWebSocket(serwer);
+    przyjmijGniazdo(serwer, { kto: request.headers.get('x-kto') || null, podglad: this._podglad, akt: this.srod.ostatniNr(), gniazda: this._gniazda() });
+    return { klient };
+  }
+
+  async _zywe(request) {
+    const w = await this._otworzZywe(request);
+    return w.klient ? new Response(null, { status: 101, webSocket: w.klient }) : odmowa(w);
+  }
+
+  // Wiadomość od połączenia budzi obiekt; pamięć instancji mogła zniknąć, więc wszystko, co potrzebne, jest w gnieździe.
+  async webSocketMessage(ws, wiadomosc) {
+    await przyjmijWiadomosc(ws, wiadomosc, { env: this.env, gniazda: () => this._gniazda(), podglad: this._podglad, akt: () => this.srod.ostatniNr() });
+  }
+
+  async webSocketClose(ws) {
+    try { ws.close(1000, 'do zobaczenia'); } catch { /* druga strona już zamknęła */ }
+    poZamknieciu(ws, this._gniazda(), { podglad: this._podglad });
+  }
+
+  async webSocketError(ws) {
+    poZamknieciu(ws, this._gniazda(), { podglad: this._podglad });
   }
 }

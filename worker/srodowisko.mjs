@@ -261,15 +261,29 @@ function odniesieniaZCech(ksztalt, cechy) {
   return wynik;
 }
 
+// Jedna przegródka przekroju spisu: rodzaj, obszar (albo brak) i to, czy rzeczy są odłożone.
+function doliczPrzekroj(mapa, rodzaj, obszar, odlozone, ile) {
+  const klucz = rodzaj + '\n' + (obszar ?? '') + '\n' + (odlozone ? 1 : 0);
+  const w = mapa.get(klucz) || { rodzaj, obszar: obszar ?? null, odlozone: odlozone ? 1 : 0, ile: 0 };
+  w.ile += ile;
+  if (w.ile > 0) mapa.set(klucz, w); else mapa.delete(klucz);
+}
+
 const SPIS_SCHEMAT = [
   `CREATE TABLE IF NOT EXISTS rzeczy (id TEXT PRIMARY KEY, rodzaj TEXT NOT NULL, obszar TEXT, zapis TEXT NOT NULL, akt INTEGER NOT NULL,
      numer INTEGER NOT NULL DEFAULT 1, odlozone INTEGER NOT NULL DEFAULT 0, szukane TEXT NOT NULL DEFAULT '',
      utworzyl TEXT NOT NULL, utworzono INTEGER NOT NULL, zmienil TEXT NOT NULL, zmieniono INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS rzeczy_rodzaj ON rzeczy (rodzaj)`,
   `CREATE INDEX IF NOT EXISTS rzeczy_obszar ON rzeczy (obszar)`,
+  // Pytanie "co zmieniło się po akcie N" zadaje każda otwarta strona po każdej zmianie: bez indeksu czytałoby cały spis.
+  `CREATE INDEX IF NOT EXISTS rzeczy_akt ON rzeczy (akt)`,
   `CREATE TABLE IF NOT EXISTS odniesienia (od TEXT NOT NULL, cecha TEXT NOT NULL, cel TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS odniesienia_cel ON odniesienia (cel)`,
   `CREATE INDEX IF NOT EXISTS odniesienia_od ON odniesienia (od)`,
+  // Przekrój spisu (ile rzeczy którego rodzaju leży w którym obszarze, osobno odłożone) utrwalony w małej tabeli.
+  // Obiekt Miejsca zasypia po kilku sekundach bez ruchu i traci pamięć: bez tej tabeli pierwsze czytanie opisu po
+  // każdym obudzeniu liczyło cały spis od nowa (zmierzone 17 XI: 1675 wierszy przy 647 rzeczach).
+  `CREATE TABLE IF NOT EXISTS przekroj (rodzaj TEXT NOT NULL, obszar TEXT NOT NULL, odlozone INTEGER NOT NULL, ile INTEGER NOT NULL, PRIMARY KEY (rodzaj, obszar, odlozone)) WITHOUT ROWID`,
 ];
 
 export class Srodowisko {
@@ -284,11 +298,28 @@ export class Srodowisko {
     this._kolejka = Promise.resolve();
     this._role = { nr: -1, mapa: new Map() };
     if (stary) this.przebuduj();
+    // Spis sprzed tabeli przekroju: liczymy ją raz z tego, co już leży.
+    else if (!sql.exec(`SELECT 1 AS jest FROM przekroj LIMIT 1`).toArray().length && sql.exec(`SELECT 1 AS jest FROM rzeczy LIMIT 1`).toArray().length) this._zbudujPrzekroj();
+  }
+
+  _zbudujPrzekroj() {
+    this.r.sql.exec(`DELETE FROM przekroj`);
+    this.r.sql.exec(`INSERT INTO przekroj (rodzaj, obszar, odlozone, ile) SELECT rodzaj, COALESCE(obszar, ''), odlozone, COUNT(*) FROM rzeczy NOT INDEXED GROUP BY rodzaj, COALESCE(obszar, ''), odlozone`);
+    this._prz = null;
   }
 
   q(z, ...p) { return this.r.q(z, ...p); }
   get wlasciciel() { return this.r.wlasciciel; }
-  ostatniNr() { return this.q(`SELECT COALESCE(MAX(nr), 0) AS nr FROM akty`)[0].nr; }
+  ostatniNr() { return this.r.ostatniNr(); }
+
+  // Wynik policzony z danych, pamiętany do następnego aktu: ten sam numer ostatniego aktu znaczy te same rzeczy.
+  // To, co stąd wraca, dostają wszyscy pytający aż do następnej zmiany, więc nie wolno tego zmieniać w miejscu.
+  pamietaj(klucz, licz) {
+    const nr = this.ostatniNr();
+    if (!this._pam || this._pam.nr !== nr) this._pam = { nr, mapa: new Map() };
+    if (!this._pam.mapa.has(klucz)) this._pam.mapa.set(klucz, licz());
+    return this._pam.mapa.get(klucz);
+  }
 
   // Wszystkie zmiany idą jedna po drugiej. Skróty liczą się asynchronicznie, więc bez kolejki dwa ruchy mogłyby
   // przeczytać ten sam stan; z kolejką ruch widzi zawsze skutek poprzedniego.
@@ -316,9 +347,11 @@ export class Srodowisko {
 
   // Wybór rzeczy: rodzaj (z pokoleniem albo sama nazwa), obszar, wartości cech (`gdzie`), tekst (`szukaj`) i to,
   // czy pokazywać odłożone (domyślnie nie; 'tak': tylko odłożone; 'razem': jedne i drugie).
-  _warunek({ rodzaj = null, obszar, gdzie = null, szukaj = null, odlozone = 'nie' } = {}) {
+  _warunek({ rodzaj = null, obszar, gdzie = null, szukaj = null, odlozone = 'nie', po = null } = {}) {
     const war = [], par = [];
     let trzebaTresci = false;
+    // `po`: tylko rzeczy zmienione po akcie o tym numerze (z `odlozone: 'razem'` także te, które po nim odłożono)
+    if (Number.isSafeInteger(po) && po >= 0) { war.push('r.akt > ?'); par.push(po); }
     if (rodzaj) {
       // Sama nazwa (bez pokolenia) znaczy wszystkie pokolenia. Porównanie po początku napisu, nie wzorcem LIKE,
       // bo podkreślnik w nazwie rodzaju byłby w nim dżokerem. Zły zapis rodzaju nie pasuje do niczego.
@@ -362,11 +395,44 @@ export class Srodowisko {
   }
 
   ile(filtr = {}) {
+    // Proste pytania (rodzaj z pokoleniem, obszar, odłożone albo nie) mają odpowiedź w pamiętanym przekroju spisu:
+    // opis pyta o takie liczby kilkanaście razy, a każde osobne liczenie przeglądało cały spis.
+    const { rodzaj = null, obszar, gdzie: cechy = null, szukaj = null, odlozone = 'nie', po = null } = filtr;
+    const prostyRodzaj = rodzaj === null || (typeof rodzaj === 'string' && rodzaj.includes('/') && RODZAJ_LUB_NAZWA.test(rodzaj));
+    if (!cechy && !szukaj && po === null && prostyRodzaj && ['nie', 'tak', 'razem'].includes(odlozone)) {
+      let n = 0;
+      for (const w of this.przekroj()) {
+        if (rodzaj !== null && w.rodzaj !== rodzaj) continue;
+        if (obszar !== undefined && (obszar === null || obszar === '' ? w.obszar !== null : w.obszar !== String(obszar))) continue;
+        if (odlozone === 'nie' ? w.odlozone : (odlozone === 'tak' ? !w.odlozone : false)) continue;
+        n += w.ile;
+      }
+      return n;
+    }
     const { gdzie, par, trzebaTresci } = this._warunek(filtr);
     return this.q(`SELECT COUNT(*) AS n FROM rzeczy r ${trzebaTresci ? 'JOIN zapisy z ON z.id = r.zapis' : ''} ${gdzie}`, ...par)[0].n;
   }
 
-  liczby() { return this.q(`SELECT rodzaj, COUNT(*) AS ile FROM rzeczy WHERE odlozone = 0 GROUP BY rodzaj ORDER BY rodzaj`); }
+  // Przekrój spisu: ile rzeczy którego rodzaju leży w którym obszarze i ile z nich jest odłożonych. Z niego biorą się
+  // liczby rodzajów, liczby w obszarach i liczba odłożonych. Stoi w małej tabeli, którą poprawia każdy zapis rzeczy
+  // (_projekcja), więc czytanie go to kilkadziesiąt wierszy, a nie przegląd całego spisu: zmierzone 17 XI, że liczenie
+  // go od nowa kosztowało przy 560 rzeczach ponad tysiąc wierszy bazy na pierwsze czytanie opisu po każdej zmianie.
+  _przekrojMapa() {
+    if (!this._prz) {
+      this._prz = new Map();
+      for (const w of this.q(`SELECT rodzaj, obszar, odlozone, ile FROM przekroj WHERE ile > 0`)) doliczPrzekroj(this._prz, w.rodzaj, w.obszar === '' ? null : w.obszar, w.odlozone, w.ile);
+    }
+    return this._prz;
+  }
+  przekroj() { return [...this._przekrojMapa().values()]; }
+
+  liczby() {
+    return this.pamietaj('liczby', () => {
+      const m = new Map();
+      for (const w of this.przekroj()) if (!w.odlozone) m.set(w.rodzaj, (m.get(w.rodzaj) || 0) + w.ile);
+      return Object.freeze([...m].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([rodzaj, ile]) => ({ rodzaj, ile })));
+    });
+  }
 
   // Historia rzeczy: każda wersja ma kolejny numer (1, 2, 3…) i znacznik `akt`, czyli numer aktu, który ją ustawił.
   historia(id) {
@@ -734,6 +800,19 @@ export class Srodowisko {
   // był co do znaku taki sam jak spis liczony na bieżąco.
   _projekcja(id, rodzaj, obszar, zapis, akt, kto, cechy, ksztalt, odlozone = false, kiedy = null) {
     const t = kiedy ?? this.r.teraz();
+    // Przekrój spisu idzie za zapisem: gdy rzecz zmienia przegródkę (nowa rzecz, inny obszar, odłożenie, przywrócenie),
+    // wychodzi ze starej i wchodzi do nowej, w tabeli i w pamięci. Zmiana samej treści przegródki nie rusza.
+    const bylo = this.q(`SELECT rodzaj, obszar, odlozone FROM rzeczy WHERE id = ?`, id)[0] || null;
+    const nowa = [rodzaj, obszar ?? '', odlozone ? 1 : 0];
+    const stara = bylo ? [bylo.rodzaj, bylo.obszar ?? '', bylo.odlozone ? 1 : 0] : null;
+    if (!stara || stara[0] !== nowa[0] || stara[1] !== nowa[1] || stara[2] !== nowa[2]) {
+      if (stara) this.r.sql.exec(`UPDATE przekroj SET ile = ile - 1 WHERE rodzaj = ? AND obszar = ? AND odlozone = ?`, ...stara);
+      this.r.sql.exec(`INSERT INTO przekroj (rodzaj, obszar, odlozone, ile) VALUES (?, ?, ?, 1) ON CONFLICT(rodzaj, obszar, odlozone) DO UPDATE SET ile = ile + 1`, ...nowa);
+      if (this._prz) {
+        if (stara) doliczPrzekroj(this._prz, bylo.rodzaj, bylo.obszar, bylo.odlozone, -1);
+        doliczPrzekroj(this._prz, rodzaj, obszar ?? null, odlozone ? 1 : 0, 1);
+      }
+    }
     this.r.sql.exec(`INSERT INTO rzeczy (id, rodzaj, obszar, zapis, akt, numer, odlozone, szukane, utworzyl, utworzono, zmienil, zmieniono) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET rodzaj = excluded.rodzaj, obszar = excluded.obszar, zapis = excluded.zapis, akt = excluded.akt, numer = rzeczy.numer + 1,
         odlozone = excluded.odlozone, szukane = excluded.szukane, zmienil = excluded.zmienil, zmieniono = excluded.zmieniono`,
@@ -854,6 +933,8 @@ export class Srodowisko {
         id, g.rodzaj, t.obszar ?? null, g.zapis, g.akt, przesuniecia.length, t.odlozone === true ? 1 : 0, doSzukania(cechy), pierwszy.kto, pierwszy.kiedy, ostatni.kto, ostatni.kiedy);
     }
     this._k = null;
+    this._pam = null;
+    this._zbudujPrzekroj();
     this._role = { nr: -1, mapa: new Map() };
     for (const rz of this.wszystkie({ odlozone: 'razem' })) this._odniesienia(rz.id, rz.rodzaj, rz.cechy, this.ksztaltDla(rz.rodzaj));
     return { ok: true, rzeczy: glowy.length };

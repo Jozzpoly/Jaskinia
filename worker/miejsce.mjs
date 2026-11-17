@@ -19,6 +19,8 @@
 // a wywóz niesie też `meta` (znaczniki zasiewu i wskazania obszarów), bez której wwóz nie odtwarzał środowiska.
 // Wwóz przyjmuje wszystkie trzy: starsze są tym samym układem bez tych rzeczy.
 export const WERSJA = 'miejsce-3';
+// Zapytania, które zmieniają tabelę aktów: po każdym takim pamiętany numer ostatniego aktu przestaje być ważny.
+const ZMIENIA_AKTY = /^\s*(INSERT\s+INTO|DELETE\s+FROM|UPDATE|ALTER\s+TABLE|DROP\s+TABLE)\s+akty\b/i;
 export const WERSJE_WWOZU = ['miejsce-1', 'miejsce-2', 'miejsce-3'];
 export const LIMIT_TRESCI = 2 * 1024 * 1024; // bajty; wiersz SQLite w Durable Object ma limit 8 MB
 export const LIMIT_DZIENNIKA = 200;
@@ -78,7 +80,15 @@ const blad = (status, tekst, extra = {}) => ({ ok: false, status, blad: tekst, .
 
 export class Rdzen {
   constructor(sql, { teraz = () => Date.now(), wlasciciel = WLASCICIEL } = {}) {
-    this.sql = sql;
+    // Numer ostatniego aktu jest pamiętany (ostatniNr), bo pyta o niego prawie każde czytanie, a bez pamięci każde
+    // pytanie to wiersz bazy (zmierzone 17 XI: spis 636 rzeczy pytał o niego 636 razy). Każde zapytanie, które zmienia
+    // tabelę aktów, kasuje tę pamięć, więc jest zawsze prawdziwa. Założenie: jedno jądro na jedną bazę (tak jest
+    // w Durable Object); drugie jądro piszące do tej samej bazy tej pamięci by nie skasowało.
+    this._nr = null;
+    this.sql = {
+      exec: (zapytanie, ...p) => { if (ZMIENIA_AKTY.test(zapytanie)) this._nr = null; return sql.exec(zapytanie, ...p); },
+      get databaseSize() { return sql.databaseSize; },
+    };
     this.teraz = teraz;
     // Kto jest właścicielem, przychodzi z ustawienia Workera, a nie z kodu; `jozz` jest tylko wartością domyślną.
     this.wlasciciel = poprawneImie(wlasciciel) ? wlasciciel : WLASCICIEL;
@@ -165,6 +175,10 @@ export class Rdzen {
   }
 
   ostatniAkt() { return this.q(`SELECT * FROM akty ORDER BY nr DESC LIMIT 1`)[0]; }
+  ostatniNr() {
+    if (this._nr === null) this._nr = this.q(`SELECT COALESCE(MAX(nr), 0) AS nr FROM akty`)[0].nr;
+    return this._nr;
+  }
 
   // Położenie: zapis treści i przesunięcie głowy jako jedna czynność. Używa go warstwa środowiska, która sama
   // policzyła prawo do ruchu z danych. Dwa kroki, bo skróty są asynchroniczne, a sprawdzenie i zapis muszą iść
@@ -267,6 +281,13 @@ export class Rdzen {
     // pierwszy_raz: czytelnik nie ma jeszcze zapisanej wizyty. To najczęstszy przypadek (każda nowa sesja agenta),
     // więc ma własną, jawną odpowiedź zamiast pustej listy udającej "nic się nie zmieniło".
     return { ...d, pierwszy_raz: !o, widziane_do: o ? o.nr : 0, widziane_kiedy: o ? new Date(o.kiedy).toISOString() : null, cudze: d.akty.filter((a) => a.kto !== kto).length };
+  }
+
+  // Sama zapisana wizyta czytelnika, bez dziennika. Opis środowiska potrzebuje tylko tego, dokąd czytelnik doczytał;
+  // `nowe` czyta przy okazji do 200 aktów z treścią, a strona pyta o opis po każdej zmianie.
+  wizyta(kto) {
+    const o = this.q(`SELECT nr, kiedy FROM odczyty WHERE kto = ?`, kto)[0];
+    return { pierwszy_raz: !o, widziane_do: o ? o.nr : 0, widziane_kiedy: o ? new Date(o.kiedy).toISOString() : null };
   }
 
   widzialem(kto, nr) {

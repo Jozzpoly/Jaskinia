@@ -6,6 +6,7 @@ import { odpowiedz, wCronie } from './fakty.mjs';
 import { ktoTo, wczytajKlucze } from './klucze.mjs';
 import { skrot } from './miejsce.mjs';
 import { cialoTekstem, ZLE_KODOWANIE } from './srodowisko-http.mjs';
+import { ADRES_ZYWEGO } from './zywe.mjs';
 export { Miejsce } from './miejsce-do.mjs';
 
 // /api/miejsce/…: wspólny stan po stronie serwera, tylko z kluczem (krok 1 rdzenia, 15 XI 2026; wzięte z dawcy
@@ -34,6 +35,7 @@ const doSrodowiska = (p) => p.startsWith('/api/srodowisko/') || SRODOWISKO_TEKST
 
 async function srodowisko(request, env, url) {
   if (!env.MIEJSCE) return json({ blad: 'Miejsce nie jest podłączone (brak wiązania MIEJSCE)' }, 503);
+  const zywe = url.pathname === ADRES_ZYWEGO && request.method === 'GET';
   let kto = '';
   if (request.headers.has('authorization')) {
     const k = await ktoTo(request, env);
@@ -41,10 +43,19 @@ async function srodowisko(request, env, url) {
     kto = k.kto;
   } else if (request.method !== 'GET') {
     return json({ blad: 'do ruchu potrzebny jest klucz: nagłówek Authorization: Bearer <klucz>' }, 401);
-  } else if (env.PODGLAD !== 'tak' && !url.pathname.startsWith('/gosc/')) {
+  } else if (env.PODGLAD !== 'tak' && !url.pathname.startsWith('/gosc/') && !zywe) {
     return json({ blad: 'to Miejsce nie jest publiczne: do czytania potrzebny jest klucz (nagłówek Authorization: Bearer <klucz>)' }, 401);
   }
   const naglowki = new Headers({ 'x-kto': kto, 'x-origin': url.origin });
+  if (zywe) {
+    // Kanał na żywo. Przeglądarka nie umie dołączyć klucza do otwarcia połączenia, więc wolno je otworzyć bez klucza:
+    // takie połączenie poza podglądem niczego nie słyszy, dopóki nie przedstawi się kluczem pierwszą wiadomością.
+    // Obca strona nie otworzy go z przeglądarki uczestnika: przyjmujemy własny adres albo brak adresu (agent bez przeglądarki).
+    if ((request.headers.get('upgrade') || '').toLowerCase() !== 'websocket') return json({ blad: 'to są drzwi kanału na żywo: potrzebne połączenie WebSocket (nagłówek Upgrade: websocket)' }, 426);
+    const skad = request.headers.get('origin');
+    if (skad && skad !== url.origin) return json({ blad: 'kanał na żywo przyjmuje połączenia tylko ze strony tego Miejsca' }, 403);
+    naglowki.set('upgrade', 'websocket');
+  }
   const klucze = wczytajKlucze(env);
   if (klucze.ok) {
     naglowki.set('x-imiona', klucze.wpisy.map(([imie]) => imie).join(','));

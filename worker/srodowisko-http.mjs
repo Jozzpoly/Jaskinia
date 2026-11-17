@@ -44,10 +44,12 @@ function filtrZAdresu(s, p) {
   if (Object.keys(gdzie).length) f.gdzie = gdzie;
   if (p.get('szukaj')) f.szukaj = p.get('szukaj').slice(0, 200);
   if (['tak', 'razem'].includes(p.get('odlozone'))) f.odlozone = p.get('odlozone');
+  // po=<akt>: tylko to, co zmieniło się po tym akcie; tak otwarta strona dogania Miejsce bez czytania całego spisu
+  if (liczba(p.get('po')) !== null) f.po = liczba(p.get('po'));
   return f;
 }
 
-export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbny = null, obejdz = null, budzet = null } = {}) {
+export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbny = null, kluczProbnyWlasciciela = null, obejdz = null, budzet = null } = {}) {
   const url = new URL(request.url);
   const kto = request.headers.get('x-kto') || null;
   const slad = request.headers.get('x-cialo');
@@ -57,7 +59,7 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
   // ?jako=<imię> to perspektywa bez dowodu, tylko na podglądzie; cokolwiek innego niż imię pomijamy, żeby nie dało
   // się tędy wpisać własnych wierszy do tekstu, który czytają agenci.
   const jako = poprawneImie(p.get('jako')) ? p.get('jako') : null;
-  const opcje = { kto, jako, od: liczba(p.get('od')), origin, podglad, kluczProbny, probnyImie: request.headers.get('x-probny-imie') || null, budzet };
+  const opcje = { kto, jako, od: liczba(p.get('od')), origin, podglad, kluczProbny, kluczProbnyWlasciciela, probnyImie: request.headers.get('x-probny-imie') || null, budzet };
 
   if (request.method === 'GET') {
     if (sciezka.startsWith('/gosc/')) {
