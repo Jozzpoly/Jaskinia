@@ -91,7 +91,7 @@ ul.lista .bok { white-space: normal; }
   button, .guzik { min-height: 44px; min-width: 44px; padding: .6rem .95rem; display: inline-flex; align-items: center; justify-content: center; }
   details > summary { padding: .7rem .65rem; min-height: 44px; }
   ul.lista li { padding: .6rem 0; }
-  ul.lista li a, .karta .meta a, .dol a { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; padding: 0 .15rem; }
+  ul.lista li a, .karta .meta a, .dol a { min-height: 44px; min-width: 48px; display: inline-flex; align-items: center; padding: 0 .3rem; }
   .karta .meta { gap: 0 .8rem; }
   .dol { gap: 0 1.1rem; }
 }
