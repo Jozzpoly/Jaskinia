@@ -7,6 +7,7 @@
 // Co jest stanem oka (nie trafia do Miejsca): kamera, liczba stały/ciekły, wybrana rzecz. Co jest zapisem: położenie
 // rzeczy z ręki, przy puszczeniu, jako rzecz rodzaju miejsce w widoku Start (więc ma autora, historię i prawa z obszaru).
 import { Drzwi } from './drzwi.mjs';
+import { Pokretla, KOLORY, RODZAJE_USTAWIEN } from '../pokretla.mjs';
 import { zbudujSwiat, ukladStaly, poleCieklego, ukladCiekly, miedzy, lagodnie, krotkieImie, zywosc, galezieWPolu, trafienie,
   kolejnoscRysowania, naEkran, naSwiat, kameraNa, przybliz, KARTA, SKALA } from './swiat.mjs';
 
@@ -50,14 +51,47 @@ const drzwi = new Drzwi({ naZmiane: poZmianie, naStan: rysujPasek });
 
 // --- kolory z motywu (zmienne CSS), przeliczane przy zmianie jasny/ciemny --------------------------------------------
 let K = {};
-const rgb = (hex) => { const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim()); const n = m ? parseInt(m[1], 16) : 0x808080; return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const rgb = (hex) => { const m = /^#?([0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(hex.trim()); const n = m ? parseInt(m[1], 16) : 0x808080; return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 const mieszaj = (a, b, ile) => { const A = rgb(a), B = rgb(b), k = Math.max(0, Math.min(1, ile)); return `rgb(${Math.round(A[0] + (B[0] - A[0]) * k)}, ${Math.round(A[1] + (B[1] - A[1]) * k)}, ${Math.round(A[2] + (B[2] - A[2]) * k)})`; };
 function wczytajKolory() {
   const cs = getComputedStyle(document.documentElement);
   for (const n of ['tlo', 'plyta', 'tekst', 'ciche', 'akcent', 'linia', 'zywe', 'stare', 'znak']) K[n] = cs.getPropertyValue('--' + n).trim() || '#808080';
   popros();
 }
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', wczytajKolory);
+
+// --- pokrętła: wygląd i odczucie są danymi w Miejscu, nie stałymi w tym pliku -------------------------------------------
+// Wartości domyślne daje jedna tablica (public/pokretla.mjs), wartości z Miejsca drzwi /api/srodowisko/ustawienia,
+// policzone dla widoku, który Start pokazuje. Zmiana pokrętła przez kogokolwiek dociera tu kanałem jak każda zmiana
+// i twarz przerysowuje się bez przeładowania. Adres z ?bezpiecznie zostawia same wartości domyślne: wyjście z każdego
+// zepsutego wyglądu.
+const P = new Pokretla({ bezpiecznie: new URLSearchParams(location.search).has('bezpiecznie'), naZmiane: zastosujWyglad });
+let KROJ = String(P.w('wyglad.kroj.rodzina'));
+let odciskUstawien = null, pytamOUstawienia = false;
+function zastosujWyglad() {
+  const system = matchMedia('(prefers-color-scheme: dark)').matches;
+  const st = document.documentElement.style;
+  for (const n of KOLORY) st.setProperty('--' + n, String(P.kolor(n, system)));
+  st.setProperty('color-scheme', P.ciemna(system) ? 'dark' : 'light');
+  KROJ = String(P.w('wyglad.kroj.rodzina'));
+  document.body.style.fontFamily = KROJ;
+  wczytajKolory();
+}
+// Odcisk tego, co w spisie jest ustawieniem: ile takich rzeczy i która zmieniła się ostatnio. Inny odcisk znaczy
+// "policz ustawienia od nowa"; ten sam znaczy, że zmiana dotyczyła czegoś innego i o ustawienia nie trzeba pytać.
+const odciskZ = (rzeczy) => { let ile = 0, ostatnia = 0; for (const r of rzeczy) if (RODZAJE_USTAWIEN.includes(r.rodzaj)) { ile++; if (r.wersja > ostatnia) ostatnia = r.wersja; } return ile + ':' + ostatnia + ':' + (widok ? widok.id : ''); };
+async function odswiezUstawienia() {
+  if (P.bezpiecznie || pytamOUstawienia) return;
+  pytamOUstawienia = true;
+  try {
+    for (let obieg = 0; obieg < 3; obieg++) {
+      const odcisk = odciskZ(drzwi.rzeczy.values());
+      if (odcisk === odciskUstawien) break;
+      P.przyjmij(await drzwi.czytaj('/api/srodowisko/ustawienia' + (widok ? '?dla=' + widok.id : '')));
+      odciskUstawien = odcisk;
+    }
+  } catch { /* bez ustawień z Miejsca twarz zostaje przy wartościach, które ma */ } finally { pytamOUstawienia = false; }
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', zastosujWyglad);
 
 // --- zdanie o skutku --------------------------------------------------------------------------------------------------
 function komunikat(tekst, zly = false) {
@@ -81,6 +115,7 @@ function poZmianie() {
   przelicz();
   if (!kam) kam = kameraNa(t >= 0.5 ? pole : staly.granice, okno, 20, gora);
   rysujPasek(); rysujKarte(); rysujListe(); popros();
+  odswiezUstawienia();
 }
 function przelicz() {
   if (!swiat) return;
@@ -145,20 +180,21 @@ function klatka(teraz) {
   if (!swiat || !K.tlo) return;
   let wRuchu = false;
   if (animT) {
-    const k = Math.min(1, (teraz - animT.od) / animT.ms);
+    const k = animT.ms > 0 ? Math.min(1, (teraz - animT.od) / animT.ms) : 1;
     t = animT.z + (animT.na - animT.z) * lagodnie(k);
     $('suwak').value = String(Math.round(t * 100));
     if (k >= 1) { animT = null; zapiszOko(); rysujPasek(); } else wRuchu = true;
   }
   if (animKam) {
-    const k = lagodnie(Math.min(1, (teraz - animKam.od) / animKam.ms));
+    const k = lagodnie(animKam.ms > 0 ? Math.min(1, (teraz - animKam.od) / animKam.ms) : 1);
     kam = { x: animKam.z.x + (animKam.na.x - animKam.z.x) * k, y: animKam.z.y + (animKam.na.y - animKam.z.y) * k, k: Math.exp(Math.log(animKam.z.k) + (Math.log(animKam.na.k) - Math.log(animKam.z.k)) * k) };
     if (k >= 1) animKam = null; else wRuchu = true;
   }
   // Rzeczy doganiają swój cel łagodnie, gdy układ zmienił się skokiem (puszczenie, zamiana, cudza zmiana na żywo).
   // Gdy cel sam płynie (suwak, przełącznik) albo rzecz jest pod palcem, idą za nim od razu.
   const wprost = suwakWRuchu || animT !== null;
-  const wsp = 1 - Math.exp(-dt / 80);
+  const tau = P.czas('start.ruch.doganianie_ms');
+  const wsp = tau > 0 ? 1 - Math.exp(-dt / tau) : 1;
   for (const p of swiat.projekty) {
     const c = cel(p.id), s = pokazane.get(p.id);
     if (!s || wprost || (ciagnie && ciagnie.id === p.id)) { pokazane.set(p.id, c); continue; }
@@ -188,7 +224,7 @@ function rysuj() {
       const rozmiar = Math.max(11, Math.min(30, 46 * kam.k));
       ctx.globalAlpha = alfaRodzin * plynnie(e.w, 60, 160);
       ctx.fillStyle = K.ciche;
-      ctx.font = `600 ${rozmiar}px system-ui, sans-serif`;
+      ctx.font = `600 ${rozmiar}px ${KROJ}`;
       // podpis rodziny nie wychodzi poza swoje rzeczy: z daleka skraca się, zamiast wchodzić na sąsiednie karty
       const podpis = zawin(r.nazwa.toUpperCase(), ctx.font, Math.max(24, e.w), 1);
       ctx.fillText(podpis.linie[0] || '', e.x, e.y - 6);
@@ -205,7 +241,7 @@ function rysuj() {
     rysujProjekt(p, e, teraz);
   }
   if (!swiat.projekty.length) {
-    ctx.fillStyle = K.ciche; ctx.font = '15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = K.ciche; ctx.font = '15px ' + KROJ; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('W tym Miejscu nie ma jeszcze projektów. Przynosi je obserwator faktów albo ruch poloz (opis: /co-tu-jest).', okno.w / 2, okno.h / 2, okno.w - 40);
   }
 }
@@ -213,9 +249,9 @@ function rysuj() {
 function rysujProjekt(p, e, teraz) {
   const z = zywosc(p.zycie, teraz);
   const ciagniety = ciagnie && ciagnie.ruszyl && ciagnie.id === p.id;
-  const r = Math.min(12, e.w * 0.06, e.h * 0.1);
+  const r = Math.min(Math.max(0, Number(P.w('start.karta.rog_px')) || 0), e.w * 0.06, e.h * 0.1);
   ctx.save();
-  if (ciagniety) { ctx.shadowColor = 'rgba(0, 0, 0, .45)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8; ctx.globalAlpha = 0.94; }
+  if (ciagniety) { ctx.shadowColor = `rgba(0, 0, 0, ${Number(P.w('start.cien.krycie')) || 0})`; ctx.shadowBlur = Math.max(0, Number(P.w('start.cien.rozmycie_px')) || 0); ctx.shadowOffsetY = Number(P.w('start.cien.przesuniecie_px')) || 0; ctx.globalAlpha = 0.94; }
   // Kolor znaczy: im żywszy projekt, tym bardziej zielony; spokojny zostaje w kolorze płyty.
   zaokraglony(e.x, e.y, e.w, e.h, r);
   ctx.fillStyle = z === null ? K.plyta : mieszaj(K.plyta, K.zywe, 0.06 + z * 0.3);
@@ -249,19 +285,19 @@ function rysujTresc(p, e, teraz) {
   let nazwa = null;
   const ileLinii = (roz) => Math.max(1, Math.min(3, Math.floor((e.h - 2 * pad) / (roz * 1.18))));
   for (; rozmiar >= 9; rozmiar -= 1.5) {
-    const proba = zawin(p.tytul, `650 ${rozmiar}px system-ui, sans-serif`, szer, ileLinii(rozmiar));
+    const proba = zawin(p.tytul, `650 ${rozmiar}px ${KROJ}`, szer, ileLinii(rozmiar));
     if (!proba.zaSzeroka && !proba.ucieto) { nazwa = proba; break; }
   }
   // Z daleka (działka węższa niż 64 px) zostaje sam kolor życia: trzy litery z wielokropkiem niczego nie mówią.
   // Imię wraca przy pierwszym przybliżeniu albo po dotknięciu (karta rzeczy).
-  if (!nazwa && e.w > 64 && e.h > 20) { rozmiar = 9.5; nazwa = zawin(p.tytul, `650 ${rozmiar}px system-ui, sans-serif`, szer, ileLinii(rozmiar)); }
+  if (!nazwa && e.w > 64 && e.h > 20) { rozmiar = 9.5; nazwa = zawin(p.tytul, `650 ${rozmiar}px ${KROJ}`, szer, ileLinii(rozmiar)); }
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   if (nazwa) {
     // Gdy projekt jest większy niż okno, jego imię trzyma się widocznego rogu, żeby było wiadomo, w czym się jest.
     const wys = nazwa.linie.length * rozmiar * 1.18;
     const nx = Math.max(e.x + pad + 4, Math.min(8, e.x + e.w - 120)), ny = Math.max(y, Math.min(gora + 8, e.y + e.h - pad - wys));
     const przyklejone = nx > e.x + pad + 4.5 || ny > y + 0.5;
-    ctx.font = `650 ${rozmiar}px system-ui, sans-serif`;
+    ctx.font = `650 ${rozmiar}px ${KROJ}`;
     if (przyklejone) {
       const sz = Math.max(...nazwa.linie.map((l) => ctx.measureText(l).width));
       ctx.fillStyle = mieszaj(K.plyta, K.tlo, 0.5); ctx.globalAlpha *= 0.9;
@@ -276,7 +312,7 @@ function rysujTresc(p, e, teraz) {
   // Obecność: kto z uczestników jest teraz przy tej rzeczy (prawdziwe połączenie, nie ozdoba).
   const przyTym = drzwi.obecni.lista.filter((o) => o.przy === p.id && o.kto !== drzwi.imie);
   if (przyTym.length && e.w > 70) {
-    ctx.font = '600 11px system-ui, sans-serif';
+    ctx.font = '600 11px ' + KROJ;
     const napis = przyTym.map((o) => o.kto).join(', ');
     const sz = Math.min(szer, ctx.measureText(napis).width + 14);
     ctx.fillStyle = K.akcent;
@@ -298,10 +334,10 @@ function rysujTresc(p, e, teraz) {
     const slow = swiat.ileSlow.get(p.id);
     if (slow) cz.push('słowa: ' + slow);
     ctx.globalAlpha *= alfaMeta;
-    ctx.fillStyle = K.ciche; ctx.font = '12px system-ui, sans-serif'; ctx.textBaseline = 'bottom';
+    ctx.fillStyle = K.ciche; ctx.font = '12px ' + KROJ; ctx.textBaseline = 'bottom';
     const zagrajSzer = p.zagraj && e.w > 150 ? 84 : 0;
-    const meta = zawin(cz.join(' · '), '12px system-ui, sans-serif', szer - zagrajSzer, 1);
-    ctx.font = '12px system-ui, sans-serif';
+    const meta = zawin(cz.join(' · '), '12px ' + KROJ, szer - zagrajSzer, 1);
+    ctx.font = '12px ' + KROJ;
     if (meta.linie.length) ctx.fillText(meta.linie[0], e.x + pad + 4, dol);
     ctx.globalAlpha /= alfaMeta;
     ctx.textBaseline = 'top';
@@ -311,7 +347,7 @@ function rysujTresc(p, e, teraz) {
       const pw = 74, ph = 24, px = e.x + e.w - pad - pw, py = dol - ph + 3;
       ctx.globalAlpha *= alfaMeta;
       ctx.fillStyle = K.akcent; zaokraglony(px, py, pw, ph, 12); ctx.fill();
-      ctx.fillStyle = K.tlo; ctx.font = '600 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = K.tlo; ctx.font = '600 12px ' + KROJ; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(p.wKarcie ? 'Zagraj ↗' : 'Zagraj', px + pw / 2, py + ph / 2 + 0.5);
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
       ctx.globalAlpha /= alfaMeta;
@@ -324,9 +360,9 @@ function rysujTresc(p, e, teraz) {
     const wys = 13.5 * 1.35, miejsce = metaGora - y - 6;
     const ile = Math.max(0, Math.min(e.h > 420 ? 4 : 6, Math.floor(miejsce / wys)));
     if (ile >= 1) {
-      const o = zawin(p.opis, '13.5px system-ui, sans-serif', szer, ile);
+      const o = zawin(p.opis, '13.5px ' + KROJ, szer, ile);
       ctx.globalAlpha *= alfaOpis;
-      ctx.fillStyle = K.ciche; ctx.font = '13.5px system-ui, sans-serif';
+      ctx.fillStyle = K.ciche; ctx.font = '13.5px ' + KROJ;
       y += 4;
       for (const l of o.linie) { ctx.fillText(l, e.x + pad + 4, y, szer); y += wys; }
       ctx.globalAlpha /= alfaOpis;
@@ -347,8 +383,8 @@ function rysujTresc(p, e, teraz) {
         zaokraglony(pr.x + 1, pr.y + 1, pr.w - 2, pr.h - 2, 4); ctx.fill();
         if (pr.w > 54 && pr.h > 16) {
           const roz = Math.max(9.5, Math.min(13, pr.h / 2.6));
-          const im = zawin(krotkieImie(g.nazwa), `${roz}px system-ui, sans-serif`, pr.w - 10, pr.h > roz * 2.8 ? 2 : 1);
-          ctx.fillStyle = K.tekst; ctx.font = `${roz}px system-ui, sans-serif`;
+          const im = zawin(krotkieImie(g.nazwa), `${roz}px ${KROJ}`, pr.w - 10, pr.h > roz * 2.8 ? 2 : 1);
+          ctx.fillStyle = K.tekst; ctx.font = `${roz}px ${KROJ}`;
           // imię gałęzi trzyma się widocznego rogu jej działki
           const gx = Math.max(pr.x + 6, Math.min(10, pr.x + pr.w - 60));
           let gy = Math.max(pr.y + 5, Math.min(gora + 46, pr.y + pr.h - im.linie.length * roz * 1.2 - 4));
@@ -407,12 +443,12 @@ $('suwak').addEventListener('input', () => { animT = null; suwakWRuchu = true; t
 $('suwak').addEventListener('change', () => { suwakWRuchu = false; zapiszOko(); popros(); });
 $('przelacz').addEventListener('click', () => {
   const na = t >= 0.5 ? 0 : 1;
-  animT = { z: t, na, od: performance.now(), ms: 700 };
+  animT = { z: t, na, od: performance.now(), ms: P.czas('start.ruch.przelacznik_ms') };
   // przy nadmuchaniu kamera płynie tak, żeby mozaika wypełniła okno; przy powrocie zostaje, gdzie była
-  if (na === 1 && pole) animKam = { z: kam, na: kameraNa(pole, okno, 8, gora), od: performance.now(), ms: 700 };
+  if (na === 1 && pole) animKam = { z: kam, na: kameraNa(pole, okno, 8, gora), od: performance.now(), ms: P.czas('start.ruch.przelacznik_ms') };
   popros();
 });
-$('caly').addEventListener('click', () => { if (!swiat) return; animKam = { z: kam, na: kameraNa(t >= 0.5 ? pole : staly.granice, okno, t >= 0.5 ? 8 : 28, gora), od: performance.now(), ms: 450 }; popros(); });
+$('caly').addEventListener('click', () => { if (!swiat) return; animKam = { z: kam, na: kameraNa(t >= 0.5 ? pole : staly.granice, okno, t >= 0.5 ? 8 : 28, gora), od: performance.now(), ms: P.czas('start.ruch.calosc_ms') }; popros(); });
 $('pomoc-guzik').addEventListener('click', () => { const p = $('pomoc'); p.hidden = !p.hidden; $('pomoc-guzik').setAttribute('aria-expanded', p.hidden ? 'false' : 'true'); });
 
 // --- karta wybranej rzeczy: czym jest, skąd się tu wzięła, co da się z nią zrobić --------------------------------------
@@ -471,7 +507,7 @@ function naRzecz(id) {
   const s = pokazane.get(id) || cel(id);
   const e = naEkran(kam, okno, s);
   if (e.x >= 0 && e.y >= gora && e.x + e.w <= okno.w && e.y + e.h <= okno.h) return;
-  animKam = { z: kam, na: { ...kam, x: s.x + s.w / 2, y: s.y + s.h / 2 }, od: performance.now(), ms: 350 };
+  animKam = { z: kam, na: { ...kam, x: s.x + s.w / 2, y: s.y + s.h / 2 }, od: performance.now(), ms: P.czas('start.ruch.do_karty_ms') };
   popros();
 }
 
@@ -586,7 +622,7 @@ plotno.addEventListener('pointermove', (e) => {
     return;
   }
   const dx = p.x - gest.x, dy = p.y - gest.y;
-  if (gest.typ === 'czeka' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > 6) {
+  if (gest.typ === 'czeka' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > (Number(P.w('reka.prog_przeciagania_px')) || 0)) {
     // Rusza się rzecz, jeśli palec ją trzyma i wolno układać; inaczej rusza się widok.
     if (gest.id && !gest.srodkowy && drzwi.klucz) {
       const s = pokazane.get(gest.id), w = naSwiat(kam, okno, gest.x0, gest.y0);
@@ -664,5 +700,6 @@ function wymiar() {
 }
 addEventListener('resize', wymiar);
 wymiar();
-wczytajKolory();
+zastosujWyglad();
+if (P.bezpiecznie) komunikat('Tryb bezpieczny: wygląd i odczucie mają wartości domyślne, bez ustawień z Miejsca. Zwykły adres: bez ?bezpiecznie.');
 drzwi.start().catch((blad) => { $('stan').textContent = 'brak połączenia'; komunikat('Nie udało się przeczytać Miejsca: ' + blad.message, true); });
