@@ -229,7 +229,9 @@ test('Z9. obiekt Miejsca poza podglądem: połączenie bez klucza nie słyszy zm
   t.after(() => { if (stara === undefined) delete globalThis.WebSocketPair; else globalThis.WebSocketPair = stara; });
   const { obiekt, przyjete } = obiektZGniazdami(await env());
   await obiekt._otworzZywe(zadanie(ADRES_ZYWEGO, { headers: { upgrade: 'websocket' } }));
-  await obiekt._otworzZywe(zadanie(ADRES_ZYWEGO, { headers: { upgrade: 'websocket', 'x-kto': 'agent-probny' } }));
+  // x-imiona podaje prawdziwy Worker przy każdym żądaniu (imiona ze wszystkich kluczy): z nich Miejsce zasiewa uczestników.
+  // Od 18 XI imię z klucza, które nie ma rzeczy uczestnika, nie jest na kanale witane, więc sprawdzian mówi to, co Worker.
+  await obiekt._otworzZywe(zadanie(ADRES_ZYWEGO, { headers: { upgrade: 'websocket', 'x-kto': 'agent-probny', 'x-imiona': 'agent-probny' } }));
   const [bez, agent] = przyjete;
   assert.deepEqual(bez.wyslane, []);
   assert.equal(agent.wyslane[0].t, 'witaj');
@@ -364,4 +366,44 @@ test('Z13. uczestnik, który tylko się połączył, ma prawa: zasiew imion stoi
   assert.ok(obiekt.srod.spis({ rodzaj: 'uczestnik/1', gdzie: { imie: 'agent-probny' }, limit: 1 })[0], 'i jest rzeczą w Miejscu');
   assert.equal(obiekt.srod.rola('kto-inny'), 'zwiedzajacy', 'imię, którego nie ma w kluczach, prawa nie dostaje');
   assert.equal(obiekt.srod.rola('podglad'), 'zwiedzajacy', 'poza podglądem nie powstaje nawet czytelnik podglądu');
+});
+
+test('Z14. uczestnik z odebranym wstępem na kanale: nie jest witany jako uczestnik, nie dostaje imion obecnych i sam nie stoi na liście', async () => {
+  const bezWstepu = new Set(['agent-probny']);
+  const maWstep = (kto) => !bezWstepu.has(kto);
+  // obecni i rozgłoszenie: imię bez wstępu liczy się jak gniazdo bez klucza
+  const wlasc = gniazdo({ kto: 'jozz' }), odebrany = gniazdo({ kto: 'agent-probny' }), beta = gniazdo({ kto: 'beta' });
+  assert.deepEqual(obecni([wlasc, odebrany, beta], maWstep), { lista: [{ kto: 'beta' }, { kto: 'jozz' }], bez_klucza: 1 });
+  assert.deepEqual(obecni([wlasc, odebrany, beta]).lista.map((x) => x.kto), ['agent-probny', 'beta', 'jozz'], 'bez pytania o wstęp kanał zachowuje się jak dotąd');
+  assert.equal(rozglos([wlasc, odebrany], { t: 'akt', akt: 5 }, { podglad: false, maWstep }), 1, 'poza podglądem nie słyszy nawet numeru aktu');
+  assert.equal(rozglos([wlasc, odebrany], { t: 'akt', akt: 6 }, { podglad: true, maWstep }), 2, 'na podglądzie słyszy to, co każdy zwiedzający');
+  // wstęp odebrany w trakcie połączenia: przy następnym rozgłoszeniu znika z listy i dostaje samą liczbę
+  rozglosObecnych([wlasc, odebrany, beta], { podglad: true, maWstep });
+  assert.deepEqual(ostatnia(wlasc, 'obecni').lista.map((x) => x.kto), ['beta', 'jozz']);
+  assert.deepEqual(ostatnia(odebrany, 'obecni'), { t: 'obecni', ilu: 2, bez_klucza: 1 }, 'liczba, nie imiona');
+  // nowe połączenie kluczem z nagłówka: na podglądzie stoi jak zwiedzający i słyszy to wprost; poza podglądem jest zamykane
+  const nowy = gniazdo();
+  przyjmijGniazdo(nowy, { kto: 'agent-probny', podglad: true, akt: 9, gniazda: [wlasc, nowy], maWstep });
+  assert.equal(nowy.wyslane[0].t, 'blad');
+  assert.match(nowy.wyslane[0].blad, /nie ma tu wstępu/);
+  assert.deepEqual(nowy.wyslane.slice(1), [{ t: 'akt', akt: 9 }, { t: 'obecni', ilu: 1, bez_klucza: 1 }]);
+  assert.equal(nowy.wyslane.some((w) => w.t === 'witaj'), false);
+  assert.equal(stanGniazda(nowy).kto, null);
+  const poza = gniazdo();
+  przyjmijGniazdo(poza, { kto: 'agent-probny', podglad: false, akt: 9, gniazda: [wlasc, poza], maWstep });
+  assert.deepEqual(poza.wyslane.map((w) => w.t), ['blad']);
+  assert.equal(poza.zamkniete.kod, KOD_ZLY_KLUCZ);
+  // przedstawienie się kluczem w pierwszej wiadomości (przeglądarka): to samo
+  const przegladarka = gniazdo();
+  przyjmijGniazdo(przegladarka, { podglad: true, akt: 9, gniazda: [wlasc, przegladarka], maWstep });
+  await przyjmijWiadomosc(przegladarka, JSON.stringify({ t: 'jestem', klucz: KLUCZ_AGENTA }), { env: await env(), gniazda: () => [wlasc, przegladarka], podglad: true, akt: () => 9, maWstep });
+  assert.equal(przegladarka.wyslane.some((w) => w.t === 'witaj'), false);
+  assert.match(ostatnia(przegladarka, 'blad').blad, /nie ma tu wstępu/);
+  assert.equal(stanGniazda(przegladarka).kto, null);
+  await przyjmijWiadomosc(przegladarka, JSON.stringify({ t: 'przy', rzecz: RZECZ }), { env: await env(), gniazda: () => [wlasc, przegladarka], podglad: true, akt: () => 9, maWstep });
+  assert.equal(stanGniazda(przegladarka).przy ?? null, null, 'nie ustawia też, przy czym siedzi');
+  // po przywróceniu wstępu ten sam klucz znowu wita
+  bezWstepu.clear();
+  await przyjmijWiadomosc(przegladarka, JSON.stringify({ t: 'jestem', klucz: KLUCZ_AGENTA }), { env: await env(), gniazda: () => [wlasc, przegladarka], podglad: true, akt: () => 10, maWstep });
+  assert.deepEqual(ostatnia(przegladarka, 'witaj'), { t: 'witaj', kto: 'agent-probny', akt: 10 });
 });

@@ -5,6 +5,7 @@ import { TYPY, STOPNIE, USTAWIENIA } from './srodowisko.mjs';
 import { PREFIKS_PLIKU } from './obserwator.mjs';
 import { WERSJA } from './miejsce.mjs';
 import { ETAPY } from './ziarna.mjs';
+import { CZASOWNIKI_REKI } from '../public/reka.mjs';
 
 const dzien = (iso) => String(iso).replace('T', ' ').slice(0, 16) + ' UTC';
 const wiersze = (...w) => w.flat(9).filter((x) => x !== null && x !== undefined && x !== false).join('\n');
@@ -21,6 +22,12 @@ export const CO_ZNACZY = {
   prowadzic: 'agenci dokładają i zmieniają sami, ruch ma skutek od razu',
 };
 
+// Czasowniki ręki w tym samym kształcie co pozostałe: nazwa zaczyna się od "reka:", a `ktoredy` mówi twarz i gest.
+export function czasownikiReki() {
+  return CZASOWNIKI_REKI.map((c) => ({ nazwa: 'reka:' + c.nazwa, ktoredy: `ręka na twarzy ${c.twarz}: ${c.jak}`, opis: c.co + (c.ruch ? ` (ruch ${c.ruch})` : '') + (c.zapisuje ? ` (zapisuje ${c.zapisuje})` : ''),
+    wejscie: c.klawisz ? `gest ręki albo klawisz ${c.klawisz}` : 'gest ręki', wynik: c.zapisuje ? `zapis rzeczy rodzaju ${c.zapisuje}` : (c.ruch ? `ruch ${c.ruch}` : 'nic nie zapisuje: zmienia tylko to, co widać') }));
+}
+
 export function czasowniki(s) {
   const lista = [
     { nazwa: 'poloz', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'dołóż nową rzecz albo zmień istniejącą', wejscie: '{op, co:"poloz", rodzaj, cechy, obszar?, rzecz?, wersja?}', wynik: '{skutek: "polozone"|"propozycja", rzecz|propozycja, wersja, numer, adres}' },
@@ -36,6 +43,12 @@ export function czasowniki(s) {
     { nazwa: 'wersja', ktoredy: 'drzwi: GET /api/srodowisko/wersja?id=&akt=', opis: 'treść wcześniejszej wersji rzeczy (akt to znacznik z jej historii)', wejscie: 'id, akt', wynik: '{wersja: {rzecz, akt, numer, kto, kiedy, rodzaj, obszar, cechy, odlozone}}' },
     { nazwa: 'widzialem', ktoredy: 'drzwi: POST /api/srodowisko/widzialem', opis: 'zapisz swoją wizytę: następny odczyt /co-tu-jest tym samym kluczem pokaże tylko to, co zmieniło się po niej', wejscie: '{akt?}', wynik: '{widziane_do}' },
     { nazwa: 'ksztalty', ktoredy: 'drzwi: GET /api/srodowisko/ksztalty; tekstem: /rodzaje; okno: read ksztalty', opis: 'wszystkie rodzaje rzeczy z opisem cech', wejscie: '-', wynik: '{ksztalty: [{dla, opis, cechy, …}]}' },
+    { nazwa: 'cofnij-gest', ktoredy: 'drzwi: POST /api/srodowisko/ruch z co: cofnij-gest', opis: 'cofa jednym krokiem wszystko, co ruszył gest (ruchy z tym samym polem gest); wszystko albo nic; samo cofnięcie ze znakiem gestu da się ponowić', wejscie: '{op, co: "cofnij-gest", cofany: <znak gestu>, gest?: <znak tego cofnięcia>, czyj?: <imię; tylko właściciel>}', wynik: '{skutek: "cofniety-gest", rzeczy} albo 409 z listą rzeczy zmienionych po geście' },
+    { nazwa: 'przywroc-uklad', ktoredy: 'drzwi: POST /api/srodowisko/ruch z co: przywroc-uklad', opis: 'ustawia położenia widoku tak, jak leżały w zapisanej chwili (rzecz chwila/1: nazwa, widok, akt); zapisuje tylko różnicę', wejscie: '{op, co: "przywroc-uklad", chwila: <id>, gest?}', wynik: '{skutek: "przywrocony-uklad", rzeczy}' },
+    { nazwa: 'gesty', ktoredy: 'drzwi: GET /api/srodowisko/gesty?ile=', opis: 'ostatnie gesty pytającego: znak, ile rzeczy ruszył, kiedy', wejscie: 'ile? (domyślnie 20); potrzebny klucz', wynik: '{gesty: [{gest, rzeczy, akt, kiedy}]}' },
+    { nazwa: 'widok-w-chwili', ktoredy: 'drzwi: GET /api/srodowisko/widok-w-chwili?widok=&akt=', opis: 'położenia widoku takie, jakie były przy danym akcie', wejscie: 'widok: identyfikator widoku, akt: numer aktu', wynik: '{polozenia: [{rzecz, akt, cechy}]}' },
+    { nazwa: 'bajty', ktoredy: 'drzwi: POST /api/srodowisko/bajty?op=<identyfikator czynności> (bajty w ciele żądania) i GET /api/srodowisko/bajty?rzecz=<id>&odcisk=', opis: 'duża treść: bajty pliku wchodzą jako niezmienny zapis (do 1500000 bajtów), a wychodzą przez rzecz rodzaju plik/1, oczami czytającego; z odciskiem zawsze te same', wejscie: 'POST: ciało to bajty; potem rzecz plik/1 {nazwa, typ, rozmiar, tresc: <zapis>} zwykłym ruchem poloz. GET: rzecz = id pliku, odcisk (niewymagany) = przypięta wersja', wynik: 'POST: {zapis, rozmiar}; GET: bajty z typem z rzeczy' },
+    { nazwa: 'ustawienia', ktoredy: 'drzwi: GET /api/srodowisko/ustawienia?dla=&nakladki=&nazwy=&deklaracje=tak (tekstem: /ustawienia)', opis: 'wartości wszystkich pokręteł policzone dla zasięgu: rzecz, jej obszar i obszary w górę, całe Miejsce, z włączonymi zestawami (motyw, preset)', wejscie: 'dla: rzecz, przez którą patrzysz (bez niej całe Miejsce); nakladki: profile albo inne rzeczy przed łańcuchem', wynik: '{wartosci: {nazwa: {wartosc, skad, zasieg, rzecz}}, lancuch, akt}' },
     { nazwa: 'spojnosc', ktoredy: 'drzwi: GET /api/srodowisko/spojnosc?ile=&pomin=&rodzaj=&najwyzej=', opis: 'sprawdzian spójności: które rzeczy NIE zgadzają się ze swoim własnym kształtem — leżą w innym obszarze niż rzecz, od której kształt każe im brać obszar (lezy_z), albo nie przechodzą dzisiejszego sprawdzenia cech. Tylko czyta, niczego nie naprawia: naprawa rzeczy jest ruchem i ma mieć autora. Przy urwaniu na budżecie mówi to wprost, bo nieznane to nie zero', wejscie: 'ile? (ile rzeczy naraz, domyślnie 3000), pomin?, rodzaj?, najwyzej? (ile niezgodności wypisać)', wynik: '{akt, sprawdzone, urwane, nastepne, bez_ksztaltu, ile_niezgodnych, rodziny: {lezy_z, ksztalt}, niezgodne: [{rzecz, rodzaj, obszar, rodzina, mowi}], mowi}' },
     { nazwa: 'wywoz', ktoredy: 'drzwi: GET /api/miejsce/eksport (tylko właściciel)', opis: 'całe Miejsce jako jeden plik: niezmienne zapisy, dziennik aktów i głowy; z tego da się odtworzyć spis bez kodu Jaskini', wejscie: '-', wynik: '{format: "jaskinia-miejsce", wersja, zebrane, zapisy, akty, glowy, odczyty}' },
     { nazwa: 'obejdz', ktoredy: 'drzwi: POST /api/srodowisko/obejdz (tylko właściciel; działa, gdy obserwator jest włączony ustawieniem OBSERWATOR=tak); sam budzi się alarmem', opis: 'obserwator faktów obchodzi publiczne repozytoria właściciela: z API GitHuba, a gdy ono odmawia, z pliku faktów starej Jaskini (bez limitu, odświeżanego przez starą Jaskinię zwykle dwa razy na dobę). Zapisuje tylko to, co się zmieniło, i sprawdza gałęzie kilku repozytoriów na raz', wejscie: 'ile? (1 do 50: ile repozytoriów dostaje sprawdzone gałęzie w tym obejściu, domyślnie 5; jako ?ile= w adresie)', wynik: '{ok, stan: "ok"|"czesciowe"|"brak", zrodlo: "api"|"plik", zebrane, repozytoria, galezie_sprawdzone, zmienione, bez_zmian, odlozone, luki, zadan}' },
@@ -85,6 +98,17 @@ function obszary(s) {
   return wynik;
 }
 
+// Licznik przeczytanych wierszy stał w tym opisie od początku i nikt na niego nie spojrzał, dopóki 17 XI 2026
+// o 17:53 UTC całe konto nie stanęło na dobowym limicie ODCZYTÓW. Wiedza bez wyzwalacza nie jest wiedzą:
+// odtąd Miejsce, które samo zjadło znaczną część puli CAŁEGO konta, mówi to z siebie i dużym głosem, zamiast
+// czekać, aż ktoś porówna dwie liczby w jednym zdaniu.
+export const udzialKonta = (b) => (b && b.limit_konta && b.limit_konta.czytane ? (b.czytane || 0) / b.limit_konta.czytane : 0);
+export function ostrzezenieBudzetu(b) {
+  const u = udzialKonta(b);
+  if (u < 0.2) return '';
+  return ` UWAGA: samo to Miejsce przeczytało dziś ${Math.round(u * 100)}% dobowej puli CAŁEGO konta (wspólnej dla wszystkich podglądów). Gdy się wyczerpie, KAŻDA trasa dotykająca bazy oddaje 500 we wszystkich Miejscach naraz, aż do północy UTC.`;
+}
+
 function zmiany(s, od, limit = 40) {
   const akty = s.aktyRzeczy(od, limit + 1);
   const wiecej = akty.length > limit;
@@ -95,8 +119,12 @@ function zmiany(s, od, limit = 40) {
   // (Znalezione atakiem na własną granicę pod żywym adresem, 17 XI; trzecia dziura, inna w rodzaju niż dwie pierwsze.)
   let ukryte = 0;
   const lista = [];
-  for (const a of akty.slice(0, limit)) {
-    const rz = s.rzecz(a.glowa.slice(6));
+  const widoczne = akty.slice(0, limit);
+  // Jedno pytanie na całą listę zamiast jednego na wiersz: to była połowa wszystkich zapytań na otwarcie strony
+  // (zmierzone: tools/koszt.mjs, 17 XI 2026).
+  const rzeczy = s.rzeczyWiele(widoczne.map((a) => a.glowa.slice(6)));
+  for (const a of widoczne) {
+    const rz = rzeczy.get(a.glowa.slice(6));
     if (!rz) { ukryte++; continue; }
     lista.push({ akt: a.nr, kto: a.kto, kto_opis: ktoJest(s, a.kto), kiedy: new Date(a.kiedy).toISOString(), co: a.z_zapisu ? 'zmienił' : 'dołożył', id: a.glowa.slice(6), rodzaj: rz.rodzaj, tytul: s.tytul(rz) });
   }
@@ -139,7 +167,8 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
     wyrownanie: s.wyrownano(),
     przeniesienie: { projekty_w_srodku: (liczby.find((l) => l.rodzaj === 'projekt/1') || { ile: 0 }).ile, publiczne_repozytoria: m ? { ile: m.cechy.wartosc, stan_na: m.cechy.stan_na || null, zrodlo: m.cechy.zrodlo || null } : null },
     obserwator: obserwator(s),
-    czasowniki: czasowniki(s),
+    // Spis nazywa także czasowniki ręki: co ręka może zrobić na twarzy, jakim gestem i co to zapisuje (public/reka.mjs).
+    czasowniki: [...czasowniki(s), ...czasownikiReki()],
     klucz_probny: podglad ? kluczProbny : null,
     // Tylko na podglądzie, gdzie klucze próbne i tak są jawne: strona może dać jeden guzik "wejdź jako właściciel
     // próbny", żeby ręka mogła spróbować gestów bez wpisywania czegokolwiek. W prawdziwym Miejscu tego pola nie ma.
@@ -166,7 +195,7 @@ export function coTuJest(s, opcje = {}) {
     `Adres: ${o}   Stan na: ${dzien(d.miejsce.stan_na)}   Ostatni akt: ${d.miejsce.akt}`,
     `Czytasz jako: ${d.czytasz_jako.imie || 'zwiedzający'} (rola: ${R}; ${d.czytasz_jako.pewnosc})`,
     d.miejsce.podglad && 'TO JEST PODGLĄD: wszystko tutaj jest publiczne do czytania, a klucze próbne są jawne. Niczego prywatnego tu nie ma i nie wolno wkładać.',
-    d.budzet && `Budżet tego Miejsca dziś (doba UTC, ${d.budzet.dzien}): zapisane ${d.budzet.zapisane} wierszy bazy${d.budzet.limit_miejsca ? ` z ${d.budzet.limit_miejsca}, na które to Miejsce ma dziś zgodę` : ''}, przeczytane ${d.budzet.czytane}. Darmowy plan daje na dobę ${d.budzet.limit_konta.zapisane} zapisanych i ${d.budzet.limit_konta.czytane} czytanych wierszy wspólnie dla wszystkich Miejsc i podglądów; ten licznik zna tylko siebie. Koszt każdego żądania stoi w nagłówku odpowiedzi x-koszt.${d.budzet.przekroczony ? ' LIMIT TEGO MIEJSCA JEST WYCZERPANY: do północy UTC działa tylko czytanie.' : ''}`,
+    d.budzet && `Budżet tego Miejsca dziś (doba UTC, ${d.budzet.dzien}): zapisane ${d.budzet.zapisane} wierszy bazy${d.budzet.limit_miejsca ? ` z ${d.budzet.limit_miejsca}, na które to Miejsce ma dziś zgodę` : ''}, przeczytane ${d.budzet.czytane}. Darmowy plan daje na dobę ${d.budzet.limit_konta.zapisane} zapisanych i ${d.budzet.limit_konta.czytane} czytanych wierszy wspólnie dla wszystkich Miejsc i podglądów; ten licznik zna tylko siebie. Koszt każdego żądania stoi w nagłówku odpowiedzi x-koszt.${ostrzezenieBudzetu(d.budzet)}${d.budzet.przekroczony ? ' LIMIT TEGO MIEJSCA JEST WYCZERPANY: do północy UTC działa tylko czytanie.' : ''}`,
     'Ten tekst powstaje z danych w chwili, gdy o niego pytasz. Każdy adres zaczynający się od / dopisz do adresu wyżej.',
     '',
     '1. CO TO ZA MIEJSCE',
@@ -278,6 +307,11 @@ export function coTuJest(s, opcje = {}) {
     '  Gość otwiera się w oknie na stronie głównej (/). Działa w piaskownicy: nie ma sieci, pamięci ani dostępu do adresu Miejsca; rzeczy czyta, rozmawiając z gospodarzem.',
     '  Gość, który ma też pisać (zakładać i zmieniać rzeczy z okna), zgłasza się z "umowa":"okno/3"; zasady i przykład: /umowa-okna, część RUCH Z OKNA.',
     '  Jak gość rozmawia z gospodarzem (z gotowym przykładem do skopiowania): /umowa-okna',
+    '',
+    '5e. Ustawienia: wygląd i odczucie są danymi. Pokrętło (pokretlo/1) to deklaracja, wartość (wartosc/1) obowiązuje w zasięgu, zestaw (zestaw/1) to motyw albo preset.',
+    '  Wszystkie pokrętła z wartościami i sposobem zmiany: /ustawienia. Zmiana wartości to zwykły ruch poloz; odłożenie wartości wraca do odziedziczonej, cofnij do poprzedniej.',
+    '  Zestaw działa wszędzie, gdzie jest włączony, więc jego zmiana i odłożenie podlegają także prawu tych zasięgów: kto w którymś może tylko proponować, ten zmianę zestawu też tylko proponuje.',
+    '  Zasięgiem wartości jest rzecz, którą się stroi (obszar, widok, okno, uczestnik, profil), nigdy inne ustawienie.',
     '  Gość, który żyje pod własnym adresem (np. gra): zamiast "kod" podaj "adres":"https://…".',
     '',
     'e) Propozycje: {"op":"…","co":"przyjmij","propozycja":"<id>"} albo {"op":"…","co":"odrzuc","propozycja":"<id>","powod":"…"}. Kto może: punkt 4.',
@@ -299,7 +333,8 @@ export function coTuJest(s, opcje = {}) {
     'Prośbę do właściciela zostawia się jako rzecz rodzaju prosba/1 ze stanem "czeka".',
     '',
     '7. SPIS CZASOWNIKÓW (wszystko, co da się tu zrobić; ten sam spis czyta strona i agent)',
-    d.czasowniki.map((c) => `  ${c.nazwa}: ${c.opis}\n      którędy: ${c.ktoredy}\n      wejście: ${c.wejscie}   wynik: ${c.wynik}`),
+    // Pole, którego czasownik nie ma, nie jest drukowane: inaczej w tekście dla agentów stało gołe słowo "undefined".
+    d.czasowniki.map((c) => `  ${c.nazwa}: ${c.opis}\n      którędy: ${c.ktoredy}` + (c.wejscie || c.wynik ? '\n      ' + [c.wejscie ? `wejście: ${c.wejscie}` : null, c.wynik ? `wynik: ${c.wynik}` : null].filter(Boolean).join('   ') : '')),
     '',
     '8. STAN BUDOWY (co środowisko umie i czego jeszcze nie; każda pozycja jest rzeczą rodzaju zdolnosc/1 i zmienia się ruchem)',
     'Budowa idzie etapami: grunt ma być solidny, zanim staną na nim ściany i kable; wykończenie jest na końcu; tworzenie jest celem.',
@@ -471,8 +506,19 @@ export function umowaOkna() {
     '  changed  {akt}                                    w Miejscu coś się zmieniło; jeśli pokazujesz rzeczy, przeczytaj je znowu',
     '  visible  {visible: true|false}                    okno schowane albo znowu widoczne; schowany gość może odpocząć',
     '  remark   {text, at}                               uwaga właściciela, tylko gdy prosiłeś o nią w hello (wants: ["remark"])',
+    '  look     {v: 2, ciemny, kolory: {<rola>: barwa, …}, kroj: {tekst: {rodzina, grubosc?, osie?}, imiona: {…}}, ruch}',
+    '                                                    wygląd Miejsca: role palety (tlo, plyta, tekst, ciche, akcent, linia, zywe, stare, znak i każda następna',
+    '                                                    zadeklarowana jako wyglad.paleta.<tryb>.<rola>), kroje dwóch ról i natężenie ruchu (0 znaczy bez ruchu). Przychodzi zaraz po hi',
+    '                                                    i po każdej zmianie ustawień, bez przeładowania okna. Gość, który jej nie zna, po prostu ją pomija;',
+    '                                                    gospodarz, który ją wysyła, mówi to w hi: umie: ["look"]. Wartości biorą się z pokręteł: /ustawienia',
+    '',
+    'Czyimi oczami czyta okno: słabszymi z dwóch, narzędzia i tego, kto okno otworzył, tak samo jak przy ruchu. Narzędzie w oknie właściciela',
+    'nie zobaczy więc rzeczy z obszaru, który widzi tylko właściciel. Okno otwarte bez rzeczy gościa (sam adres) czyta jak zwiedzający.',
+    'Okno jest rzeczą (okno/1) tego, kto je otworzył: wraca po przeładowaniu strony samo tylko wtedy, gdy narzędzie nie zmieniło się od otwarcia.',
     '',
     'Kształt danych:',
+    '  read ustawienia -> {wartosci: {<nazwa pokrętła>: {wartosc, skad, z?}}, akt, format}   wejście: {nazwy: [nazwy pokręteł], dla?: <id rzeczy>};',
+    '                   narzędzie czyta tak także pokrętła, które samo zadeklarowało (rzecz rodzaju pokretlo/1); wszystkie pokrętła: /ustawienia',
     '  read spis     -> {rzeczy: [{id, rodzaj, obszar, cechy, tytul, wersja, numer, utworzyl, utworzono, zmienil, zmieniono}], razem, pokazane, pominiete, wszystko}',
     '  read rzecz    -> {rzecz: {…jak wyżej…}, historia: [{numer, akt, kto, kiedy}], wskazuja: [{od, cecha}]}',
     'Daty (utworzono, zmieniono, kiedy) są w zapisie ISO 8601 w czasie UTC, więc porządkują się jak zwykłe napisy. numer to która to wersja rzeczy; wersja to znacznik do zmiany.',

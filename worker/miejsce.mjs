@@ -306,8 +306,24 @@ export class Rdzen {
       ostatni_akt: ostatni ? new Date(ostatni.kiedy).toISOString() : null };
   }
 
-  meta(klucz) { const w = this.q(`SELECT wartosc FROM meta WHERE klucz = ?`, klucz)[0]; return w ? w.wartosc : null; }
-  ustawMeta(klucz, wartosc) { this.sql.exec(`INSERT INTO meta (klucz, wartosc) VALUES (?, ?) ON CONFLICT(klucz) DO UPDATE SET wartosc = excluded.wartosc`, klucz, String(wartosc)); }
+  // Meta pamiętamy w instancji: te same klucze (obszar_glowny, obszar_nowe, adres) pytane są po kilkanaście razy
+  // na jedno żądanie, a zmienia je tylko `ustawMeta`, które pamięć od razu poprawia. Zmierzone 17 XI 2026
+  // (tools/koszt.mjs): 15 z 82 zapytań jednego otwarcia strony to były te same pytania o meta.
+  // Obiekt Miejsca jest jeden na Miejsce i tylko on pisze do tej tabeli, więc nic nie może się rozjechać;
+  // po uśpieniu instancji pamięć znika razem z nią i pierwsze żądanie czyta na nowo.
+  meta(klucz) {
+    this._meta ??= new Map();
+    if (this._meta.has(klucz)) return this._meta.get(klucz);
+    const w = this.q(`SELECT wartosc FROM meta WHERE klucz = ?`, klucz)[0];
+    const wartosc = w ? w.wartosc : null;
+    this._meta.set(klucz, wartosc);
+    return wartosc;
+  }
+  ustawMeta(klucz, wartosc) {
+    this.sql.exec(`INSERT INTO meta (klucz, wartosc) VALUES (?, ?) ON CONFLICT(klucz) DO UPDATE SET wartosc = excluded.wartosc`, klucz, String(wartosc));
+    this._meta ??= new Map();
+    this._meta.set(klucz, String(wartosc));
+  }
 
   // Most (worker/most.mjs): wiadomości jeszcze niewysłane do repozytorium agentów, bez tych, które przyszły mostem.
   doWyslania(limit = 50) {
@@ -334,7 +350,7 @@ export class Rdzen {
   // brakowalo tylko zdania, ze to one. Dlatego wywoz tlumaczy sie teraz sam: kto go czyta, nie potrzebuje
   // ani kodu Jaskini, ani jej opisu pod adresem.
   static JAK_ODBUDOWAC = [
-    'zapisy: niezmienne tresci; id to odcisk tresci. tresc rzeczy to napis JSON {"obszar": <id albo null>, "cechy": {...}}; rzecz odlozona ma tam jeszcze "odlozone": true i czasem "powod". Rzecz, ktora z natury nalezy do innej, ma "obszar": null i "obszar_z": "<nazwa cechy>": lezy w tym samym obszarze co rzecz wskazana ta cecha (ksztalt jej rodzaju mowi to polem lezy_z; tak samo czytaj starszy zapis takiej rzeczy, w ktorym obszar jeszcze stoi). Zapisy rodzaju kod/1 to strony gosci, nie rzeczy.',
+    'zapisy: niezmienne tresci; id to odcisk tresci. tresc rzeczy to napis JSON {"obszar": <id albo null>, "cechy": {...}}; rzecz odlozona ma tam jeszcze "odlozone": true i czasem "powod". Rzecz, ktora z natury nalezy do innej, ma "obszar": null i "obszar_z": "<nazwa cechy>": lezy w tym samym obszarze co rzecz wskazana ta cecha, a gdy wskazana rzecz sama jest obszarem: w nim (ksztalt jej rodzaju mowi to polem lezy_z; tak samo czytaj starszy zapis takiej rzeczy, w ktorym obszar jeszcze stoi). Zapisy rodzaju kod/1 to strony gosci, nie rzeczy.',
     'akty: dziennik. Jeden ruch to para aktow o tym samym op z koncowkami .z (co:"zapisz", wklada tresc) i .p (co:"przesun", ustawia glowe). Pole z_zapisu to poprzedni zapis tej glowy, null przy pierwszej wersji. op jest jednoznaczny w obrebie uczestnika (pole kto), nie calego Miejsca.',
     'glowy: stan biezacy. Glowa o nazwie "rzecz:<id>" to rzecz o tozsamosci <id>; jej pole zapis wskazuje aktualna tresc. Zapisy, ktorych nie wskazuje zadna glowa, to stare wersje albo strony gosci.',
     'wersja rzeczy = pole akt jej glowy (numer aktu, ktory ja tam ustawil), a NIE liczba przesuniec. Tej samej liczby zada drzwi przy zmianie rzeczy. Kolejny numer wersji (1, 2, 3...) to liczba aktow przesun tej glowy.',

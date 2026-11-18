@@ -32,6 +32,10 @@ button[hidden], .guzik[hidden] { display: none; }
 
 .panel { position: fixed; z-index: 12; top: 3rem; right: .6rem; max-width: min(30rem, calc(100vw - 1.2rem)); background: var(--plyta); border: 1px solid var(--linia); border-left: 3px solid var(--akcent); border-radius: .5rem; padding: .6rem .8rem; box-shadow: 0 10px 40px rgba(0, 0, 0, .3); display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; }
 .panel[hidden] { display: none; }
+#uklady { flex-direction: column; align-items: stretch; gap: .5rem; }
+.lista-ukladow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+.lista-ukladow li { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+#cofnij, #ponow { min-width: 2.2rem; font-size: 1.1em; line-height: 1; }
 .panel p { margin: 0; flex-basis: 100%; }
 .panel input { font: inherit; font-size: 16px; color: var(--tekst); background: var(--tlo); border: 1px solid var(--linia); border-radius: .4rem; padding: .4rem .55rem; flex: 1; min-width: 9rem; }
 .pomoc { display: block; max-height: calc(100vh - 4rem); overflow-y: auto; }
@@ -87,3 +91,6 @@ button[hidden], .guzik[hidden] { display: none; }
   .okno { top: 0; left: 0; right: 0; bottom: 0; border-radius: 0; }
   .panel { left: .6rem; }
 }
+
+/* Wyjście do wyglądu domyślnego: stałe barwy, celowo nie z motywu. Ma być widać także przy nieczytelnym motywie. */
+.wyjscie { display: inline-flex; align-items: center; justify-content: center; min-width: 1.9rem; height: 1.9rem; border-radius: 999px; background: #24211c; color: #f4f1ea; border: 2px solid #f4f1ea; outline: 1px solid #24211c; text-decoration: none; font: 600 15px system-ui, sans-serif; }

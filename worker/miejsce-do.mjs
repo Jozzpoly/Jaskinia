@@ -66,6 +66,8 @@ export class Miejsce {
   // Czym kanał na żywo patrzy na rzecz: dokładnie tymi okularami co spis i adres rzeczy. Obecność niesie
   // identyfikator rzeczy, przy której ktoś siedzi, więc musi pytać o prawa tam, gdzie one stoją — w środowisku.
   get _widac() { return (kto, id) => this.srod.rzecz(id, { dla: kto || null }) !== null; }
+  // Czy imię z klucza ma tu wstęp: klucz dowodzi, kim ktoś jest, a prawa stoją w danych (rzecz uczestnika).
+  get _maWstep() { return (kto) => this.srod.rola(kto) !== 'zwiedzajacy'; }
 
   // Zasiew środowiska: jeden na instancję, kolejne wejścia czekają na ten sam.
   _zasiew() {
@@ -139,7 +141,7 @@ export class Miejsce {
     if (this.srod.pociagniete) { dodatkowe = { ...dodatkowe, calosc: true }; this.srod.pociagniete = 0; }
     if (teraz === przed && !dodatkowe.calosc) return 0;
     const gniazda = this._gniazda();
-    return gniazda.length ? rozglos(gniazda, { t: 'akt', akt: teraz, ...dodatkowe }, { podglad: this._podglad }) : 0;
+    return gniazda.length ? rozglos(gniazda, { t: 'akt', akt: teraz, ...dodatkowe }, { podglad: this._podglad, maWstep: this._maWstep }) : 0;
   }
 
   // Budzenie obserwatora faktów. Błąd obejścia nie zatrzymuje budzenia: następny alarm ustawia się zawsze.
@@ -220,7 +222,7 @@ export class Miejsce {
     const klient = para[0], serwer = para[1];
     // Przyjęcie w sposób, który pozwala obiektowi zasnąć między wiadomościami: połączenie stoi, a czas nie biegnie.
     this.ctx.acceptWebSocket(serwer);
-    przyjmijGniazdo(serwer, { kto: request.headers.get('x-kto') || null, podglad: this._podglad, akt: this.srod.ostatniNr(), gniazda: this._gniazda(), widac: this._widac });
+    przyjmijGniazdo(serwer, { kto: request.headers.get('x-kto') || null, podglad: this._podglad, akt: this.srod.ostatniNr(), gniazda: this._gniazda(), widac: this._widac, maWstep: this._maWstep });
     return { klient };
   }
 
@@ -231,15 +233,15 @@ export class Miejsce {
 
   // Wiadomość od połączenia budzi obiekt; pamięć instancji mogła zniknąć, więc wszystko, co potrzebne, jest w gnieździe.
   async webSocketMessage(ws, wiadomosc) {
-    await przyjmijWiadomosc(ws, wiadomosc, { env: this.env, gniazda: () => this._gniazda(), podglad: this._podglad, akt: () => this.srod.ostatniNr(), widac: this._widac });
+    await przyjmijWiadomosc(ws, wiadomosc, { env: this.env, gniazda: () => this._gniazda(), podglad: this._podglad, akt: () => this.srod.ostatniNr(), widac: this._widac, maWstep: this._maWstep });
   }
 
   async webSocketClose(ws) {
     try { ws.close(1000, 'do zobaczenia'); } catch { /* druga strona już zamknęła */ }
-    poZamknieciu(ws, this._gniazda(), { podglad: this._podglad, widac: this._widac });
+    poZamknieciu(ws, this._gniazda(), { podglad: this._podglad, widac: this._widac, maWstep: this._maWstep });
   }
 
   async webSocketError(ws) {
-    poZamknieciu(ws, this._gniazda(), { podglad: this._podglad, widac: this._widac });
+    poZamknieciu(ws, this._gniazda(), { podglad: this._podglad, widac: this._widac, maWstep: this._maWstep });
   }
 }

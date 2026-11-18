@@ -4,6 +4,8 @@
 // nie da się wejść inaczej niż przez Workera.
 import { coTuJest, opisDane, listaRzeczy, listaRodzajow, stronaRodzaju, stronaRzeczy, umowaOkna } from './opis.mjs';
 import { sprawdzSpojnosc } from './spojnosc.mjs';
+import { policzUstawienia, policzUstawieniaDlaNazw, stronaUstawien } from './ustawienia.mjs';
+import { bajtyDlaCzytajacego, NAJWIEKSZY_PLIK } from './pliki.mjs';
 import { poprawneImie } from './miejsce.mjs';
 import { CZYTELNIK_PODGLADU } from './srodowisko.mjs';
 
@@ -26,6 +28,8 @@ export async function cialoTekstem(request) {
 }
 
 const liczba = (x) => (x !== null && /^\d{1,15}$/.test(x) ? Number(x) : null);
+// Trasy, którymi strona gospodarza czyta w imieniu narzędzia w oknie (nagłówek X-Gosc): to, co nazywa umowa okna.
+const Z_OKNA = ['/api/srodowisko/spis', '/api/srodowisko/rzecz', '/api/srodowisko/ksztalty', '/api/srodowisko/ustawienia'];
 
 // Wybór rzeczy z adresu: rodzaj, obszar, gdzie.<cecha>=<wartość>, szukaj, odlozone. Wartość cechy dostaje typ
 // z kształtu rodzaju (liczba, tak-nie), a bez kształtu jest napisem.
@@ -44,6 +48,7 @@ function filtrZAdresu(s, p) {
     else gdzie[n] = v;
   }
   if (Object.keys(gdzie).length) f.gdzie = gdzie;
+  if (p.has('rodzaje')) f.rodzaje = p.get('rodzaje').split(',').filter(Boolean).slice(0, 24);
   if (p.get('szukaj')) f.szukaj = p.get('szukaj').slice(0, 200);
   if (['tak', 'razem'].includes(p.get('odlozone'))) f.odlozone = p.get('odlozone');
   // po=<akt>: tylko to, co zmieniło się po tym akcie; tak otwarta strona dogania Miejsce bez czytania całego spisu
@@ -71,15 +76,29 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
   // więc "bez klucza" nie znaczy tam "obcy" — znaczy "nie chciało mu się go skopiować". Udawanie, że podgląd
   // czegoś pilnuje, byłoby zabezpieczeniem na niby. Dlatego na podglądzie czytający bez klucza jest uczestnikiem.
   const czytelnik = opcje.kto || (podglad ? (opcje.jako || opcje.probnyImie || CZYTELNIK_PODGLADU) : null);
-  const w = s.dla(czytelnik);
+  // Czytanie z okna: nagłówek X-Gosc dokłada strona gospodarza do pytań, które zadaje w imieniu narzędzia w ramce.
+  // Narzędzie czyta wtedy słabszymi z dwóch par oczu, swoimi i tego, kto okno otworzył, tak samo jak pisze: nie dowie
+  // się tego, co wie właściciel, tylko dlatego, że to on je otworzył (niezależny atak, 18 XI 2026). Nagłówek może
+  // tylko zawęzić to, co widać, więc nikt nie zyskuje, dokładając go sam.
+  const goscCzyta = request.method === 'GET' ? request.headers.get('x-gosc') : null;
+  const w = s.dla(goscCzyta === null ? czytelnik : s.czytelnikOkna(czytelnik, goscCzyta));
   if (request.method === 'GET') {
+    if (goscCzyta !== null && !Z_OKNA.includes(sciezka)) return json({ ok: false, status: 403, blad: 'z okna czyta się tylko spis, rzecz, kształty i ustawienia (umowa okna: /umowa-okna)' });
     if (sciezka.startsWith('/gosc/')) {
       const kod = w.kodGoscia(sciezka.slice(6));
       if (kod === null) return tekst('Nie ma takiego kodu gościa (kod wychodzi pod adresem dopiero wtedy, gdy wskazuje go rzecz rodzaju gosc).\n', 404);
       return new Response(kod, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': CSP_GOSCIA, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'cache-control': 'public, max-age=600' } });
     }
+    if (sciezka === '/api/srodowisko/bajty') {
+      const o = bajtyDlaCzytajacego(w, p.get('rzecz'), p.get('odcisk'));
+      if (!o.ok) return json(o);
+      // Bajty wychodzą jako to, czym rzecz mówi, że są, i nigdy jako strona: typ z zamkniętej listy, bez zgadywania typu,
+      // w piaskownicy. Wersja przypięta odciskiem nie zmienia się nigdy, więc przeglądarka może ją trzymać.
+      return new Response(o.bajty, { status: 200, headers: { 'content-type': o.typ, 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; sandbox", 'referrer-policy': 'no-referrer', etag: '"' + o.odcisk + '"', 'cache-control': o.przypiety ? 'private, max-age=31536000, immutable' : 'private, no-cache' } });
+    }
     if (sciezka === '/co-tu-jest') return tekst(coTuJest(w, opcje));
     if (sciezka === '/umowa-okna') return tekst(umowaOkna());
+    if (sciezka === '/ustawienia') return tekst(stronaUstawien(w, { dla: p.get('dla') || null, origin }));
     if (sciezka === '/rodzaje') return tekst(listaRodzajow(w));
     if (sciezka.startsWith('/rodzaj/')) {
       let rodzaj = null;
@@ -90,6 +109,21 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     if (sciezka.startsWith('/rzecz/')) { const t = stronaRzeczy(w, sciezka.slice(7), { kto: opcje.kto || (podglad ? opcje.jako : null) }); return t === null ? tekst('Nie ma takiej rzeczy. Lista wszystkich: /rzeczy\n', 404) : tekst(t); }
     if (sciezka === '/api/srodowisko/opis') return json({ ok: true, ...opisDane(w, opcje) });
     if (sciezka === '/api/srodowisko/puls') return json({ ok: true, akt: w.ostatniNr() });
+    // Moje ostatnie gesty (do guzika "cofnij" i do pytania "co ostatnio zrobiłem") i widok w wybranej chwili.
+    if (sciezka === '/api/srodowisko/gesty') return kto ? json({ ok: true, kto, gesty: w.gestyDla(kto, liczba(p.get('ile')) || 20) }) : json({ ok: false, status: 401, blad: 'gesty są czynnościami uczestnika: do ich listy potrzebny jest klucz' });
+    if (sciezka === '/api/srodowisko/widok-w-chwili') {
+      const widok = p.get('widok') || '', akt = liczba(p.get('akt'));
+      if (!/^[0-9a-z]{26}$/.test(widok) || akt === null) return json({ ok: false, status: 400, blad: 'widok: identyfikator widoku (26 znaków); akt: numer aktu, przy którym pokazać jego położenia' });
+      const polozenia = w.widokNa(widok, akt);
+      return json(Array.isArray(polozenia) ? { ok: true, widok, akt, polozenia } : polozenia);
+    }
+    // Ustawienia policzone dla zasięgu, oczami czytającego: jedno żądanie daje twarzy wszystkie wartości pokręteł.
+    if (sciezka === '/api/srodowisko/ustawienia') {
+      const o = { dla: p.get('dla') || null, nakladki: (p.get('nakladki') || '').split(',').filter(Boolean) };
+      // Twarz pyta po nazwach swoich pokręteł: koszt nie zależy wtedy od tego, ile pokręteł i wartości leży w Miejscu.
+      // Bez nazw: wszystko, co zadeklarowane (panel, agent, który chce zobaczyć całość).
+      return json(p.has('nazwy') ? await policzUstawieniaDlaNazw(w, { ...o, nazwy: p.get('nazwy').split(',') }) : policzUstawienia(w, { ...o, deklaracje: p.get('deklaracje') === 'tak' }));
+    }
     if (sciezka === '/api/srodowisko/spis') {
       const filtr = filtrZAdresu(w, p);
       const pomin = liczba(p.get('pomin')) || 0;
@@ -110,7 +144,9 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     if (sciezka === '/api/srodowisko/spojnosc') {
       return json({ ok: true, ...sprawdzSpojnosc(w, { ile: liczba(p.get('ile')) || undefined, pomin: liczba(p.get('pomin')) || 0, rodzaj: p.get('rodzaj') || null, najwyzej: liczba(p.get('najwyzej')) || undefined }) });
     }
-    if (sciezka === '/api/srodowisko/ksztalty') return json({ ok: true, ksztalty: [...s.ksztalty().values()].map((k) => ({ ...k.cechy, rzecz: k.id, wersja: k.wersja })) });
+    // Lista rodzajów oczami czytającego: kształt leżący w obszarze, którego czytający nie widzi, nie stoi na liście.
+    // Do 18 XI ta jedna trasa czytała surowe środowisko zapisem [...s.ksztalty()], którego strażnik W7 nie widział.
+    if (sciezka === '/api/srodowisko/ksztalty') return json({ ok: true, ksztalty: [...w.ksztalty().values()].map((k) => ({ ...k.cechy, rzecz: k.id, wersja: k.wersja })) });
   }
   if (request.method === 'POST') {
     if (sciezka === '/api/srodowisko/ruch') {
@@ -123,6 +159,11 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
       // ruchu jest wtedy gość, a uczestnik z klucza zostaje przy akcie jako ten, kto okno otworzył.
       const gosc = request.headers.get('x-gosc');
       return json(await s.ruch(kto, c, { slad, ...(gosc !== null ? { gosc } : {}) }));
+    }
+    if (sciezka === '/api/srodowisko/bajty') {
+      const dlugosc = Number(request.headers.get('content-length'));
+      if (Number.isFinite(dlugosc) && dlugosc > NAJWIEKSZY_PLIK) return json({ ok: false, status: 413, blad: `plik ma ${dlugosc} bajtów, a jeden plik może mieć najwyżej ${NAJWIEKSZY_PLIK}; magazynu na większe rzeczy jeszcze nie ma` });
+      return json(await s.bajty(kto, new Uint8Array(await request.arrayBuffer()), { op: p.get('op'), slad }));
     }
     if (sciezka === '/api/srodowisko/kod') {
       const kod = await cialoTekstem(request);

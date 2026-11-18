@@ -7,6 +7,10 @@
 // Co jest stanem oka (nie trafia do Miejsca): kamera, liczba stały/ciekły, wybrana rzecz. Co jest zapisem: położenie
 // rzeczy z ręki, przy puszczeniu, jako rzecz rodzaju miejsce w widoku Start (więc ma autora, historię i prawa z obszaru).
 import { Drzwi } from './drzwi.mjs';
+import { stanOka } from '../oko.mjs';
+import { czasownikiTwarzy } from '../reka.mjs';
+import { NAZWY_POKRETEL, Pokretla, KOLORY, RODZAJE_USTAWIEN, krojNaCss, polaczPodglad } from '../pokretla.mjs';
+import { rodzinaKroju } from '../kroje.mjs';
 import { zbudujSwiat, ukladStaly, poleCieklego, ukladCiekly, miedzy, lagodnie, krotkieImie, zywosc, galezieWPolu, trafienie,
   kolejnoscRysowania, naEkran, naSwiat, kameraNa, przybliz, KARTA, SKALA } from './swiat.mjs';
 
@@ -50,14 +54,60 @@ const drzwi = new Drzwi({ naZmiane: poZmianie, naStan: rysujPasek });
 
 // --- kolory z motywu (zmienne CSS), przeliczane przy zmianie jasny/ciemny --------------------------------------------
 let K = {};
-const rgb = (hex) => { const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim()); const n = m ? parseInt(m[1], 16) : 0x808080; return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
-const mieszaj = (a, b, ile) => { const A = rgb(a), B = rgb(b), k = Math.max(0, Math.min(1, ile)); return `rgb(${Math.round(A[0] + (B[0] - A[0]) * k)}, ${Math.round(A[1] + (B[1] - A[1]) * k)}, ${Math.round(A[2] + (B[2] - A[2]) * k)})`; };
+// Barwa jako [r, g, b, krycie]: krycie z dwóch ostatnich cyfr zapisu #rrggbbaa, bez nich 1.
+const rgb = (hex) => { const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex.trim()); const n = m ? parseInt(m[1], 16) : 0x808080; return [(n >> 16) & 255, (n >> 8) & 255, n & 255, m && m[2] ? parseInt(m[2], 16) / 255 : 1]; };
+const mieszaj = (a, b, ile) => { const A = rgb(a), B = rgb(b), k = Math.max(0, Math.min(1, ile)), kanal = (i) => Math.round(A[i] + (B[i] - A[i]) * k), krycie = A[3] + (B[3] - A[3]) * k; return krycie >= 0.999 ? `rgb(${kanal(0)}, ${kanal(1)}, ${kanal(2)})` : `rgba(${kanal(0)}, ${kanal(1)}, ${kanal(2)}, ${Math.round(krycie * 1000) / 1000})`; };
 function wczytajKolory() {
   const cs = getComputedStyle(document.documentElement);
   for (const n of ['tlo', 'plyta', 'tekst', 'ciche', 'akcent', 'linia', 'zywe', 'stare', 'znak']) K[n] = cs.getPropertyValue('--' + n).trim() || '#808080';
   popros();
 }
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', wczytajKolory);
+
+// --- pokrętła: wygląd i odczucie są danymi w Miejscu, nie stałymi w tym pliku -------------------------------------------
+// Wartości domyślne daje jedna tablica (public/pokretla.mjs), wartości z Miejsca drzwi /api/srodowisko/ustawienia,
+// policzone dla widoku, który Start pokazuje. Zmiana pokrętła przez kogokolwiek dociera tu kanałem jak każda zmiana
+// i twarz przerysowuje się bez przeładowania. Adres z ?bezpiecznie zostawia same wartości domyślne: wyjście z każdego
+// zepsutego wyglądu.
+const P = new Pokretla({ bezpiecznie: new URLSearchParams(location.search).has('bezpiecznie'), naZmiane: zastosujWyglad });
+// Podgląd z panelu ustawień w innej karcie tego samego adresu: wartość w trakcie kręcenia, bez zapisu i bez serwera.
+polaczPodglad(P);
+// Dwie role kroju: tekst (liczby, podpisy, opisy) i imiona (nazwy rzeczy na kartach).
+let KROJ = P.kroj('tekst').rodzina, KROJ_IMION = P.kroj('imiona').rodzina, GRUBOSC_IMION = 650;
+let odciskUstawien = null, pytamOUstawienia = false;
+function zastosujWyglad() {
+  const system = matchMedia('(prefers-color-scheme: dark)').matches;
+  const st = document.documentElement.style;
+  for (const n of KOLORY) st.setProperty('--' + n, String(P.kolor(n, system)));
+  st.setProperty('color-scheme', P.ciemna(system) ? 'dark' : 'light');
+  const tekst = P.kroj('tekst'), imiona = P.kroj('imiona'), css = krojNaCss(tekst);
+  // Krój z pliku w Miejscu: bajty przychodzą drzwiami i stają się krojem o własnej nazwie, który działa też na płótnie,
+  // z osiami i grubością; dopóki się ładuje albo gdy pliku nie widać, zostaje rodzina zapasowa z wartości.
+  const zBajtow = (k) => rodzinaKroju(k, { czytajBajty: (plik) => drzwi.bajty(plik), naGotowe: zastosujWyglad });
+  KROJ = zBajtow(tekst);
+  KROJ_IMION = zBajtow(imiona);
+  GRUBOSC_IMION = imiona.grubosc === undefined ? 650 : Math.round(imiona.grubosc);
+  // strona bierze rodzinę, grubość i osie; płótno rodzinę i grubość imion, a osie wtedy, gdy krój przyszedł z pliku
+  document.body.style.fontFamily = KROJ;
+  document.body.style.fontWeight = css.grubosc;
+  document.body.style.fontVariationSettings = css.osie;
+  wczytajKolory();
+}
+// Odcisk tego, co w spisie jest ustawieniem: ile takich rzeczy i która zmieniła się ostatnio. Inny odcisk znaczy
+// "policz ustawienia od nowa"; ten sam znaczy, że zmiana dotyczyła czegoś innego i o ustawienia nie trzeba pytać.
+const odciskZ = (rzeczy) => { let ile = 0, ostatnia = 0; for (const r of rzeczy) if (RODZAJE_USTAWIEN.includes(r.rodzaj)) { ile++; if (r.wersja > ostatnia) ostatnia = r.wersja; } return ile + ':' + ostatnia + ':' + (widok ? widok.id : ''); };
+async function odswiezUstawienia() {
+  if (P.bezpiecznie || pytamOUstawienia) return;
+  pytamOUstawienia = true;
+  try {
+    for (let obieg = 0; obieg < 3; obieg++) {
+      const odcisk = odciskZ(drzwi.rzeczy.values());
+      if (odcisk === odciskUstawien) break;
+      P.przyjmij(await drzwi.czytaj('/api/srodowisko/ustawienia?nazwy=' + NAZWY_POKRETEL + (widok ? '&dla=' + widok.id : '')));
+      odciskUstawien = odcisk;
+    }
+  } catch { /* bez ustawień z Miejsca twarz zostaje przy wartościach, które ma */ } finally { pytamOUstawienia = false; }
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', zastosujWyglad);
 
 // --- zdanie o skutku --------------------------------------------------------------------------------------------------
 function komunikat(tekst, zly = false) {
@@ -81,6 +131,8 @@ function poZmianie() {
   przelicz();
   if (!kam) kam = kameraNa(t >= 0.5 ? pole : staly.granice, okno, 20, gora);
   rysujPasek(); rysujKarte(); rysujListe(); popros();
+  rysujCofanie(); rysujUklady();
+  odswiezUstawienia();
 }
 function przelicz() {
   if (!swiat) return;
@@ -145,20 +197,21 @@ function klatka(teraz) {
   if (!swiat || !K.tlo) return;
   let wRuchu = false;
   if (animT) {
-    const k = Math.min(1, (teraz - animT.od) / animT.ms);
+    const k = animT.ms > 0 ? Math.min(1, (teraz - animT.od) / animT.ms) : 1;
     t = animT.z + (animT.na - animT.z) * lagodnie(k);
     $('suwak').value = String(Math.round(t * 100));
     if (k >= 1) { animT = null; zapiszOko(); rysujPasek(); } else wRuchu = true;
   }
   if (animKam) {
-    const k = lagodnie(Math.min(1, (teraz - animKam.od) / animKam.ms));
+    const k = lagodnie(animKam.ms > 0 ? Math.min(1, (teraz - animKam.od) / animKam.ms) : 1);
     kam = { x: animKam.z.x + (animKam.na.x - animKam.z.x) * k, y: animKam.z.y + (animKam.na.y - animKam.z.y) * k, k: Math.exp(Math.log(animKam.z.k) + (Math.log(animKam.na.k) - Math.log(animKam.z.k)) * k) };
     if (k >= 1) animKam = null; else wRuchu = true;
   }
   // Rzeczy doganiają swój cel łagodnie, gdy układ zmienił się skokiem (puszczenie, zamiana, cudza zmiana na żywo).
   // Gdy cel sam płynie (suwak, przełącznik) albo rzecz jest pod palcem, idą za nim od razu.
   const wprost = suwakWRuchu || animT !== null;
-  const wsp = 1 - Math.exp(-dt / 80);
+  const tau = P.czas('odczucie.ruch.doganianie');
+  const wsp = tau > 0 ? 1 - Math.exp(-dt / tau) : 1;
   for (const p of swiat.projekty) {
     const c = cel(p.id), s = pokazane.get(p.id);
     if (!s || wprost || (ciagnie && ciagnie.id === p.id)) { pokazane.set(p.id, c); continue; }
@@ -188,7 +241,7 @@ function rysuj() {
       const rozmiar = Math.max(11, Math.min(30, 46 * kam.k));
       ctx.globalAlpha = alfaRodzin * plynnie(e.w, 60, 160);
       ctx.fillStyle = K.ciche;
-      ctx.font = `600 ${rozmiar}px system-ui, sans-serif`;
+      ctx.font = `600 ${rozmiar}px ${KROJ}`;
       // podpis rodziny nie wychodzi poza swoje rzeczy: z daleka skraca się, zamiast wchodzić na sąsiednie karty
       const podpis = zawin(r.nazwa.toUpperCase(), ctx.font, Math.max(24, e.w), 1);
       ctx.fillText(podpis.linie[0] || '', e.x, e.y - 6);
@@ -205,7 +258,7 @@ function rysuj() {
     rysujProjekt(p, e, teraz);
   }
   if (!swiat.projekty.length) {
-    ctx.fillStyle = K.ciche; ctx.font = '15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = K.ciche; ctx.font = '15px ' + KROJ; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('W tym Miejscu nie ma jeszcze projektów. Przynosi je obserwator faktów albo ruch poloz (opis: /co-tu-jest).', okno.w / 2, okno.h / 2, okno.w - 40);
   }
 }
@@ -213,9 +266,9 @@ function rysuj() {
 function rysujProjekt(p, e, teraz) {
   const z = zywosc(p.zycie, teraz);
   const ciagniety = ciagnie && ciagnie.ruszyl && ciagnie.id === p.id;
-  const r = Math.min(12, e.w * 0.06, e.h * 0.1);
+  const r = Math.min(Math.max(0, Number(P.w('wyglad.karta.rog')) || 0), e.w * 0.06, e.h * 0.1);
   ctx.save();
-  if (ciagniety) { ctx.shadowColor = 'rgba(0, 0, 0, .45)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8; ctx.globalAlpha = 0.94; }
+  if (ciagniety) { const c = P.w('odczucie.reka.cien_niesionej') || {}; ctx.shadowColor = typeof c.kolor === 'string' ? c.kolor : 'transparent'; ctx.shadowBlur = Math.max(0, Number(c.rozmycie) || 0); ctx.shadowOffsetX = Number(c.x) || 0; ctx.shadowOffsetY = Number(c.y) || 0; ctx.globalAlpha = 0.94; }
   // Kolor znaczy: im żywszy projekt, tym bardziej zielony; spokojny zostaje w kolorze płyty.
   zaokraglony(e.x, e.y, e.w, e.h, r);
   ctx.fillStyle = z === null ? K.plyta : mieszaj(K.plyta, K.zywe, 0.06 + z * 0.3);
@@ -249,19 +302,19 @@ function rysujTresc(p, e, teraz) {
   let nazwa = null;
   const ileLinii = (roz) => Math.max(1, Math.min(3, Math.floor((e.h - 2 * pad) / (roz * 1.18))));
   for (; rozmiar >= 9; rozmiar -= 1.5) {
-    const proba = zawin(p.tytul, `650 ${rozmiar}px system-ui, sans-serif`, szer, ileLinii(rozmiar));
+    const proba = zawin(p.tytul, `${GRUBOSC_IMION} ${rozmiar}px ${KROJ_IMION}`, szer, ileLinii(rozmiar));
     if (!proba.zaSzeroka && !proba.ucieto) { nazwa = proba; break; }
   }
   // Z daleka (działka węższa niż 64 px) zostaje sam kolor życia: trzy litery z wielokropkiem niczego nie mówią.
   // Imię wraca przy pierwszym przybliżeniu albo po dotknięciu (karta rzeczy).
-  if (!nazwa && e.w > 64 && e.h > 20) { rozmiar = 9.5; nazwa = zawin(p.tytul, `650 ${rozmiar}px system-ui, sans-serif`, szer, ileLinii(rozmiar)); }
+  if (!nazwa && e.w > 64 && e.h > 20) { rozmiar = 9.5; nazwa = zawin(p.tytul, `${GRUBOSC_IMION} ${rozmiar}px ${KROJ_IMION}`, szer, ileLinii(rozmiar)); }
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   if (nazwa) {
     // Gdy projekt jest większy niż okno, jego imię trzyma się widocznego rogu, żeby było wiadomo, w czym się jest.
     const wys = nazwa.linie.length * rozmiar * 1.18;
     const nx = Math.max(e.x + pad + 4, Math.min(8, e.x + e.w - 120)), ny = Math.max(y, Math.min(gora + 8, e.y + e.h - pad - wys));
     const przyklejone = nx > e.x + pad + 4.5 || ny > y + 0.5;
-    ctx.font = `650 ${rozmiar}px system-ui, sans-serif`;
+    ctx.font = `${GRUBOSC_IMION} ${rozmiar}px ${KROJ_IMION}`;
     if (przyklejone) {
       const sz = Math.max(...nazwa.linie.map((l) => ctx.measureText(l).width));
       ctx.fillStyle = mieszaj(K.plyta, K.tlo, 0.5); ctx.globalAlpha *= 0.9;
@@ -276,7 +329,7 @@ function rysujTresc(p, e, teraz) {
   // Obecność: kto z uczestników jest teraz przy tej rzeczy (prawdziwe połączenie, nie ozdoba).
   const przyTym = drzwi.obecni.lista.filter((o) => o.przy === p.id && o.kto !== drzwi.imie);
   if (przyTym.length && e.w > 70) {
-    ctx.font = '600 11px system-ui, sans-serif';
+    ctx.font = '600 11px ' + KROJ;
     const napis = przyTym.map((o) => o.kto).join(', ');
     const sz = Math.min(szer, ctx.measureText(napis).width + 14);
     ctx.fillStyle = K.akcent;
@@ -298,10 +351,10 @@ function rysujTresc(p, e, teraz) {
     const slow = swiat.ileSlow.get(p.id);
     if (slow) cz.push('słowa: ' + slow);
     ctx.globalAlpha *= alfaMeta;
-    ctx.fillStyle = K.ciche; ctx.font = '12px system-ui, sans-serif'; ctx.textBaseline = 'bottom';
+    ctx.fillStyle = K.ciche; ctx.font = '12px ' + KROJ; ctx.textBaseline = 'bottom';
     const zagrajSzer = p.zagraj && e.w > 150 ? 84 : 0;
-    const meta = zawin(cz.join(' · '), '12px system-ui, sans-serif', szer - zagrajSzer, 1);
-    ctx.font = '12px system-ui, sans-serif';
+    const meta = zawin(cz.join(' · '), '12px ' + KROJ, szer - zagrajSzer, 1);
+    ctx.font = '12px ' + KROJ;
     if (meta.linie.length) ctx.fillText(meta.linie[0], e.x + pad + 4, dol);
     ctx.globalAlpha /= alfaMeta;
     ctx.textBaseline = 'top';
@@ -311,7 +364,7 @@ function rysujTresc(p, e, teraz) {
       const pw = 74, ph = 24, px = e.x + e.w - pad - pw, py = dol - ph + 3;
       ctx.globalAlpha *= alfaMeta;
       ctx.fillStyle = K.akcent; zaokraglony(px, py, pw, ph, 12); ctx.fill();
-      ctx.fillStyle = K.tlo; ctx.font = '600 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = K.tlo; ctx.font = '600 12px ' + KROJ; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(p.wKarcie ? 'Zagraj ↗' : 'Zagraj', px + pw / 2, py + ph / 2 + 0.5);
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
       ctx.globalAlpha /= alfaMeta;
@@ -324,9 +377,9 @@ function rysujTresc(p, e, teraz) {
     const wys = 13.5 * 1.35, miejsce = metaGora - y - 6;
     const ile = Math.max(0, Math.min(e.h > 420 ? 4 : 6, Math.floor(miejsce / wys)));
     if (ile >= 1) {
-      const o = zawin(p.opis, '13.5px system-ui, sans-serif', szer, ile);
+      const o = zawin(p.opis, '13.5px ' + KROJ, szer, ile);
       ctx.globalAlpha *= alfaOpis;
-      ctx.fillStyle = K.ciche; ctx.font = '13.5px system-ui, sans-serif';
+      ctx.fillStyle = K.ciche; ctx.font = '13.5px ' + KROJ;
       y += 4;
       for (const l of o.linie) { ctx.fillText(l, e.x + pad + 4, y, szer); y += wys; }
       ctx.globalAlpha /= alfaOpis;
@@ -347,8 +400,8 @@ function rysujTresc(p, e, teraz) {
         zaokraglony(pr.x + 1, pr.y + 1, pr.w - 2, pr.h - 2, 4); ctx.fill();
         if (pr.w > 54 && pr.h > 16) {
           const roz = Math.max(9.5, Math.min(13, pr.h / 2.6));
-          const im = zawin(krotkieImie(g.nazwa), `${roz}px system-ui, sans-serif`, pr.w - 10, pr.h > roz * 2.8 ? 2 : 1);
-          ctx.fillStyle = K.tekst; ctx.font = `${roz}px system-ui, sans-serif`;
+          const im = zawin(krotkieImie(g.nazwa), `${roz}px ${KROJ}`, pr.w - 10, pr.h > roz * 2.8 ? 2 : 1);
+          ctx.fillStyle = K.tekst; ctx.font = `${roz}px ${KROJ}`;
           // imię gałęzi trzyma się widocznego rogu jej działki
           const gx = Math.max(pr.x + 6, Math.min(10, pr.x + pr.w - 60));
           let gy = Math.max(pr.y + 5, Math.min(gora + 46, pr.y + pr.h - im.linie.length * roz * 1.2 - 4));
@@ -373,12 +426,15 @@ function rysujPasek() {
   const repo = swiat ? swiat.projekty.filter((p) => p.fakt).length : 0;
   const dziel = swiat ? swiat.projekty.length - repo : 0;
   const co = [dziel ? lp(dziel, 'dzieło', 'dzieła', 'dzieł') : null, repo || !dziel ? lp(repo, 'repozytorium', 'repozytoria', 'repozytoriów') : null].filter(Boolean).join(' i ');
-  const obce = swiat && swiat.obce ? ` · ${lp(swiat.obce, 'położenie leży', 'położenia leżą', 'położeń leży')} poza obszarem widoku i nie jest pokazane` : '';
-  $('stan').textContent = `${co} · akt ${d.miejsce.akt} · ${ja || 'zwiedzający'} · ${drzwi.zywe ? 'na żywo' : 'bez połączenia na żywo'}${tu}${obce}`;
+  const obce = (swiat && swiat.obce ? ` · ${lp(swiat.obce, 'położenie leży', 'położenia leżą', 'położeń leży')} poza obszarem widoku i nie jest pokazane` : '')
+    + (drzwi.uciete ? ` · UCIĘTE: wczytane ${drzwi.uciete.pokazane} z ${drzwi.uciete.razem} rzeczy, reszty tu nie widać` : '');
+  $('stan').textContent = `${co} · akt ${drzwi.akt} · ${ja || 'zwiedzający'} · ${drzwi.zywe ? 'na żywo' : 'bez połączenia na żywo'}${tu}${obce}`;
   $('stan').title = drzwi.zywe ? 'Połączenie stoi: zmiany przychodzą same.' : 'Połączenie na żywo nie stoi: strona pyta o zmiany co kilka sekund.';
   // To, co czeka na właściciela (propozycje agentów, także położeń, i prośby), widać od razu; rozstrzyga się na
   // stronie gospodarza, bo szkielet nie ma jeszcze warstwy propozycji na płótnie.
-  const ileCzeka = d.czeka.propozycje.length + d.czeka.prosby.length;
+  // ile czeka na właściciela: z rzeczy, które strona ma, nie z opisu (opisu po zmianie już nie czytamy)
+  let ileCzeka = 0;
+  for (const r of drzwi.rzeczy.values()) if ((r.rodzaj === 'propozycja/1' || r.rodzaj === 'prosba/1') && r.cechy.stan === 'czeka') ileCzeka++;
   $('czeka').hidden = !ileCzeka;
   $('czeka').textContent = 'czeka: ' + ileCzeka;
   $('czeka').title = 'Propozycje i prośby, które czekają na właściciela. Rozstrzyga się je na stronie gospodarza.';
@@ -407,12 +463,22 @@ $('suwak').addEventListener('input', () => { animT = null; suwakWRuchu = true; t
 $('suwak').addEventListener('change', () => { suwakWRuchu = false; zapiszOko(); popros(); });
 $('przelacz').addEventListener('click', () => {
   const na = t >= 0.5 ? 0 : 1;
-  animT = { z: t, na, od: performance.now(), ms: 700 };
+  animT = { z: t, na, od: performance.now(), ms: P.czas('odczucie.ruch.przelacznik') };
   // przy nadmuchaniu kamera płynie tak, żeby mozaika wypełniła okno; przy powrocie zostaje, gdzie była
-  if (na === 1 && pole) animKam = { z: kam, na: kameraNa(pole, okno, 8, gora), od: performance.now(), ms: 700 };
+  if (na === 1 && pole) animKam = { z: kam, na: kameraNa(pole, okno, 8, gora), od: performance.now(), ms: P.czas('odczucie.ruch.przelacznik') };
   popros();
 });
-$('caly').addEventListener('click', () => { if (!swiat) return; animKam = { z: kam, na: kameraNa(t >= 0.5 ? pole : staly.granice, okno, t >= 0.5 ? 8 : 28, gora), od: performance.now(), ms: 450 }; popros(); });
+$('caly').addEventListener('click', () => { if (!swiat) return; animKam = { z: kam, na: kameraNa(t >= 0.5 ? pole : staly.granice, okno, t >= 0.5 ? 8 : 28, gora), od: performance.now(), ms: P.czas('odczucie.ruch.kamera_do_calosci') }; popros(); });
+// Pomoc rysuje się z jednej tablicy czasowników ręki (public/reka.mjs): ta sama tablica mówi agentom, co umie ręka.
+{
+  const lista = document.querySelector('#pomoc ul');
+  if (lista) {
+    const ogolne = [...lista.querySelectorAll('li')].filter((li) => !li.querySelector('b'));
+    lista.textContent = '';
+    for (const c of czasownikiTwarzy('start')) lista.append(el('li', {}, el('b', { tekst: c.co + ':' }), ' ' + c.jak + '.'));
+    lista.append(...ogolne);
+  }
+}
 $('pomoc-guzik').addEventListener('click', () => { const p = $('pomoc'); p.hidden = !p.hidden; $('pomoc-guzik').setAttribute('aria-expanded', p.hidden ? 'false' : 'true'); });
 
 // --- karta wybranej rzeczy: czym jest, skąd się tu wzięła, co da się z nią zrobić --------------------------------------
@@ -453,7 +519,10 @@ function rysujKarte() {
     el('div', { klasa: 'ruchy' }, el('button', { tekst: 'Zostaw słowo', klik: async (e) => {
       const w = tekstSlowa.value.trim(); if (!w) return;
       e.currentTarget.disabled = true;
-      const o = await drzwi.ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [p.id] } });
+      // Słowo niesie stan oka: co było widać, gdy je pisano (wersja twarzy, akt, widok, ekran, kamera, układ).
+      const oko = await stanOka({ twarz: 'start', pliki: ['/start/start.mjs', '/start/drzwi.mjs', '/start/swiat.mjs', '/pokretla.mjs', '/kroje.mjs'], akt: drzwi.akt, widok: widok ? widok.id : null, ciemny: P.ciemna(matchMedia('(prefers-color-scheme: dark)').matches), bezpiecznie: P.bezpiecznie,
+        stan: { ciekly: Math.round(t * 100) / 100, ...(kam ? { kamera: { x: Math.round(kam.x), y: Math.round(kam.y), k: Math.round(kam.k * 1000) / 1000 } } : {}) } }).catch(() => null);
+      const o = await drzwi.ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [p.id], ...(oko ? { oko } : {}) } });
       if (!o.ok) { e.currentTarget.disabled = false; komunikat(o.blad, true); return; }
       tekstSlowa.value = '';
       await drzwi.dogon().catch(() => {});
@@ -471,21 +540,93 @@ function naRzecz(id) {
   const s = pokazane.get(id) || cel(id);
   const e = naEkran(kam, okno, s);
   if (e.x >= 0 && e.y >= gora && e.x + e.w <= okno.w && e.y + e.h <= okno.h) return;
-  animKam = { z: kam, na: { ...kam, x: s.x + s.w / 2, y: s.y + s.h / 2 }, od: performance.now(), ms: 350 };
+  animKam = { z: kam, na: { ...kam, x: s.x + s.w / 2, y: s.y + s.h / 2 }, od: performance.now(), ms: P.czas('odczucie.ruch.kamera_do_karty') };
   popros();
 }
+
+// --- gesty ręki: cofnij, ponów, zapisane układy -------------------------------------------------------------------------
+// Każdy ruch ręki niesie znak gestu (zamiana dwóch kart to jeden gest z dwóch zapisów). Znaki własnych gestów leżą
+// w pamięci tej przeglądarki, więc "cofnij" działa także po przeładowaniu strony. Cofnięcie jest w Miejscu zwykłą
+// czynnością z autorem: wraca wszystko, co gest ruszył, albo nic, gdy ktoś po drodze coś z niego zmienił.
+const GESTY = 'jaskinia:start:gesty';
+const nowyGest = () => 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+let stosGestow = (() => { try { const z = JSON.parse(localStorage.getItem(GESTY) || 'null'); return z && Array.isArray(z.cofnij) && Array.isArray(z.ponow) ? z : { kto: null, cofnij: [], ponow: [] }; } catch { return { kto: null, cofnij: [], ponow: [] }; } })();
+const zapiszStos = () => { try { localStorage.setItem(GESTY, JSON.stringify(stosGestow)); } catch { /* bez pamięci przeglądarki stos żyje do przeładowania */ } rysujCofanie(); };
+function zapamietajGest(gest) {
+  if (stosGestow.kto !== drzwi.imie) stosGestow = { kto: drzwi.imie, cofnij: [], ponow: [] };
+  if (stosGestow.cofnij[stosGestow.cofnij.length - 1] !== gest) stosGestow.cofnij.push(gest);
+  stosGestow.cofnij = stosGestow.cofnij.slice(-50);
+  stosGestow.ponow = [];
+  zapiszStos();
+}
+function rysujCofanie() {
+  const moje = stosGestow.kto === drzwi.imie && !!drzwi.klucz;
+  $('cofnij').disabled = !(moje && stosGestow.cofnij.length);
+  $('ponow').disabled = !(moje && stosGestow.ponow.length);
+}
+async function cofnijAlboPonow(ponow) {
+  const z = ponow ? stosGestow.ponow : stosGestow.cofnij, na = ponow ? stosGestow.cofnij : stosGestow.ponow;
+  if (stosGestow.kto !== drzwi.imie || !z.length) return;
+  const cofany = z[z.length - 1], gest = nowyGest();
+  const o = await drzwi.ruch({ co: 'cofnij-gest', cofany, gest });
+  if (!o.ok) {
+    // Gest, którego Miejsce nie zna (inne Miejsce pod tym samym adresem, przywrócona starsza historia): wszystko, co
+    // leży pod nim na liście, jest jeszcze starsze, więc lista czyści się cała, zamiast odbijać się po jednym geście.
+    // Każda inna odmowa zostawia listę, jak była.
+    if (/^nie ma gestu/.test(o.blad)) { z.length = 0; zapiszStos(); komunikat('Tego gestu to Miejsce już nie zna, więc lista cofania zaczyna się od nowa.', true); return; }
+    komunikat(o.blad, true);
+    return;
+  }
+  z.pop(); na.push(gest); zapiszStos();
+  await drzwi.dogon().catch(() => {});
+  const ile = o.dane.rzeczy || 0;
+  komunikat((ponow ? 'Ponowione: ' : 'Cofnięte: ') + lp(ile, 'rzecz wróciła', 'rzeczy wróciły', 'rzeczy wróciło') + (ponow ? ' do stanu po geście.' : ' do stanu sprzed gestu.'));
+}
+$('cofnij').addEventListener('click', () => cofnijAlboPonow(false));
+$('ponow').addEventListener('click', () => cofnijAlboPonow(true));
+addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z' || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
+  e.preventDefault();
+  cofnijAlboPonow(e.shiftKey);
+});
+// Zapisany układ to nazwana chwila widoku (rzecz chwila/1). Powrót do niego jest gestem, więc "cofnij" go cofa.
+function rysujUklady() {
+  const p = $('uklady');
+  if (p.hidden) return;
+  const lista = widok ? [...drzwi.rzeczy.values()].filter((r) => r.rodzaj === 'chwila/1' && r.cechy.widok === widok.id).sort((a, b) => b.cechy.akt - a.cechy.akt) : [];
+  p.textContent = '';
+  p.append(el('p', { tekst: 'Zapisany układ pamięta, gdzie co leżało w tej chwili. Powrót do niego da się cofnąć.' }),
+    el('button', { klasa: 'glowny', tekst: 'Zapisz obecny układ', disabled: drzwi.klucz && widok ? null : true, klik: async () => {
+      const kiedy = new Date();
+      const nazwa = 'Układ ' + kiedy.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) + ', ' + kiedy.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+      const o = await drzwi.ruch({ co: 'poloz', rodzaj: 'chwila/1', cechy: { nazwa, widok: widok.id, akt: drzwi.akt } });
+      if (!o.ok) { komunikat(o.blad, true); return; }
+      await drzwi.dogon().catch(() => {});
+      komunikat(o.dane.skutek === 'propozycja' ? 'Zapis układu poszedł jako propozycja.' : 'Zapisany: ' + nazwa + '.');
+    } }),
+    lista.length ? el('ul', { klasa: 'lista-ukladow' }, lista.map((u) => el('li', {}, el('span', { tekst: u.cechy.nazwa }),
+      el('button', { tekst: 'wróć', title: 'Ustaw położenia tak, jak leżały w tym układzie', disabled: drzwi.klucz ? null : true, klik: async () => {
+        const gest = nowyGest();
+        const o = await drzwi.ruch({ co: 'przywroc-uklad', chwila: u.id, gest });
+        if (!o.ok) { komunikat(o.blad, true); return; }
+        if (o.dane.rzeczy) zapamietajGest(gest);
+        await drzwi.dogon().catch(() => {});
+        komunikat(o.dane.rzeczy ? 'Wrócił układ "' + u.cechy.nazwa + '": ' + lp(o.dane.rzeczy, 'położenie zmienione', 'położenia zmienione', 'położeń zmienionych') + '. Guzik ↶ to cofa.' : 'Układ "' + u.cechy.nazwa + '" jest już ustawiony.');
+      } })))) : el('p', { klasa: 'ciche', tekst: 'Ten widok nie ma jeszcze zapisanych układów.' }));
+}
+$('uklady-guzik').addEventListener('click', () => { const p = $('uklady'); p.hidden = !p.hidden; $('uklady-guzik').setAttribute('aria-expanded', p.hidden ? 'false' : 'true'); rysujUklady(); });
 
 // --- ruchy ręki, które trafiają do Miejsca (zapis przy puszczeniu, nigdy przy ruchu) -----------------------------------
 // Położenie rzeczy to rzecz rodzaju miejsce z kluczem (widok, rzecz): każde przesunięcie jest nową wersją tego samego
 // miejsca. "dowolna" to świadoma zgoda na nadpisanie: ręka jest najsilniejszym prawem, ostatnie położenie wygrywa.
-async function poloz(id, miejsce, zdanie) {
+async function poloz(id, miejsce, zdanie, gest = nowyGest()) {
   if (!widok) { komunikat('W tym Miejscu nie ma jeszcze widoku Start (rodzaj widok): nie ma gdzie zapisać położenia.', true); return false; }
   const bylo = swiat.miejsca.get(id) || null;
   const m = { x: Math.round(miejsce.x), y: Math.round(miejsce.y), skala: miejsce.skala ?? (bylo ? bylo.skala : 1) };
   wToku.set(id, m);
   swiat.miejsca.set(id, { ...(bylo || {}), ...m });
   przelicz(); rysujKarte(); popros();
-  const o = await drzwi.ruch({ co: 'poloz', rodzaj: 'miejsce/1', wersja: 'dowolna', cechy: { widok: widok.id, rzecz: id, x: m.x, y: m.y, ...(m.skala !== 1 ? { skala: Math.round(m.skala * 100) / 100 } : {}) } });
+  const o = await drzwi.ruch({ co: 'poloz', gest, rodzaj: 'miejsce/1', wersja: 'dowolna', cechy: { widok: widok.id, rzecz: id, x: m.x, y: m.y, ...(m.skala !== 1 ? { skala: Math.round(m.skala * 100) / 100 } : {}) } });
   wToku.delete(id);
   const propozycja = o.ok && o.dane.skutek === 'propozycja';
   if (!o.ok || propozycja) {
@@ -495,6 +636,7 @@ async function poloz(id, miejsce, zdanie) {
     komunikat(propozycja ? 'Położenie poszło jako propozycja (' + (o.dane.powod || 'czeka na właściciela') + '). Rzecz zostaje na miejscu, dopóki nie zostanie przyjęta.' : o.blad, !propozycja);
     return false;
   }
+  zapamietajGest(gest);
   await drzwi.dogon().catch(() => {});
   if (zdanie) komunikat(zdanie);
   return true;
@@ -508,17 +650,20 @@ async function zmienSkale(id, mnoznik) {
 async function oddajSiatce(id) {
   const m = swiat.miejsca.get(id);
   if (!m || !m.id) return;
-  const o = await drzwi.ruch({ co: 'odloz', rzecz: m.id, wersja: 'dowolna', powod: 'oddane siatce domyślnej na Starcie' });
+  const gest = nowyGest();
+  const o = await drzwi.ruch({ co: 'odloz', gest, rzecz: m.id, wersja: 'dowolna', powod: 'oddane siatce domyślnej na Starcie' });
   if (!o.ok) { komunikat(o.blad, true); return; }
+  if (o.dane.skutek !== 'propozycja') zapamietajGest(gest);
   await drzwi.dogon().catch(() => {});
   komunikat(o.dane.skutek === 'propozycja' ? 'Poszło jako propozycja.' : 'Rzecz wróciła do siatki domyślnej. Jej położenie z ręki jest odłożone, nie skasowane.');
 }
 async function zamien(a, b) {
   const sa = srodekStaly(a), sb = srodekStaly(b);
   const pa = poId(a), pb = poId(b);
-  const ok = await poloz(a, sb, null);
+  const gest = nowyGest(); // zamiana to jeden gest z dwóch zapisów: cofa się w całości
+  const ok = await poloz(a, sb, null, gest);
   if (!ok) return;
-  if (await poloz(b, sa, null)) komunikat(`Zamienione miejscami: ${pa.tytul} i ${pb.tytul}.`);
+  if (await poloz(b, sa, null, gest)) komunikat(`Zamienione miejscami: ${pa.tytul} i ${pb.tytul}.`);
 }
 
 // --- okno gry -----------------------------------------------------------------------------------------------------------
@@ -586,7 +731,7 @@ plotno.addEventListener('pointermove', (e) => {
     return;
   }
   const dx = p.x - gest.x, dy = p.y - gest.y;
-  if (gest.typ === 'czeka' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > 6) {
+  if (gest.typ === 'czeka' && Math.hypot(p.x - gest.x0, p.y - gest.y0) > (Number(P.w('odczucie.reka.prog_przeciagania')) || 0)) {
     // Rusza się rzecz, jeśli palec ją trzyma i wolno układać; inaczej rusza się widok.
     if (gest.id && !gest.srodkowy && drzwi.klucz) {
       const s = pokazane.get(gest.id), w = naSwiat(kam, okno, gest.x0, gest.y0);
@@ -664,5 +809,9 @@ function wymiar() {
 }
 addEventListener('resize', wymiar);
 wymiar();
-wczytajKolory();
+zastosujWyglad();
+// Widoczne wyjście do wyglądu domyślnego i z powrotem: guzik ma stałe barwy (start.css), nie barwy motywu, żeby dało
+// się go znaleźć także wtedy, gdy wygląd z Miejsca jest nieczytelny.
+if (P.bezpiecznie) { const w = $('wyjscie'); w.href = location.pathname; w.textContent = '◑'; w.title = 'Wróć do wyglądu z Miejsca'; w.setAttribute('aria-label', 'Wróć do wyglądu z Miejsca'); }
+if (P.bezpiecznie) komunikat('Tryb bezpieczny: wygląd i odczucie mają wartości domyślne, bez ustawień z Miejsca. Zwykły adres: bez ?bezpiecznie.');
 drzwi.start().catch((blad) => { $('stan').textContent = 'brak połączenia'; komunikat('Nie udało się przeczytać Miejsca: ' + blad.message, true); });
