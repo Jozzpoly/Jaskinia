@@ -630,3 +630,22 @@ test('U24. odwołanie nie jest drogą obok prawa: wartość dla całego Miejsca 
   ok(await wartosc('jozz', 'ust-u24-dobre', AKCENT, { z: 'wyglad.paleta.jasna.znak' }));
   assert.equal(licz('agent-a').wartosci[AKCENT].z, 'wyglad.paleta.jasna.znak');
 });
+
+test('U25. pełne liczenie czyta wartości tylko z zasięgów na drodze: wartości w cudzych widokach nie podnoszą kosztu panelu', async () => {
+  const { s, ok, szkic, wartosc } = await swiat();
+  ok(await wartosc('jozz', 'ust-u25-akcent', 'wyglad.paleta.jasna.akcent', '#102030'));
+  const licz = (f) => { let wiersze = 0, pytan = 0; const q0 = s.q; s.q = function (...a) { const w = q0.apply(this, a); pytan++; wiersze += w.length; return w; }; try { return { wynik: f(), wiersze, pytan }; } finally { delete s.q; } };
+  const przed = licz(() => policzUstawienia(s.dla('jozz'), { deklaracje: true }));
+  // agent dokłada 40 widoków tam, gdzie prowadzi, a w każdym po 4 wartości
+  for (let i = 0; i < 40; i++) {
+    const widok = ok(await s.ruch('agent-a', { op: 'ust-u25-widok-' + i, co: 'poloz', rodzaj: 'widok/1', obszar: szkic, cechy: { nazwa: 'Widok ' + i } })).rzecz;
+    for (const [j, n] of ['wyglad.paleta.jasna.tlo', 'wyglad.paleta.jasna.tekst', 'wyglad.karta.rog', 'odczucie.ruch.natezenie'].entries()) ok(await wartosc('agent-a', `ust-u25-w-${i}-${j}`, n, j < 2 ? '#0a0b0c' : 1, { zasieg: widok }));
+  }
+  const po = licz(() => policzUstawienia(s.dla('jozz'), { deklaracje: true }));
+  assert.deepEqual(po.wynik.wartosci, przed.wynik.wartosci);
+  assert.ok(po.wiersze <= przed.wiersze + 6, `wiersze przed ${przed.wiersze}, po ${po.wiersze}`);
+  // wartość w zasięgu na drodze dalej dochodzi
+  const jeden = s.spis({ rodzaj: 'widok/1', gdzie: { nazwa: 'Widok 7' } })[0];
+  assert.equal(policzUstawienia(s.dla('jozz'), { dla: jeden.id }).wartosci['wyglad.karta.rog'].wartosc, 1);
+  assert.equal(policzUstawienia(s.dla('jozz')).wartosci['wyglad.paleta.jasna.akcent'].wartosc, '#102030');
+});

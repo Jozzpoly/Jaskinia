@@ -102,12 +102,17 @@ const nazwaRodzaju = (r) => String(r).split('/')[0];
 const typCechy = (def) => (typeof def === 'string' ? def : def && def.typ);
 
 // Treść rzeczy w zapisie. Kolejność pól jest stała, bo z treści liczy się identyfikator zapisu.
-// Rzecz, która z natury należy do innej (kształt mówi lezy_z), nie niesie własnego obszaru: jej zapis mówi, z której
-// cechy obszar wynika (obszar_z), a pole obszar zostaje puste. Starszy zapis takiej rzeczy, w którym obszar jeszcze
-// stoi, czyta się tak samo: liczy się rzecz wskazana cechą, nie to, co zapisano w polu.
+// Rzecz, która z natury należy do innej (kształt mówi lezy_z), nie ma własnego obszaru: DZISIEJSZY obszar zawsze
+// wynika z rzeczy wskazanej cechą (obszar_z), a nie z tego, co stoi w zapisie. Pole obszar mówi w jej zapisie co innego:
+// gdzie rzecz leżała, GDY TEN ZAPIS POWSTAŁ (znacznik wtedy). Bez tego każdy strażnik historii widział dawną wersję
+// takiej rzeczy w obszarze głównym, więc położenia, wartości i zapisane układy z czasu, gdy ich widok albo zasięg leżał
+// w obszarze zamkniętym, wychodziły na jaw, gdy tylko właściciel przeniósł go do jawnego (niezależny atak, 18 XI 2026).
+// Zapis takiej rzeczy sprzed tej poprawki (obszar_z bez znacznika) nie wie, gdzie rzecz leżała: zob. obszar_nieznany.
 function trescRzeczy({ obszar, cechy, odlozone = false, powod = null, zNatury = null }) {
-  return JSON.stringify({ obszar: zNatury ? null : (obszar ?? null), ...(zNatury ? { obszar_z: zNatury } : {}), cechy, ...(odlozone ? { odlozone: true, ...(powod ? { powod } : {}) } : {}) });
+  return JSON.stringify({ obszar: obszar ?? null, ...(zNatury ? { obszar_z: zNatury, wtedy: 1 } : {}), cechy, ...(odlozone ? { odlozone: true, ...(powod ? { powod } : {}) } : {}) });
 }
+// Czy zapis jest dawnym zapisem rzeczy leżącej z natury, który nie mówi, gdzie rzecz wtedy leżała.
+const obszarNieznany = (t) => typeof t.obszar_z === 'string' && t.wtedy !== 1;
 
 // Tekst do szukania: wszystkie napisy z cech, małymi literami (po polsku), najwyżej 4000 znaków.
 function doSzukania(cechy) {
@@ -301,6 +306,9 @@ const SPIS_SCHEMAT = [
   `CREATE TABLE IF NOT EXISTS odniesienia (od TEXT NOT NULL, cecha TEXT NOT NULL, cel TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS odniesienia_cel ON odniesienia (cel)`,
   `CREATE INDEX IF NOT EXISTS odniesienia_od ON odniesienia (od)`,
+  // Pytanie "które wartości pokręteł mają ten zasięg" zadaje każde liczenie ustawień: bez cechy w indeksie czytałoby
+  // wszystko, co na rzecz wskazuje.
+  `CREATE INDEX IF NOT EXISTS odniesienia_cel_cecha ON odniesienia (cel, cecha)`,
   // Przekrój spisu (ile rzeczy którego rodzaju leży w którym obszarze, osobno odłożone) utrwalony w małej tabeli.
   // Obiekt Miejsca zasypia po kilku sekundach bez ruchu i traci pamięć: bez tej tabeli pierwsze czytanie opisu po
   // każdym obudzeniu liczyło cały spis od nowa (zmierzone 17 XI: 1675 wierszy przy 647 rzeczach).
@@ -414,7 +422,10 @@ export class Srodowisko {
         const w = cel.wersja(id, akt);
         if (!w) return null;
         const zle = cel._niewidoczneDla(kto);
-        return zle && zle.includes(w.obszar ?? null) ? null : w;
+        if (!zle || !zle.length) return w;
+        // wersja, która nie wie, gdzie leżała (rzecz z natury, zapis sprzed 18 XI 2026), nie istnieje dla nikogo, przed kim
+        // cokolwiek jest zamknięte: nie da się wykluczyć, że leżała właśnie tam
+        return w.obszar_nieznany || zle.includes(w.obszar ?? null) ? null : w;
       },
       // Propozycje i prośby wychodzą z `wszystkie`, ale WOŁANE NA CELU, więc okulary ich nie dotyczyły: prośba
       // z zamkniętego obszaru stała w "co czeka" z identyfikatorem i treścią (ta sama usterka co niżej w liczbach).
@@ -624,7 +635,7 @@ export class Srodowisko {
     let t = {};
     try { t = JSON.parse(z.tresc); } catch { /* zostaje puste */ }
     if (!t || typeof t !== 'object') t = {};
-    return { rzecz: id, akt, numer: w.numer, kto: w.kto, kiedy: w.kiedy, rodzaj: z.rodzaj, obszar: t.obszar ?? null, cechy: t.cechy && typeof t.cechy === 'object' ? t.cechy : {}, odlozone: t.odlozone === true, powod: typeof t.powod === 'string' ? t.powod : null };
+    return { rzecz: id, akt, numer: w.numer, kto: w.kto, kiedy: w.kiedy, rodzaj: z.rodzaj, obszar: t.obszar ?? null, ...(obszarNieznany(t) ? { obszar_nieznany: true } : {}), cechy: t.cechy && typeof t.cechy === 'object' ? t.cechy : {}, odlozone: t.odlozone === true, powod: typeof t.powod === 'string' ? t.powod : null };
   }
 
   wskazujaNa(id) { return this.q(`SELECT od, cecha FROM odniesienia WHERE cel = ? ORDER BY od`, id); }
@@ -754,6 +765,12 @@ export class Srodowisko {
     return null;
   }
 
+  // Identyfikatory czynnych wartości pokręteł, których zasięgiem jest rzecz `id`. Czy czytający je widzi, pyta ten, kto
+  // woła (liczenie ustawień bierze każdą przez oczy czytającego).
+  _wartosciZasiegu(id) {
+    return this.q(`SELECT o.od FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ? AND o.cecha = 'zasieg' AND r.rodzaj = 'wartosc/1' AND r.odlozone = 0`, id).map((x) => x.od);
+  }
+
   // Czynne wartości, które włączają zestaw `id` w swoim zasięgu (odniesienie zapisuje _odniesienia): ich rodzaj i obszar.
   _wlaczajaZestaw(id) {
     return this.q(`SELECT r.rodzaj, r.obszar FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ? AND o.cecha = 'wartosc' AND r.odlozone = 0`, id)
@@ -817,6 +834,18 @@ export class Srodowisko {
     // rzeczą, ale to, co w nim leży, ma obszar pusty.
     if (dom.rodzaj === 'obszar/1') return { cecha: k.lezy_z, obszar: dom.id === this.r.meta('obszar_glowny') ? null : dom.id };
     return { cecha: k.lezy_z, obszar: dom.obszar ?? null };
+  }
+
+  // Pytania o rzecz, która z natury leży z inną, wspólne dla każdej drogi powrotu do dawnego stanu (cofnij, przywróć,
+  // cofnij gest, powrót do układu): rzecz wskazana musi istnieć dla piszącego, a wskazanie nie może zamknąć koła.
+  // Zwykły zapis (połóż) pyta o to samo we własnej kolejności; bez tych pytań cofnięcie gestu zamykało koło, którego
+  // zwykły zapis nie przepuszcza (niezależny atak, 18 XI 2026).
+  _wadaNatury(rodzaj, cechy, id, widzi) {
+    const n = this._zNatury(rodzaj, cechy);
+    if (!n) return null;
+    if (n.brak || !widzi(cechy[n.cecha])) return `cecha ${n.cecha} musi wskazywać istniejącą rzecz: od niej rzecz rodzaju ${rodzaj} bierze obszar`;
+    if (id && this._lezyPod(cechy[n.cecha], id)) return `rzecz nie może leżeć z rzeczą, która sama leży z nią (cecha ${n.cecha} zamyka koło)`;
+    return null;
   }
 
   // Czy idąc od rzeczy `od` w górę po regule lezy_z dojdzie się do rzeczy `szukana` (wtedy powstałoby koło).
@@ -1016,6 +1045,9 @@ export class Srodowisko {
       ? (id) => { for (const k of patrzacy) if (this.rzecz(id, { dla: k }) === null) return null; return this.rzecz(id); }
       : (id) => this.rzecz(id);
     widzi.obszar = (id) => patrzacy.every((k) => { const zle = this._niewidoczneDla(k); return !zle || !zle.includes(id ?? null); });
+    // Dawny stan rzeczy (wersja, stan sprzed gestu, stan w zapisanej chwili): widać go, gdy widać obszar, w którym rzecz
+    // wtedy leżała. Stan, który tego nie wie, widzi tylko ten, przed kim nic nie jest zamknięte.
+    widzi.dawna = (stan) => (stan.obszar_nieznany ? patrzacy.every((k) => { const zle = this._niewidoczneDla(k); return !zle || !zle.length; }) : widzi.obszar(stan.obszar));
     return widzi;
   }
 
@@ -1246,14 +1278,14 @@ export class Srodowisko {
       // Dawna wersja niesie obszar, w którym rzecz wtedy leżała. Wersja z obszaru, którego piszący nie widzi, nie
       // istnieje dla niego tak samo jak przy czytaniu (`dla().wersja`): cofnięcie nie może być drogą do tego, czego
       // czytanie nie pokazuje, ani odmową, która nazywa zamknięty obszar.
-      if (!cel || !widzi.obszar(cel.obszar)) return blad(404, `rzecz ${stara.id} nie ma wersji o znaczniku ${c.do}`);
+      if (!cel || !widzi.dawna(cel)) return blad(404, `rzecz ${stara.id} nie ma wersji o znaczniku ${c.do}`);
     } else {
       if (h.length < 2) return blad(409, 'ta rzecz ma tylko jedną wersję; nie ma do czego cofnąć (żeby ją schować, użyj co: odloz)');
       const poprzednia = h.filter((x) => x.akt < stara.wersja).pop();
       cel = poprzednia ? this.wersja(stara.id, poprzednia.akt) : null;
       if (!cel) return blad(409, 'nie ma wcześniejszej wersji tej rzeczy');
       // Że poprzednia wersja jest, mówi sama historia (numery aktów są słyszalne); jej treści i obszaru nie mówimy.
-      if (!widzi.obszar(cel.obszar)) return blad(409, 'poprzednia wersja tej rzeczy leży poza tym, do czego masz wstęp; wskaż wcześniejszą wersję znacznikiem do');
+      if (!widzi.dawna(cel)) return blad(409, 'poprzednia wersja tej rzeczy leży poza tym, do czego masz wstęp; wskaż wcześniejszą wersję znacznikiem do');
     }
     if (cel.akt === stara.wersja) return blad(409, 'to jest bieżąca wersja tej rzeczy; nie ma czego cofać');
     return this._zmien(kto, c.op, slad, { ...wspolne, co: 'cofnij', rodzaj: cel.rodzaj, obszar: cel.obszar, cechy: cel.cechy, odlozone: cel.odlozone, powod: cel.powod, zWersji: cel.akt });
@@ -1268,10 +1300,10 @@ export class Srodowisko {
   // w geście powstała, odkłada), wszystko albo nic, i samo jest gestem, więc da się je ponowić. Cofa się tylko to,
   // czego nikt po geście nie ruszył: cofnięcie nie nadpisuje cudzej zmiany.
   _aktyGestu(kto, gest) {
-    return this.q(`SELECT nr, glowa, z_zapisu, kiedy FROM akty WHERE kto = ? AND op >= ? AND op < ? AND co = 'przesun' AND glowa LIKE 'rzecz:%' ORDER BY nr`, kto, 'g:' + gest + ':', 'g:' + gest + ';');
+    return this.q(`SELECT nr, glowa, z_zapisu, kiedy, cialo FROM akty WHERE kto = ? AND op >= ? AND op < ? AND co = 'przesun' AND glowa LIKE 'rzecz:%' ORDER BY nr`, kto, 'g:' + gest + ':', 'g:' + gest + ';');
   }
   _ostatnieGesty(kto, odAktu) {
-    return this.q(`SELECT nr, op, glowa, kiedy FROM akty WHERE kto = ? AND op >= 'g:' AND op < 'g;' AND co = 'przesun' AND glowa LIKE 'rzecz:%' AND nr > ? ORDER BY nr DESC LIMIT 4000`, kto, odAktu);
+    return this.q(`SELECT nr, op, glowa, kiedy FROM akty WHERE kto = ? AND op >= 'g:' AND op < 'g;' AND co = 'przesun' AND glowa LIKE 'rzecz:%' AND nr > ? ORDER BY nr DESC LIMIT 1000`, kto, odAktu);
   }
   // Stan rzeczy przy akcie o numerze `akt`: ostatnia wersja ustawiona nie później niż on; null, gdy rzeczy jeszcze nie było.
   _stanNa(id, akt) {
@@ -1282,18 +1314,34 @@ export class Srodowisko {
   }
   _zeZapisu(zapis) {
     const z = this.q(`SELECT rodzaj, tresc FROM zapisy WHERE id = ?`, zapis)[0];
-    if (!z) return null;
+    return z ? this._zTresci(z.rodzaj, z.tresc) : null;
+  }
+  _zTresci(rodzaj, tresc) {
     let t = {};
-    try { t = JSON.parse(z.tresc) || {}; } catch { /* zostaje puste */ }
+    try { t = JSON.parse(tresc) || {}; } catch { /* zostaje puste */ }
     if (!t || typeof t !== 'object') t = {};
-    return { rodzaj: z.rodzaj, obszar: t.obszar ?? null, cechy: t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {}, odlozone: t.odlozone === true, powod: typeof t.powod === 'string' ? t.powod : null };
+    return { rodzaj, obszar: t.obszar ?? null, ...(obszarNieznany(t) ? { obszar_nieznany: true } : {}), cechy: t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {}, odlozone: t.odlozone === true, powod: typeof t.powod === 'string' ? t.powod : null };
+  }
+  // Stany wielu rzeczy przy akcie `akt`: jedno pytanie na paczkę stu rzeczy zamiast dwóch pytań na każdą.
+  _stanyNa(ids, akt) {
+    const m = new Map();
+    for (let i = 0; i < ids.length; i += 100) {
+      const paczka = ids.slice(i, i + 100);
+      const wiersze = this.q(`SELECT a.glowa, a.nr, z.rodzaj, z.tresc FROM akty a JOIN zapisy z ON z.id = a.zapis WHERE a.co = 'przesun' AND a.glowa IN (${paczka.map(() => '?').join(',')}) AND a.nr = (SELECT MAX(b.nr) FROM akty b WHERE b.glowa = a.glowa AND b.co = 'przesun' AND b.nr <= ?)`, ...paczka.map((id) => 'rzecz:' + id), akt);
+      for (const w of wiersze) m.set(w.glowa.slice(6), { rzecz: w.glowa.slice(6), akt: w.nr, ...this._zTresci(w.rodzaj, w.tresc) });
+    }
+    return m;
   }
 
   // Co gest ruszył: dla każdej rzeczy zapis sprzed gestu (null: powstała w nim) i akt, którym gest ją zostawił.
-  gestDla(kto, gest) {
+  // `przez`: gdy pyta okno narzędzia, liczą się tylko akty zrobione przez okno otwarte przez tego samego uczestnika.
+  // Wykonawcą gestu z okna jest gość, wspólny dla wszystkich, którzy je otwierają: bez tego każdy otwierający cofałby
+  // gesty pozostałych (niezależny atak, 18 XI 2026).
+  gestDla(kto, gest, przez = undefined) {
     if (typeof gest !== 'string' || !GEST.test(gest) || !poprawneImie(kto)) return [];
     const m = new Map();
     for (const a of this._aktyGestu(kto, gest)) {
+      if (typeof przez === 'string' && !(a.cialo === 'okno:' + przez || String(a.cialo || '').startsWith('okno:' + przez + ' '))) continue;
       const id = a.glowa.slice(6), x = m.get(id);
       if (!x) m.set(id, { rzecz: id, przed: a.z_zapisu ?? null, po: a.nr, kiedy: new Date(a.kiedy).toISOString() });
       else { x.po = a.nr; x.kiedy = new Date(a.kiedy).toISOString(); }
@@ -1305,7 +1353,8 @@ export class Srodowisko {
   gestyDla(kto, ile = 20) {
     if (!poprawneImie(kto)) return [];
     const m = new Map();
-    for (const a of this._ostatnieGesty(kto, Math.max(0, this.ostatniNr() - 20000))) {
+    // lista do guzika "cofnij": patrzy na ostatnie 5000 aktów Miejsca i najwyżej 1000 aktów gestów pytającego
+    for (const a of this._ostatnieGesty(kto, Math.max(0, this.ostatniNr() - 5000))) {
       const gest = String(a.op).split(':')[1];
       let g = m.get(gest);
       if (!g) { if (m.size >= Math.max(1, Math.min(100, ile | 0 || 20))) continue; g = { gest, rzeczy: new Set(), akt: a.nr, kiedy: new Date(a.kiedy).toISOString() }; m.set(gest, g); }
@@ -1324,10 +1373,16 @@ export class Srodowisko {
       const zle = this._niewidoczneDla(dla), wtedy = this._stanNa(widok, akt);
       if (!wtedy || (zle && zle.includes(wtedy.obszar ?? null))) return [];
     }
-    const wynik = [];
-    for (const rz of this.wszystkie({ rodzaj: 'miejsce', gdzie: { widok }, odlozone: 'razem', ...(dla === undefined ? {} : { dla }) })) {
-      const d = this._stanNa(rz.id, akt);
-      if (d && !d.odlozone) wynik.push({ rzecz: rz.id, akt: d.akt, cechy: d.cechy });
+    const polozenia = this.wszystkie({ rodzaj: 'miejsce', gdzie: { widok }, odlozone: 'razem', ...(dla === undefined ? {} : { dla }) });
+    // Ta sama granica co przy powrocie do układu: czytanie bez granicy kosztowało dwa pytania na każde położenie i mógł
+    // je wymusić każdy, kto zna adres widoku (niezależny atak, 18 XI 2026).
+    if (polozenia.length > NAJWIECEJ_W_GESCIE) return blad(413, `widok ma ${polozenia.length} położeń, a w jednej chwili pokazuje się najwyżej ${NAJWIECEJ_W_GESCIE}`);
+    const zle = dla === undefined ? null : this._niewidoczneDla(dla);
+    const widac = (d) => !zle || !zle.length || (!d.obszar_nieznany && !zle.includes(d.obszar ?? null));
+    const wynik = [], stany = this._stanyNa(polozenia.map((rz) => rz.id), akt);
+    for (const rz of polozenia) {
+      const d = stany.get(rz.id);
+      if (d && !d.odlozone && widac(d)) wynik.push({ rzecz: rz.id, akt: d.akt, cechy: d.cechy });
     }
     return wynik;
   }
@@ -1342,6 +1397,8 @@ export class Srodowisko {
       let { rodzaj, obszar, cechy, odlozone, powod } = c;
       const n = this._zNatury(rodzaj, cechy);
       if (n && !n.brak) obszar = n.obszar;
+      const wn = this._wadaNatury(rodzaj, cechy, c.rz.id, widzi);
+      if (wn) return blad(409, `rzecz ${c.rz.id} nie może wrócić do tamtego stanu: ${wn}`, { rzecz: c.rz.id });
       const spr = this._sprawdzTresc(rodzaj, cechy, obszar, c.rz, odlozone, widzi);
       if (!spr.ok) return blad(409, `rzecz ${c.rz.id} nie przechodzi dzisiejszego sprawdzenia w stanie, do którego miała wrócić: ${spr.blad}`, { rzecz: c.rz.id });
       for (const k of [kto, ...(przez ? [przez] : [])]) {
@@ -1369,7 +1426,7 @@ export class Srodowisko {
       if (!poprawneImie(c.czyj)) return blad(400, 'czyj: imię uczestnika, którego gest ma być cofnięty');
       czyj = c.czyj;
     }
-    const ruszone = this.gestDla(czyj, c.cofany);
+    const ruszone = this.gestDla(czyj, c.cofany, 'czyj' in c ? undefined : (przezZ(slad) || undefined));
     if (!ruszone.length) return blad(404, `nie ma gestu ${c.cofany} wśród czynności uczestnika ${czyj}`);
     if (ruszone.length > NAJWIECEJ_W_GESCIE) return blad(413, `gest ruszył ${ruszone.length} rzeczy, a jednym krokiem cofa się najwyżej ${NAJWIECEJ_W_GESCIE}`);
     const widzi = this._oczy(kto, przezZ(slad));
@@ -1379,7 +1436,7 @@ export class Srodowisko {
       if (!rz || rz.wersja !== x.po) { zmienione.push(x.rzecz); continue; }
       if (x.przed === null) { if (!rz.odlozone) cele.push({ rz, rodzaj: rz.rodzaj, obszar: rz.obszar, cechy: rz.cechy, odlozone: true, powod: 'cofnięty gest, w którym ta rzecz powstała' }); continue; }
       const d = this._zeZapisu(x.przed);
-      if (!d) { zmienione.push(x.rzecz); continue; }
+      if (!d || !widzi.dawna(d)) { zmienione.push(x.rzecz); continue; }
       cele.push({ rz, ...d });
     }
     if (zmienione.length) return blad(409, `${zmienione.length === 1 ? 'jedna rzecz z tego gestu zmieniła się' : 'część rzeczy z tego gestu zmieniła się'} po nim (albo nie jest już dla Ciebie dostępna); cofnięcie całego gestu nadpisałoby późniejszą zmianę, więc nie cofam niczego`, { zmienione });
@@ -1400,11 +1457,13 @@ export class Srodowisko {
     if (!Number.isInteger(akt) || akt < 0 || akt > this.ostatniNr()) return blad(422, 'zapisany układ wskazuje akt, którego w tym Miejscu nie ma');
     const polozenia = this.wszystkie({ rodzaj: 'miejsce', gdzie: { widok }, odlozone: 'razem' });
     if (polozenia.length > NAJWIECEJ_W_GESCIE) return blad(413, `widok ma ${polozenia.length} położeń, a jedną czynnością wraca najwyżej ${NAJWIECEJ_W_GESCIE}`);
-    const cele = [];
+    const cele = [], stany = this._stanyNa(polozenia.map((p) => p.id), akt);
     for (const p of polozenia) {
       const rz = widzi(p.id);
       if (!rz) continue;
-      const d = this._stanNa(rz.id, akt);
+      const d = stany.get(rz.id) || null;
+      // układ z chwili, w której położenia leżały poza tym, do czego piszący ma wstęp, nie jest drogą do tamtej przeszłości
+      if (d && !widzi.dawna(d)) return blad(409, 'zapisany układ sięga chwili, w której te położenia leżały poza tym, do czego masz wstęp; nie przywracam niczego');
       if (!d) { if (!rz.odlozone) cele.push({ rz, rodzaj: rz.rodzaj, obszar: rz.obszar, cechy: rz.cechy, odlozone: true, powod: 'nie było tego położenia w przywróconym układzie' }); continue; }
       if (d.rodzaj === rz.rodzaj && d.odlozone === !!rz.odlozone && JSON.stringify(d.cechy) === JSON.stringify(rz.cechy)) continue;
       cele.push({ rz, ...d });
@@ -1419,6 +1478,10 @@ export class Srodowisko {
     const n = this._zNatury(rodzaj, cechy);
     if (n && !n.brak) obszar = n.obszar;
     const zNatury = n ? n.cecha : null;
+    if (co === 'cofnij' || co === 'przywroc') {
+      const wn = this._wadaNatury(rodzaj, cechy, stara ? stara.id : null, this._oczy(kto, przezZ(slad)));
+      if (wn) return blad(409, 'dawna wersja nie przechodzi dzisiejszego sprawdzenia: ' + wn);
+    }
     const spr = this._sprawdzTresc(rodzaj, cechy, obszar, stara, odlozone, this._oczy(kto, przezZ(slad)));
     if (!spr.ok) return co === 'cofnij' ? blad(409, 'dawna wersja nie przechodzi dzisiejszego sprawdzenia: ' + spr.blad, { bledy: spr.bledy }) : spr;
     let ocena = this.ocen(kto, { stara, rodzaj, obszar, cechy });

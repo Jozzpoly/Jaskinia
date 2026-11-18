@@ -105,7 +105,8 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     if (sciezka === '/api/srodowisko/widok-w-chwili') {
       const widok = p.get('widok') || '', akt = liczba(p.get('akt'));
       if (!/^[0-9a-z]{26}$/.test(widok) || akt === null) return json({ ok: false, status: 400, blad: 'widok: identyfikator widoku (26 znaków); akt: numer aktu, przy którym pokazać jego położenia' });
-      return json({ ok: true, widok, akt, polozenia: w.widokNa(widok, akt) });
+      const polozenia = w.widokNa(widok, akt);
+      return json(Array.isArray(polozenia) ? { ok: true, widok, akt, polozenia } : polozenia);
     }
     // Ustawienia policzone dla zasięgu, oczami czytającego: jedno żądanie daje twarzy wszystkie wartości pokręteł.
     if (sciezka === '/api/srodowisko/ustawienia') {

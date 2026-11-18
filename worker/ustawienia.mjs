@@ -275,7 +275,10 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
   const lancuch = zrodlo ? zrodlo.lancuch : lancuchZasiegow(w, dla, nakl);
   if (lancuch === null) return { ok: false, status: 404, blad: `nie ma rzeczy ${dla}` };
   const dekl = zrodlo ? zrodlo.dekl : w.pamietaj('ustawienia:deklaracje', () => { const m = new Map(); for (const d of w.wszystkie({ rodzaj: 'pokretlo/1' })) if (typeof d.cechy.nazwa === 'string' && !m.has(d.cechy.nazwa)) m.set(d.cechy.nazwa, d); return m; });
-  const wart = zrodlo ? zrodlo.wart : w.pamietaj('ustawienia:wartosci', () => { const m = new Map(); for (const x of w.wszystkie({ rodzaj: 'wartosc/1' })) m.set(x.cechy.pokretlo + '|' + x.cechy.zasieg, x); return m; });
+  // Wartości tylko z zasięgów na drodze: każdy zasięg wie, które wartości go wskazują (spis odniesień). Czytanie wszystkich
+  // wartości Miejsca rosło z tym, co ktokolwiek ustawił w cudzych widokach i profilach, a ich liczba nie ma granicy
+  // (niezależny atak, 18 XI 2026).
+  const wart = zrodlo ? zrodlo.wart : new Map(lancuch.flatMap((z) => w.pamietaj('ustawienia:wartosci:' + z.id, () => w._wartosciZasiegu(z.id).map((id) => w.rzecz(id)).filter((x) => x && x.rodzaj === 'wartosc/1' && !x.odlozone)).map((x) => [x.cechy.pokretlo + '|' + z.id, x])));
   const zestawyW = zrodlo && zrodlo.zestawy ? zrodlo.zestawy : (dekl.has(POKRETLO_ZESTAWOW) ? zestawyWZasiegach(w, lancuch, wart) : new Map(lancuch.map((z) => [z.id, []])));
   const pominiete = [];
   const maRzecz = (id) => w.rzecz(id);
@@ -409,7 +412,9 @@ export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], na
     const nastepne = [];
     for (const n of kolejka) {
       if (wziete.has(n) && n !== POKRETLO_ZESTAWOW) continue;
-      if (wziete.size >= NAJWIECEJ_NAZW * 2) break;
+      // dociąganie celów odwołań ma granicę zależną od tego, o ile nazw pyta twarz, a nie od tego, jak długie łańcuchy
+      // ktoś ułożył w zasięgu, w którym stroi sam; odwołanie, do którego celu nie dociągnęliśmy, jest pomijane jak zepsute
+      if (wziete.size >= Math.min(NAJWIECEJ_NAZW * 2, lista.length * 2 + 8)) break;
       wziete.add(n);
       await wez(n);
       const d = dekl.get(n);

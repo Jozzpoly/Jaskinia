@@ -157,3 +157,102 @@ test('GE8. przez drzwi: moje ostatnie gesty, widok w chwili, a gest zrobiony w o
   assert.equal(s.gestDla('gosc-' + gosc.id, 'gest-z-okna-1').length, 1);
   assert.equal(s.gestDla('jozz', 'gest-z-okna-1').length, 0, 'gest z okna nie jest gestem tego, kto okno otworzył');
 });
+
+// --- po drugim niezależnym ataku (18 XI 2026, pomocnik na innym modelu; raport: wspólne notatki linii) -----------------
+
+test('GE9. przeszłość z zamkniętego obszaru nie wychodzi razem z widokiem: dawnego położenia nie da się przeczytać, cofnąć ani przywrócić układem', async () => {
+  const { s, ok } = await swiat();
+  const T = ok(await s.ruch('jozz', { op: 'ge9-tajne-0001', co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Tajne', widzi: 'wlasciciel', ile_wolno: 'prowadzic' } })).rzecz;
+  const jawne = ok(await s.ruch('jozz', { op: 'ge9-jawne-0001', co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Jawne pole', ile_wolno: 'prowadzic' } })).rzecz;
+  const widok = ok(await s.ruch('jozz', { op: 'ge9-widok-0001', co: 'poloz', rodzaj: 'widok/1', obszar: T, cechy: { nazwa: 'Tajny widok' } })).rzecz;
+  const projekt = ok(await s.ruch('jozz', { op: 'ge9-projekt-01', co: 'poloz', rodzaj: 'projekt/1', obszar: T, cechy: { nazwa: 'Tajny projekt' } })).rzecz;
+  const m1 = ok(await s.ruch('jozz', { op: 'ge9-miejsce-01', co: 'poloz', rodzaj: 'miejsce/1', cechy: { widok, rzecz: projekt, x: 111, y: 222 } }));
+  ok(await s.ruch('jozz', { op: 'ge9-miejsce-02', co: 'poloz', rzecz: m1.rzecz, wersja: m1.wersja, rodzaj: 'miejsce/1', cechy: { widok, rzecz: projekt, x: 5, y: 5 } }));
+  const aktTajny = m1.wersja;
+  assert.equal(s.wersja(m1.rzecz, aktTajny).obszar, T, 'zapis położenia mówi, gdzie leżało, gdy powstał');
+  // właściciel publikuje widok i projekt takimi, jakie są dziś
+  for (const [op, id] of [['ge9-przenies-w1', widok], ['ge9-przenies-p1', projekt]]) {
+    const rz = s.rzecz(id);
+    ok(await s.ruch('jozz', { op, co: 'poloz', rzecz: id, wersja: rz.wersja, rodzaj: rz.rodzaj, obszar: jawne, cechy: rz.cechy }));
+  }
+  const a = s.dla('agent-a');
+  assert.deepEqual([a.rzecz(m1.rzecz).cechy.x, a.rzecz(m1.rzecz).obszar], [5, jawne], 'dzisiejsze położenie jest jawne');
+  assert.equal(a.wersja(m1.rzecz, aktTajny), null, 'wersja z czasu, gdy widok był zamknięty, nie istnieje dla agenta');
+  assert.equal(s.dla('jozz').wersja(m1.rzecz, aktTajny).cechy.x, 111, 'właściciel dalej ją widzi');
+  const doWersji = await s.ruch('agent-a', { op: 'ge9-cofnij-do-1', co: 'cofnij', rzecz: m1.rzecz, wersja: 'dowolna', do: aktTajny });
+  assert.equal(doWersji.status, 404, JSON.stringify(doWersji));
+  const doPoprzedniej = await s.ruch('agent-a', { op: 'ge9-cofnij-pop', co: 'cofnij', rzecz: m1.rzecz, wersja: 'dowolna' });
+  assert.equal(doPoprzedniej.status, 409, JSON.stringify(doPoprzedniej));
+  // własny "zapisany układ" wskazujący akt z czasu tajności nie jest drogą obok
+  const ch = ok(await s.ruch('agent-a', { op: 'ge9-chwila-001', co: 'poloz', rodzaj: 'chwila/1', cechy: { nazwa: 'Podstęp', widok, akt: aktTajny } }));
+  const uklad = await s.ruch('agent-a', { op: 'ge9-przywroc-1', gest: 'ge9-gest-przywroc', co: 'przywroc-uklad', chwila: ch.rzecz });
+  assert.equal(uklad.ok, false, JSON.stringify(uklad));
+  assert.equal(s.rzecz(m1.rzecz).cechy.x, 5, 'położenie się nie zmieniło');
+  assert.deepEqual(s.widokNa(widok, aktTajny, { dla: 'agent-a' }), []);
+  // właściciel dalej może wrócić do swojej przeszłości
+  ok(await s.ruch('jozz', { op: 'ge9-wlasciciel-1', co: 'cofnij', rzecz: m1.rzecz, wersja: 'dowolna', do: aktTajny }));
+  assert.equal(s.rzecz(m1.rzecz).cechy.x, 111);
+  // zapis rzeczy leżącej z natury sprzed tej poprawki nie mówi, gdzie rzecz leżała: widzi go tylko ten, przed kim nic nie jest zamknięte
+  const stary = s._zTresci('miejsce/1', JSON.stringify({ obszar: null, obszar_z: 'widok', cechy: {} }));
+  assert.equal(stary.obszar_nieznany, true);
+  assert.equal(s._oczy('agent-a').dawna(stary), false);
+  assert.equal(s._oczy('jozz').dawna(stary), true);
+});
+
+test('GE10. powrót do dawnego stanu przechodzi te same pytania co zwykły zapis: ani cofnięcie gestu, ani cofnięcie wersji nie zamyka koła rzeczy leżących jedna z drugą', async () => {
+  const { s, ok, pole } = await swiat();
+  ok(await s.ruch('jozz', { op: 'ge10-ksztalt-1', co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'wezel/1', opis: 'Węzeł: leży tam, gdzie jego dom.', lezy_z: 'dom', cechy: { nazwa: { typ: 'tekst', wymagana: true }, dom: { typ: 'rzecz', wymagana: true } } } }));
+  const x0 = ok(await s.ruch('jozz', { op: 'ge10-kotwica-1', co: 'poloz', rodzaj: 'widok/1', obszar: pole, cechy: { nazwa: 'Kotwica' } })).rzecz;
+  const B = ok(await s.ruch('agent-a', { op: 'ge10-wezel-b01', co: 'poloz', rodzaj: 'wezel/1', cechy: { nazwa: 'B', dom: x0 } }));
+  const A = ok(await s.ruch('agent-a', { op: 'ge10-wezel-a01', co: 'poloz', rodzaj: 'wezel/1', cechy: { nazwa: 'A', dom: B.rzecz } }));
+  // w geście A przechodzi pod kotwicę, a potem B pod A: dziś to nie jest koło
+  let a = s.rzecz(A.rzecz);
+  ok(await s.ruch('agent-a', { op: 'ge10-a-do-x0-1', gest: 'ge10-gest-1', co: 'poloz', rzecz: a.id, wersja: a.wersja, rodzaj: 'wezel/1', cechy: { nazwa: 'A', dom: x0 } }));
+  const b = s.rzecz(B.rzecz);
+  ok(await s.ruch('agent-a', { op: 'ge10-b-do-a-01', co: 'poloz', rzecz: b.id, wersja: b.wersja, rodzaj: 'wezel/1', cechy: { nazwa: 'B', dom: A.rzecz } }));
+  // cofnięcie gestu wróciłoby A pod B, czyli zamknęło koło
+  const gest = await s.ruch('agent-a', { op: 'ge10-cofnij-g1', co: 'cofnij-gest', cofany: 'ge10-gest-1' });
+  assert.equal(gest.status, 409, JSON.stringify(gest));
+  assert.match(gest.blad, /zamyka koło/);
+  a = s.rzecz(A.rzecz);
+  const wersja = await s.ruch('agent-a', { op: 'ge10-cofnij-w1', co: 'cofnij', rzecz: a.id, wersja: a.wersja });
+  assert.equal(wersja.status, 409, JSON.stringify(wersja));
+  assert.match(wersja.blad, /zamyka koło/);
+  assert.deepEqual([s.rzecz(A.rzecz).cechy.dom, s.rzecz(B.rzecz).cechy.dom], [x0, A.rzecz]);
+});
+
+test('GE11. widok w chwili ma granicę i nie pyta bazy o każde położenie osobno', async () => {
+  const { s, ok, widok, pole } = await swiat();
+  for (let i = 0; i < 40; i++) {
+    const p = ok(await s.ruch('jozz', { op: 'ge11-projekt-' + i, co: 'poloz', rodzaj: 'projekt/1', obszar: pole, cechy: { nazwa: 'Dodatkowy ' + i } })).rzecz;
+    ok(await s.ruch('jozz', { op: 'ge11-miejsce-' + i, co: 'poloz', rodzaj: 'miejsce/1', cechy: { widok, rzecz: p, x: i, y: i } }));
+  }
+  let pytan = 0;
+  const q0 = s.q;
+  s.q = function (...a) { pytan++; return q0.apply(this, a); };
+  const polozenia = s.widokNa(widok, s.ostatniNr(), { dla: 'agent-a' });
+  delete s.q;
+  assert.equal(polozenia.length, 43);
+  assert.ok(pytan < 43, `pytań o 43 położenia: ${pytan} (przedtem dwa na każde)`);
+  const w0 = s.wszystkie;
+  s.wszystkie = function (o) { return o && o.rodzaj === 'miejsce' ? Array.from({ length: 1001 }, () => ({ id: 'zzzzzzzzzzzzzzzzzzzzzzzzzz' })) : w0.call(this, o); };
+  const zaDuzo = s.widokNa(widok, s.ostatniNr(), { dla: 'agent-a' });
+  delete s.wszystkie;
+  assert.equal(zaDuzo.status, 413, JSON.stringify(zaDuzo));
+  assert.match(zaDuzo.blad, /najwyżej 1000/);
+});
+
+test('GE12. gest zrobiony w oknie cofa przez to okno tylko ten, kto je wtedy otworzył; cudzy gest cofa właściciel', async () => {
+  const { s, ok, miejsca } = await swiat();
+  const gosc = s.spis({ rodzaj: 'gosc/1', limit: 20 }).find((g) => g.cechy.umowa === 'okno/3');
+  const m = s.rzecz(miejsca[0]);
+  ok(await s.ruch('agent-a', { op: 'ge12-z-okna-01', gest: 'ge12-gest-okna', co: 'poloz', rzecz: m.id, wersja: m.wersja, rodzaj: 'miejsce/1', cechy: { ...m.cechy, y: 77 } }, { gosc: gosc.id }));
+  const obcy = await s.ruch('agent-b', { op: 'ge12-obcy-cofa', co: 'cofnij-gest', cofany: 'ge12-gest-okna' }, { gosc: gosc.id });
+  assert.equal(obcy.status, 404, JSON.stringify(obcy));
+  assert.equal(s.rzecz(m.id).cechy.y, 77, 'drugi otwierający tego samego okna nie cofa cudzego gestu');
+  const swoj = ok(await s.ruch('agent-a', { op: 'ge12-swoj-cofa', co: 'cofnij-gest', cofany: 'ge12-gest-okna', gest: 'ge12-gest-cofn' }, { gosc: gosc.id }));
+  assert.equal(swoj.skutek, 'cofniety-gest');
+  assert.equal(s.rzecz(m.id).cechy.y, 0);
+  ok(await s.ruch('jozz', { op: 'ge12-wlasc-cofa', co: 'cofnij-gest', cofany: 'ge12-gest-cofn', czyj: 'gosc-' + gosc.id }));
+  assert.equal(s.rzecz(m.id).cechy.y, 77, 'właściciel cofa cudzy gest, także zrobiony w oknie');
+});
