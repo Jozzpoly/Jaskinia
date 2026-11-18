@@ -305,6 +305,9 @@ const SPIS_SCHEMAT = [
   `CREATE TABLE IF NOT EXISTS odniesienia (od TEXT NOT NULL, cecha TEXT NOT NULL, cel TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS odniesienia_cel ON odniesienia (cel)`,
   `CREATE INDEX IF NOT EXISTS odniesienia_od ON odniesienia (od)`,
+  // Pytanie "które wartości pokręteł mają ten zasięg" zadaje każde liczenie ustawień: bez cechy w indeksie czytałoby
+  // wszystko, co na rzecz wskazuje.
+  `CREATE INDEX IF NOT EXISTS odniesienia_cel_cecha ON odniesienia (cel, cecha)`,
   // Przekrój spisu (ile rzeczy którego rodzaju leży w którym obszarze, osobno odłożone) utrwalony w małej tabeli.
   // Obiekt Miejsca zasypia po kilku sekundach bez ruchu i traci pamięć: bez tej tabeli pierwsze czytanie opisu po
   // każdym obudzeniu liczyło cały spis od nowa (zmierzone 17 XI: 1675 wierszy przy 647 rzeczach).
@@ -759,6 +762,12 @@ export class Srodowisko {
       if (((byl('ksztalt/1') && stara.cechy.lezy_z) || null) !== ((rodzaj === 'ksztalt/1' && cechy.lezy_z) || null)) return 'to, od której rzeczy rodzaj bierze obszar, ustala tylko właściciel';
     }
     return null;
+  }
+
+  // Identyfikatory czynnych wartości pokręteł, których zasięgiem jest rzecz `id`. Czy czytający je widzi, pyta ten, kto
+  // woła (liczenie ustawień bierze każdą przez oczy czytającego).
+  _wartosciZasiegu(id) {
+    return this.q(`SELECT o.od FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ? AND o.cecha = 'zasieg' AND r.rodzaj = 'wartosc/1' AND r.odlozone = 0`, id).map((x) => x.od);
   }
 
   // Czynne wartości, które włączają zestaw `id` w swoim zasięgu (odniesienie zapisuje _odniesienia): ich rodzaj i obszar.
