@@ -475,7 +475,7 @@ export class Srodowisko {
     return zle.length ? zle : null;
   }
 
-  _warunek({ rodzaj = null, obszar, gdzie = null, szukaj = null, odlozone = 'nie', po = null, dla = undefined } = {}) {
+  _warunek({ rodzaj = null, rodzaje = null, obszar, gdzie = null, szukaj = null, odlozone = 'nie', po = null, dla = undefined } = {}) {
     const war = [], par = [];
     // Czytający podany wprost: rzeczy z obszarów, których nie widzi, nie trafiają nawet do liczenia.
     if (dla !== undefined) {
@@ -501,11 +501,21 @@ export class Srodowisko {
     // `po`: tylko rzeczy zmienione po akcie o tym numerze (z `odlozone: 'razem'` także te, które po nim odłożono)
     if (Number.isSafeInteger(po) && po >= 0) { war.push('r.akt > ?'); par.push(po); }
     if (rodzaj) {
-      // Sama nazwa (bez pokolenia) znaczy wszystkie pokolenia. Porównanie po początku napisu, nie wzorcem LIKE,
-      // bo podkreślnik w nazwie rodzaju byłby w nim dżokerem. Zły zapis rodzaju nie pasuje do niczego.
+      // Sama nazwa (bez pokolenia) znaczy wszystkie pokolenia. Porównanie zakresem (od "nazwa/" do "nazwa0", bo zero
+      // stoi zaraz za ukośnikiem), nie wzorcem LIKE, w którym podkreślnik byłby dżokerem, i nie funkcją na kolumnie,
+      // która czytałaby cały spis zamiast indeksu po rodzaju. Zły zapis rodzaju nie pasuje do niczego.
       if (typeof rodzaj !== 'string' || !RODZAJ_LUB_NAZWA.test(rodzaj)) war.push('0');
       else if (rodzaj.includes('/')) { war.push('r.rodzaj = ?'); par.push(rodzaj); }
-      else { war.push('substr(r.rodzaj, 1, ?) = ?'); par.push(rodzaj.length + 1, rodzaj + '/'); }
+      else { war.push('(r.rodzaj >= ? AND r.rodzaj < ?)'); par.push(rodzaj + '/', rodzaj + '0'); }
+    }
+    // Wycinek: kilka rodzajów naraz (najwyżej 24). Twarz czyta tylko to, czym rysuje, zamiast całego Miejsca.
+    if (rodzaje !== null && rodzaje !== undefined) {
+      const lista = Array.isArray(rodzaje) ? [...new Set(rodzaje)].filter((x) => typeof x === 'string' && RODZAJ_LUB_NAZWA.test(x)).slice(0, 24) : [];
+      if (!lista.length) war.push('0');
+      else {
+        war.push('(' + lista.map((x) => (x.includes('/') ? 'r.rodzaj = ?' : '(r.rodzaj >= ? AND r.rodzaj < ?)')).join(' OR ') + ')');
+        for (const x of lista) { if (x.includes('/')) par.push(x); else par.push(x + '/', x + '0'); }
+      }
     }
     if (obszar !== undefined) { if (obszar === null || obszar === '') war.push('r.obszar IS NULL'); else { war.push('r.obszar = ?'); par.push(String(obszar)); } }
     if (odlozone === 'tak') war.push('r.odlozone = 1'); else if (odlozone !== 'razem') war.push('r.odlozone = 0');
@@ -545,11 +555,11 @@ export class Srodowisko {
   ile(filtr = {}) {
     // Proste pytania (rodzaj z pokoleniem, obszar, odłożone albo nie) mają odpowiedź w pamiętanym przekroju spisu:
     // opis pyta o takie liczby kilkanaście razy, a każde osobne liczenie przeglądało cały spis.
-    const { rodzaj = null, obszar, gdzie: cechy = null, szukaj = null, odlozone = 'nie', po = null, dla = undefined } = filtr;
+    const { rodzaj = null, rodzaje = null, obszar, gdzie: cechy = null, szukaj = null, odlozone = 'nie', po = null, dla = undefined } = filtr;
     // Pamiętany przekrój spisu nie zna widoczności (liczy wszystko), więc pytanie "ile widzi TEN czytający" idzie
     // zwykłą drogą. Inaczej liczba zdradzałaby istnienie rzeczy, których ten ktoś nie ma prawa zobaczyć.
     const prostyRodzaj = rodzaj === null || (typeof rodzaj === 'string' && rodzaj.includes('/') && RODZAJ_LUB_NAZWA.test(rodzaj));
-    if (dla === undefined && !cechy && !szukaj && po === null && prostyRodzaj && ['nie', 'tak', 'razem'].includes(odlozone)) {
+    if (dla === undefined && !cechy && !szukaj && po === null && rodzaje === null && prostyRodzaj && ['nie', 'tak', 'razem'].includes(odlozone)) {
       let n = 0;
       for (const w of this.przekroj()) {
         if (rodzaj !== null && w.rodzaj !== rodzaj) continue;

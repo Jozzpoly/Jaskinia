@@ -156,3 +156,27 @@ test('PL5. krój z pliku: wartość kroju wskazuje plik razem z odciskiem; plik 
   assert.notEqual(nowy.rzecz, p.rzecz);
   assert.deepEqual(policzUstawienia(s.dla('agent-a')).wartosci['wyglad.kroj.imiona'].wartosc.plik, { rzecz: p.rzecz, odcisk });
 });
+
+test('PL6. wejście po wycinku: spis oddaje kilka rodzajów naraz, po samej nazwie albo z pokoleniem, a liczba zgadza się z tym, co widać', async () => {
+  const { s, ok, pytanie } = await swiat();
+  const T = ok(await s.ruch('jozz', { op: 'pl6-tajne-001', co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Tajne', widzi: 'wlasciciel', ile_wolno: 'prowadzic' } })).rzecz;
+  ok(await s.ruch('jozz', { op: 'pl6-projekt-1', co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Jawny projekt' } }));
+  ok(await s.ruch('jozz', { op: 'pl6-projekt-2', co: 'poloz', rodzaj: 'projekt/1', obszar: T, cechy: { nazwa: 'Tajny projekt' } }));
+  const wszystko = await (await pytanie('/api/srodowisko/spis')).json();
+  const wycinek = await (await pytanie('/api/srodowisko/spis?rodzaje=projekt,widok/1,pokretlo')).json();
+  assert.ok(wycinek.rzeczy.length > 0 && wycinek.razem < wszystko.razem, `wycinek ${wycinek.razem} wobec ${wszystko.razem}`);
+  assert.equal(wycinek.razem, wycinek.rzeczy.length);
+  assert.deepEqual([...new Set(wycinek.rzeczy.map((r) => r.rodzaj))].sort(), ['pokretlo/1', 'projekt/1', 'widok/1'].filter((r) => wycinek.rzeczy.some((x) => x.rodzaj === r)).sort());
+  assert.ok(wycinek.rzeczy.some((r) => r.cechy.nazwa === 'Jawny projekt') && !wycinek.rzeczy.some((r) => r.cechy.nazwa === 'Tajny projekt'), 'wycinek idzie oczami czytającego');
+  assert.equal(wycinek.rzeczy.filter((r) => r.rodzaj === 'projekt/1').length, s.spis({ rodzaj: 'projekt', dla: 'agent-a' }).length, 'wybór po samej nazwie dalej znaczy wszystkie pokolenia');
+  assert.equal(s.spis({ rodzaj: 'projekt' }).length, 2);
+  assert.equal(s.spis({ rodzaj: 'proj' }).length, 0, 'początek nazwy to nie nazwa');
+  assert.equal(s.ile({ rodzaje: ['projekt'] }), 2);
+  assert.equal((await (await pytanie('/api/srodowisko/spis?rodzaje=ZLE%20RODZAJE')).json()).razem, 0);
+  // zmiany po akcie też po wycinku
+  const akt = s.ostatniNr();
+  ok(await s.ruch('jozz', { op: 'pl6-projekt-3', co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Późniejszy' } }));
+  ok(await s.ruch('jozz', { op: 'pl6-widok-0001', co: 'poloz', rodzaj: 'widok/1', cechy: { nazwa: 'Późniejszy widok' } }));
+  const roznica = await (await pytanie('/api/srodowisko/spis?odlozone=razem&po=' + akt + '&rodzaje=projekt')).json();
+  assert.deepEqual(roznica.rzeczy.map((r) => r.cechy.nazwa), ['Późniejszy']);
+});

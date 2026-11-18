@@ -46,6 +46,7 @@ function filtrZAdresu(s, p) {
     else gdzie[n] = v;
   }
   if (Object.keys(gdzie).length) f.gdzie = gdzie;
+  if (p.has('rodzaje')) f.rodzaje = p.get('rodzaje').split(',').filter(Boolean).slice(0, 24);
   if (p.get('szukaj')) f.szukaj = p.get('szukaj').slice(0, 200);
   if (['tak', 'razem'].includes(p.get('odlozone'))) f.odlozone = p.get('odlozone');
   // po=<akt>: tylko to, co zmieniło się po tym akcie; tak otwarta strona dogania Miejsce bez czytania całego spisu
