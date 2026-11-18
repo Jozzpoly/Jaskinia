@@ -103,7 +103,13 @@ test('W7. nowa trasa czytająca nie ominie okularów po cichu', async () => {
   assert.ok(od > 0 && do_ > od, 'bloki GET i POST stoją tam, gdzie je ten sprawdzian szuka');
   const blok = zrodlo.slice(od, do_);
   const bezKomentarzy = blok.replace(/\/\/[^\n]*/g, '');
-  const golo = [...bezKomentarzy.matchAll(/(?<![A-Za-z0-9_.])s\.[a-zA-Z_]+/g)].map((m) => m[0]);
+  // Wzorzec: "s." nie będące częścią dłuższej nazwy ani dostępem do pola (x.s.y). Do 18 XI wykluczał każde "s." po
+  // kropce, więc nie widział rozwinięcia [...s.ksztalty()], i właśnie tak jedna trasa (lista rodzajów) czytała surowe
+  // środowisko obok okularów (Fable, przebieg pod żywym adresem). Strażnik, który łapie jeden kształt zapisu, jest dziurą.
+  const WZORZEC = /(?<![A-Za-z0-9_])(?<![A-Za-z0-9_)\]]\.)s\.[a-zA-Z_]+/g;
+  const znajdz = (tekst) => [...tekst.matchAll(WZORZEC)].map((m) => m[0]);
+  assert.deepEqual(znajdz('json({ k: [...s.ksztalty().values()] }); f(s.spis()); x = s.ile(); opis.s.pole; this.s.q(); w.rzecz(id); opcje.kto'), ['s.ksztalty', 's.spis', 's.ile'], 'wzorzec widzi rozwinięcie i zwykłe wołanie, a nie widzi pola o nazwie s');
+  const golo = znajdz(bezKomentarzy);
   assert.deepEqual(golo, [], `trasa czytająca sięga po surowe środowisko zamiast po widok czytającego: ${golo.join(', ')}. Użyj w.<...> albo napisz tutaj, dlaczego ta jedna ma widzieć wszystko.`);
 });
 
@@ -271,7 +277,7 @@ test('W16. widok czytelnika nie przepuszcza niczego po cichu: surowy SQL rzuca, 
   assert.throws(() => w.q('SELECT 1'), /nie podaje surowego SQL/);
   assert.equal(s.q('SELECT 1 AS x')[0].x, 1, 'na samym środowisku surowe zapytanie dalej działa');
 
-  const owiniete = new Set(['spis', 'wszystkie', 'ile', 'rzecz', 'rzeczyWiele', 'wersja', 'wskazujaNa', 'pamietaj', 'czeka', 'liczby', 'przekroj', 'q', 'ksztalty', 'ustawienie']);
+  const owiniete = new Set(['spis', 'wszystkie', 'ile', 'rzecz', 'rzeczyWiele', 'wersja', 'wskazujaNa', 'pamietaj', 'czeka', 'liczby', 'przekroj', 'q', 'ksztalty', 'ustawienie', 'widokNa']);
   const swiadomie = {
     historia: 'same numery aktow i autorzy, bez tresci; tresc podaje wersja(), a ta jest owinieta',
     aktyRzeczy: 'wiersze dziennika; kazdy i tak sprawdzany oczami czytelnika w opis.mjs (zmiany)',
@@ -280,6 +286,7 @@ test('W16. widok czytelnika nie przepuszcza niczego po cichu: surowy SQL rzuca, 
     ksztaltDla: 'ksztalt JEDNEGO rodzaju: nazwa i uklad rzeczy, ktora czytajacy juz widzi; lista rodzajow jest owinieta',
     rola: 'prawa czytajacego, policzone o NIM; sama widocznosc z niej wychodzi, wiec nie moze od niej zalezec',
     wyrownajZNatury: 'ruch srodowiska (naprawa polozen), nie czytanie dla kogos',
+    czytelnikOkna: 'nie oddaje tresci: liczy, czyimi oczami czyta narzedzie w oknie (slabszymi z dwoch); goscia pyta oczami otwierajacego (rzecz z dla)',
   };
   // Pierwsza wersja tego straznika pytala tylko o SUROWY SQL w ciele metody - i dlatego przepuscila dwie metody,
   // ktore czytaja baze PRZEZ inna metode: `ksztalty` (lista rodzajow: ksztalt z zamknietego obszaru wychodzil

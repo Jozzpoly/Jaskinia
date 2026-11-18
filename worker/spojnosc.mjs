@@ -39,6 +39,7 @@ export function sprawdzSpojnosc(s, { ile = DOMYSLNIE_ILE, pomin = 0, rodzaj = nu
   const maZapis = s._maZapis;
   const niezgodne = [];
   const rodziny = { lezy_z: 0, ksztalt: 0 };
+  const pamiecNatury = new Map(); // obszar z natury liczy się łańcuchem; pamięć jest wspólna dla całego przebiegu
   let sprawdzone = 0, bezKsztaltu = 0, odlozonych = 0, urwane = false;
 
   for (let p = odKtorej; !urwane; p += KAWALEK) {
@@ -60,9 +61,14 @@ export function sprawdzSpojnosc(s, { ile = DOMYSLNIE_ILE, pomin = 0, rodzaj = nu
         if (!dom) {
           rodziny.lezy_z++;
           niezgodne.push(zgloszenie(rz, 'lezy_z', `cecha ${nazwa} nie wskazuje istniejącej rzeczy, a od niej rzecz tego rodzaju bierze obszar`));
-        } else if ((dom.obszar ?? null) !== (rz.obszar ?? null)) {
-          rodziny.lezy_z++;
-          niezgodne.push(zgloszenie(rz, 'lezy_z', `leży w obszarze ${rz.obszar ?? 'głównym'}, a rzecz z cechy ${nazwa} (${dom.id}) leży w ${dom.obszar ?? 'głównym'}; kształt mówi, że mają leżeć razem`));
+        } else {
+          // rzecz wskazująca obszar leży W NIM (obszar główny: to, co w nim leży, ma obszar pusty); każda inna leży obok
+          // po całym łańcuchu, tak samo jak wyrównanie: inaczej łańcuch skrzywiony w całości pokazałby tylko jedno ogniwo
+          const ma = s._obszarZNatury(rz, pamiecNatury);
+          if (ma !== (rz.obszar ?? null)) {
+            rodziny.lezy_z++;
+            niezgodne.push(zgloszenie(rz, 'lezy_z', `leży w obszarze ${rz.obszar ?? 'głównym'}, a z cechy ${nazwa} (${dom.id}) wynika obszar ${ma ?? 'główny'}; kształt mówi, że rzecz leży tam, gdzie rzecz wskazana (a gdy wskazany jest obszar: w nim)`));
+          }
         }
       }
 

@@ -726,7 +726,7 @@ test('8c. WĄTPLIWE kod gościa: rzecz rodzaju kod/1 położona jako rzecz (z JS
 test('9a. opis (kontrola, droga bez zmiany rodzaju): "Niczego nie da się tu usunąć ... historia zostaje" i "Nikomu poza właścicielem nie wolno zmieniać kształtów rdzenia"', async () => {
   const { s, nowe } = await swiat();
   const t = coTuJest(s, { origin: 'https://x.test', kto: 'agent-a' });
-  assert.match(t, /Tylko właściciel zmienia ze skutkiem: ustawienia obszarów, uczestników, kształty rodzajów ksztalt\/1, obszar\/1, uczestnik\/1 i propozycja\/1/);
+  assert.match(t, /Tylko właściciel zmienia ze skutkiem: ustawienia obszarów, uczestników, kształty czterech rodzajów rdzenia \(te, które opisują ksztalt\/1, obszar\/1, uczestnik\/1 i propozycja\/1\)/);
   // sprawdzenie zdania: agent z kluczem próbuje wszystkich czterech dróg, jakie opis wymienia
   // zwykli agenci A i B, bez właściciela, próbują zmienić kształt uczestnik/1 (przez propozycję przyjętą w Nowe)
   const k = s.ksztalty().get('uczestnik/1');

@@ -17,13 +17,16 @@ export const maTozsamosc = (request) => request.headers.has('authorization') || 
 // podszywałby się pod nie w dzienniku (znalezisko niezależnego ataku, 17 XI 2026). `obserwator` to automat, który
 // przynosi fakty z GitHuba: chodzi zwykłym ruchem, więc jedyną ochroną jest to, że żaden klucz nie może nosić tego imienia.
 export const IMIONA_ZASTRZEZONE = ['srodowisko', 'obserwator'];
+// Imiona zaczynające się od "gosc-" należą do gości w oknach: pod takim imieniem zapisuje się ruch narzędzia
+// (gosc-<identyfikator rzeczy gościa>). Żaden klucz nie może go nosić, bo podszywałby się pod narzędzie w dzienniku.
+export const PRZEDROSTEK_GOSCIA = 'gosc-';
 
 export function wczytajKlucze(env = {}) {
   if (!env.KLUCZE) return { ok: false, status: 503, blad: 'Miejsce zamknięte: właściciel nie ustawił kluczy (ustawienie KLUCZE w Cloudflare)' };
   let mapa;
   try { mapa = typeof env.KLUCZE === 'string' ? JSON.parse(env.KLUCZE) : env.KLUCZE; } catch { mapa = null; }
   if (!mapa || typeof mapa !== 'object') return { ok: false, status: 500, blad: 'ustawienie KLUCZE nie jest poprawnym JSON {imię: skrót}' };
-  const wpisy = Object.entries(mapa).filter(([imie, s]) => poprawneImie(imie) && !IMIONA_ZASTRZEZONE.includes(imie) && /^[0-9a-f]{64}$/.test(String(s)));
+  const wpisy = Object.entries(mapa).filter(([imie, s]) => poprawneImie(imie) && !IMIONA_ZASTRZEZONE.includes(imie) && !imie.startsWith(PRZEDROSTEK_GOSCIA) && /^[0-9a-f]{64}$/.test(String(s)));
   if (!wpisy.length) return { ok: false, status: 500, blad: 'ustawienie KLUCZE nie ma żadnego poprawnego wpisu' };
   return { ok: true, wpisy };
 }

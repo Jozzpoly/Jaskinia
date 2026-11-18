@@ -5,6 +5,10 @@
 const KLUCZ = 'jaskinia:srodowisko:klucz';
 const CICHO = 'jaskinia:srodowisko:cicho';
 
+// Rodzaje rzeczy, którymi Start rysuje i z których liczy pasek: projekty i ich rodziny, gałęzie, położenia, widoki,
+// zapisane układy, słowa, to, co czeka na rękę, i ustawienia. Nowy rodzaj, którego Start ma używać, trzeba dopisać tutaj.
+export const WYCINEK = ['repo', 'projekt', 'rodzina', 'galaz', 'miejsce', 'widok', 'chwila', 'slowo', 'propozycja', 'prosba', 'pokretlo', 'wartosc', 'zestaw'].join(',');
+
 export class Drzwi {
   constructor({ naZmiane = () => {}, naStan = () => {} } = {}) {
     this.naZmiane = naZmiane;   // rzeczy albo opis się zmieniły
@@ -29,6 +33,12 @@ export class Drzwi {
   get imie() { return this.opis ? this.opis.czytasz_jako.imie : null; }
   get rola() { return this.opis ? this.opis.czytasz_jako.rola : 'zwiedzajacy'; }
   naglowki(dod = {}) { return { accept: 'application/json', ...(this.klucz ? { authorization: 'Bearer ' + this.klucz } : {}), ...dod }; }
+  // Bajty pliku (np. kroju) w wersji przypiętej odciskiem: ta wersja się nie zmienia, więc przeglądarka może ją trzymać.
+  async bajty(plik) {
+    const o = await fetch('/api/srodowisko/bajty?rzecz=' + plik.rzecz + '&odcisk=' + plik.odcisk, { headers: this.naglowki({ accept: '*/*' }) });
+    if (!o.ok) throw new Error('nie ma pliku ' + plik.rzecz);
+    return o.arrayBuffer();
+  }
 
   async czytaj(sciezka) {
     let o = await fetch(sciezka, { headers: this.naglowki(), cache: 'no-store' });
@@ -41,11 +51,16 @@ export class Drzwi {
 
   // Całość: opis i cały spis (kawałkami po tysiąc).
   async wszystko() {
-    const [o, s] = await Promise.all([this.czytaj('/api/srodowisko/opis'), this.czytaj('/api/srodowisko/spis')]);
+    // Wejście po wycinku: Start czyta tylko rodzaje, którymi rysuje, a nie całe Miejsce (kształty, zdolności, uczestnicy
+    // i reszta nie są mu do niczego potrzebne, a każda taka rzecz kosztowała wiersze przy każdym otwarciu strony).
+    const [o, s] = await Promise.all([this.czytaj('/api/srodowisko/opis'), this.czytaj('/api/srodowisko/spis?rodzaje=' + WYCINEK)]);
     const lista = s.rzeczy;
-    for (let k = s; !k.wszystko && lista.length < 20000;) { k = await this.czytaj('/api/srodowisko/spis?pomin=' + lista.length); lista.push(...k.rzeczy); if (!k.rzeczy.length) break; }
+    for (let k = s; !k.wszystko && lista.length < 20000;) { k = await this.czytaj('/api/srodowisko/spis?rodzaje=' + WYCINEK + '&pomin=' + lista.length); lista.push(...k.rzeczy); if (!k.rzeczy.length) break; }
     this.opis = o;
     this.rzeczy = new Map(lista.map((r) => [r.id, r]));
+    // Granica wejścia ma znak: gdy Miejsce jest większe niż to, co strona wzięła, mówi to wprost, zamiast pokazywać
+    // niepełny świat jak cały (gotowość na wykończenie, G8).
+    this.uciete = Number.isInteger(s.razem) && lista.length < s.razem ? { pokazane: lista.length, razem: s.razem } : null;
     this.akt = Math.min(o.miejsce.akt, Number.isInteger(s.akt) ? s.akt : o.miejsce.akt);
     this.naZmiane();
   }
@@ -54,11 +69,14 @@ export class Drzwi {
   async dogon() {
     if (!this.opis) return this.wszystko();
     const od = this.akt;
-    const [o, s] = await Promise.all([this.czytaj('/api/srodowisko/opis'), this.czytaj('/api/srodowisko/spis?odlozone=razem&po=' + od)]);
-    if (o.miejsce.akt < od || !s.wszystko || !Number.isInteger(s.akt)) return this.wszystko();
+    // Tylko różnica: rzeczy zmienione po moim akcie. Całego opisu Miejsca Start po zmianie nie czyta: to było
+    // najdroższe czytanie i szło po każdej zmianie w każdej otwartej stronie (dowody środowiska, fala 9, punkt D).
+    // To, co pasek brał z opisu, a co się zmienia (numer aktu, ile czeka), liczy się z rzeczy, które strona już ma;
+    // opis wraca przy wejściu, wyjściu i czytaniu całości.
+    const s = await this.czytaj('/api/srodowisko/spis?odlozone=razem&po=' + od + '&rodzaje=' + WYCINEK);
+    if (!s.wszystko || !Number.isInteger(s.akt) || s.akt < od) return this.wszystko();
     for (const r of s.rzeczy) { if (r.odlozone) this.rzeczy.delete(r.id); else this.rzeczy.set(r.id, r); }
-    this.opis = o;
-    this.akt = Math.min(o.miejsce.akt, s.akt);
+    this.akt = s.akt;
     this.naZmiane();
   }
 

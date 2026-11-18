@@ -6,6 +6,7 @@ import { odpowiedz, wCronie } from './fakty.mjs';
 import { ktoTo, wczytajKlucze, maTozsamosc } from './klucze.mjs';
 import { skrot } from './miejsce.mjs';
 import { cialoTekstem, ZLE_KODOWANIE } from './srodowisko-http.mjs';
+import { NAJWIEKSZY_PLIK } from './pliki.mjs';
 import { ADRES_ZYWEGO } from './zywe.mjs';
 export { Miejsce } from './miejsce-do.mjs';
 
@@ -33,7 +34,7 @@ const obiektMiejsca = (env) => env.MIEJSCE.get(env.MIEJSCE.idFromName(typeof env
 // Środowisko (17 XI 2026): rzeczy tekstem pod adresem, jako dane i jedne drzwi do ruchu. Czytanie bez klucza działa
 // tylko na podglądzie (PODGLAD = tak), gdzie wszystko jest publiczne; ruch zawsze wymaga klucza. Kod gościa (/gosc/…)
 // jest jawny z natury: wykonuje go przeglądarka tego, kto otworzył okno.
-const SRODOWISKO_TEKSTEM = ['/co-tu-jest', '/umowa-okna', '/rodzaje', '/rzeczy'];
+const SRODOWISKO_TEKSTEM = ['/co-tu-jest', '/umowa-okna', '/rodzaje', '/rzeczy', '/ustawienia'];
 const doSrodowiska = (p) => p.startsWith('/api/srodowisko/') || SRODOWISKO_TEKSTEM.includes(p) || p.startsWith('/rzecz/') || p.startsWith('/rodzaj/') || p.startsWith('/gosc/') || p.startsWith('/api/drzwi/');
 
 async function srodowisko(request, env, url) {
@@ -79,14 +80,28 @@ async function srodowisko(request, env, url) {
   }
   const cialo = request.headers.get('x-cialo');
   if (cialo) naglowki.set('x-cialo', cialo.slice(0, 80));
+  // ruch z okna gościa: identyfikator gościa przechodzi dalej tak, jak przyszedł; czy taki gość jest i czy wolno mu
+  // pisać, sprawdza Miejsce
+  const gosc = request.headers.get('x-gosc');
+  if (gosc !== null) naglowki.set('x-gosc', gosc.slice(0, 40));
   const ct = request.headers.get('content-type');
   if (ct) naglowki.set('content-type', ct);
   let cialoZadania;
   if (request.method !== 'GET') {
     // Ścisłe dekodowanie tutaj, zanim treść pójdzie dalej jako tekst: po zwykłym dekodowaniu zły zapis znaków
     // byłby już nie do odróżnienia od poprawnej treści.
-    cialoZadania = await cialoTekstem(request);
-    if (cialoZadania === null) return json({ blad: ZLE_KODOWANIE.blad }, 400);
+    if (url.pathname === '/api/srodowisko/bajty') {
+      // Bajty pliku idą dalej tak, jak przyszły: to jedyne drzwi, których ciało nie jest tekstem. Granicę wielkości
+      // sprawdzamy już tutaj, zanim cokolwiek trafi do obiektu Miejsca.
+      const zaDuzy = (ile) => json({ blad: `plik ma ${ile} bajtów, a jeden plik może mieć najwyżej ${NAJWIEKSZY_PLIK}; magazynu na większe rzeczy jeszcze nie ma` }, 413);
+      const dlugosc = Number(request.headers.get('content-length'));
+      if (Number.isFinite(dlugosc) && dlugosc > NAJWIEKSZY_PLIK) return zaDuzy(dlugosc);
+      cialoZadania = await request.arrayBuffer();
+      if (cialoZadania.byteLength > NAJWIEKSZY_PLIK) return zaDuzy(cialoZadania.byteLength);
+    } else {
+      cialoZadania = await cialoTekstem(request);
+      if (cialoZadania === null) return json({ blad: ZLE_KODOWANIE.blad }, 400);
+    }
   }
   const dalej = new Request(request.url, { method: request.method, headers: naglowki, body: cialoZadania });
   return obiektMiejsca(env).fetch(dalej);

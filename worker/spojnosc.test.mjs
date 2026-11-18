@@ -118,7 +118,7 @@ test('SP8. oko nadal widzi: spis skrzywiony ręką (poza drogami zapisu) jest na
   r.sql.exec(`UPDATE rzeczy SET obszar = ? WHERE id = ?`, nowe, m.rzecz);
   const w = sprawdzSpojnosc(s);
   assert.equal(w.rodziny.lezy_z, 1, JSON.stringify(w.niezgodne));
-  assert.match(w.niezgodne.find((x) => x.rzecz === m.rzecz).mowi, /mają leżeć razem/);
+  assert.match(w.niezgodne.find((x) => x.rzecz === m.rzecz).mowi, /rzecz leży tam, gdzie rzecz wskazana/);
   assert.equal(s.wyrownajZNatury(), 1, 'wyrównanie przenosi w spisie jedną rzecz');
   assert.equal(s.rzecz(m.rzecz).obszar, null);
   assert.equal(sprawdzSpojnosc(s).ile_niezgodnych, 0);

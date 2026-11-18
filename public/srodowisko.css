@@ -55,6 +55,8 @@ details > div { padding: 0 .65rem .5rem; }
 .okno .pasek { display: flex; align-items: center; gap: .6rem; padding: .35rem .5rem .35rem .75rem; border-bottom: 1px solid var(--linia); }
 .okno .pasek .tytul { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .okno .pasek .mowi { color: var(--ciche); font-size: .8rem; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.okno .pasek .slad-okna { color: var(--akcent); font-size: .8rem; white-space: nowrap; }
+.okno .pasek .slad-okna:empty { display: none; }
 .okno iframe { flex: 1; width: 100%; border: 0; background: #fff; }
 @media (prefers-color-scheme: dark) { .okno iframe { background: #111; } }
 #dok { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; gap: .4rem; padding: .45rem .7rem calc(.45rem + env(safe-area-inset-bottom, 0px)); overflow-x: auto; background: color-mix(in srgb, var(--tlo) 90%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--linia); }
@@ -134,6 +136,21 @@ button:disabled, textarea:disabled { opacity: .55; cursor: progress; }
 }
 @media (max-width: 40rem) { body:has(#dok:empty) #okna .okno.karta-rzeczy { bottom: 0; } }
 
+/* Panel ustawień (próba): każde pokrętło z polem według typu. Wygląd tego panelu sam jest do wykończenia. */
+.ustawienia { max-width: 60rem; margin: 1.2rem auto 0; padding: 0 1rem; }
+.ustawienia details { border-top: 1px solid var(--linia); padding: .3rem 0; }
+.ustawienia summary { cursor: pointer; padding: .35rem 0; min-height: 44px; display: flex; align-items: center; gap: .4rem; }
+ul.ust { list-style: none; margin: 0; padding: 0; }
+.ust-wiersz { display: flex; flex-wrap: wrap; gap: .4rem 1rem; align-items: center; justify-content: space-between; padding: .45rem 0; border-top: 1px dashed var(--linia); }
+.ust-opis { flex: 1 1 18rem; min-width: 0; }
+.ust-opis p { margin: .15rem 0 0; color: var(--ciche); }
+.ust-pole { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.ust-para { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.ust-pole input[type="number"] { width: 6.5rem; }
+.ust-pole input[type="range"] { width: 10rem; accent-color: var(--akcent); }
+.ust-pole input[type="color"] { width: 3rem; height: 2.4rem; padding: 0; border: 1px solid var(--linia); background: transparent; }
+.ust-pole input, .ust-pole select { font: inherit; font-size: 16px; min-height: 2.4rem; }
+
 /* Drobny tekst na dotyku. Oko Opusa czatu zmierzyło na telefonie 138 ze 188 tekstów poniżej 14 px (najmniejszy
    11,8 px): to wiersze pomocnicze, ale ręka je czyta. Na dotyku tekst nie schodzi poniżej 14 px, a pola mają 16 px,
    bo mniejsze pole przeglądarka telefonu przybliża przy dotknięciu i strona skacze. */
@@ -143,3 +160,6 @@ button:disabled, textarea:disabled { opacity: .55; cursor: progress; }
   .okno .pasek .mowi, .wejscie p, ul.slowa, ul.slowa .bok, .kr-tresc h4, .kr-meta, .kr-odlozona .bok, .kr-cechy dt, .kr-bylo { font-size: .875rem; }
   input, textarea { font-size: 16px; }
 }
+
+/* Wyjście do wyglądu domyślnego: stałe barwy, celowo nie z motywu. Ma być widać także przy nieczytelnym motywie. */
+.wyjscie { display: inline-flex; align-items: center; justify-content: center; min-width: 1.9rem; height: 1.9rem; border-radius: 999px; background: #24211c; color: #f4f1ea; border: 2px solid #f4f1ea; outline: 1px solid #24211c; text-decoration: none; font: 600 15px system-ui, sans-serif; }
