@@ -8,14 +8,14 @@ import { Srodowisko } from './srodowisko.mjs';
 import { ziarna } from './ziarna.mjs';
 import { obsluzSrodowisko } from './srodowisko-http.mjs';
 import { policzUstawienia } from './ustawienia.mjs';
-import { NAJWIEKSZY_PLIK, NAJWIECEJ_BAJTOW_NA_DOBE, naBase64, zBase64, rozmiarZBase64 } from './pliki.mjs';
+import { NAJWIEKSZY_PLIK, NAJWIECEJ_BAJTOW_NA_DOBE, NAJWIECEJ_BAJTOW_INNYCH_NA_DOBE, NAJWIECEJ_BAJTOW_UCZESTNIKA_NA_DOBE, naBase64, zBase64, rozmiarZBase64 } from './pliki.mjs';
 import { pasuje } from '../public/pokretla.mjs';
 
-async function swiat() {
+async function swiat(uczestnicy = ['agent-a']) {
   let t = Date.UTC(2026, 10, 18, 1, 0, 0);
   const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
   const s = new Srodowisko(r);
-  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }));
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy }));
   const ok = (w) => { assert.equal(w.ok, true, JSON.stringify(w)); return w; };
   const bajty = (ile, ziarno = 7) => { const u = new Uint8Array(ile); for (let i = 0; i < ile; i++) u[i] = (i * 31 + ziarno) & 255; return u; };
   const plik = async (kto, op, u8, cechy = {}, dodatkowe = {}) => {
@@ -128,6 +128,126 @@ test('PL4. treść pliku jest niezmienna: nowe bajty to nowy plik; plik wskazany
   const poOdlozeniu = await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz + '&odcisk=' + odcisk);
   assert.equal(poOdlozeniu.status, 200);
   assert.deepEqual(new Uint8Array(await poOdlozeniu.arrayBuffer()), stare);
+});
+
+test('PL7. sam odcisk niczego nie otwiera: zapis z bajtami wskazuje ten, kto go wgrał, albo ten, kto widzi plik, który go niesie', async () => {
+  const { r, s, ok, bajty, plik, pytanie } = await swiat(['agent-a', 'agent-b']);
+  const T = ok(await s.ruch('jozz', { op: 'pl7-tajne', co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Tajne', widzi: 'wlasciciel', ile_wolno: 'prowadzic' } })).rzecz;
+  const tajne = bajty(3000, 41);
+  const tp = ok(await plik('jozz', 'pl7-tajny-plik', tajne, { nazwa: 'Tajny krój' }, { obszar: T }));
+  const odcisk = s.rzecz(tp.rzecz).cechy.tresc;
+  const kradnij = (op, cechy = {}, opcje = {}) => s.ruch(opcje.kto || 'agent-a', { op, co: 'poloz', rodzaj: 'plik/1', cechy: { nazwa: 'Mój plik', typ: 'font/woff2', rozmiar: tajne.length, tresc: odcisk, ...cechy } }, opcje.gosc ? { gosc: opcje.gosc } : {});
+  // cudzy odcisk brzmi dokładnie tak, jak odcisk, którego nie ma: bez rozmiaru i bez znaku, że takie bajty są
+  const cudzy = await kradnij('pl7-cudzy-odcisk');
+  const nieMa = await kradnij('pl7-nie-ma-zapisu', { tresc: '0'.repeat(64) });
+  assert.equal(cudzy.status, 422, JSON.stringify(cudzy));
+  assert.deepEqual(cudzy, nieMa, 'odmowa nie odróżnia cudzego zapisu od nieistniejącego');
+  assert.match(cudzy.blad, /istniejącego zapisu/);
+  const zlyRozmiar = await kradnij('pl7-zly-rozmiar', { rozmiar: 1 });
+  assert.deepEqual(zlyRozmiar, cudzy, 'zły rozmiar nie wyciąga prawdziwego rozmiaru cudzego zapisu');
+  assert.doesNotMatch(JSON.stringify(zlyRozmiar), /3000/);
+  assert.equal(s.spis({ rodzaj: 'plik/1', odlozone: 'razem' }).filter((x) => x.cechy.tresc === odcisk).length, 1, 'nie powstał drugi plik z tajnymi bajtami');
+  // narzędzie w oknie właściciela nie dziedziczy jego prawa do zapisu: wskaże tylko to, co widzą obie pary oczu
+  const gosc = s.spis({ rodzaj: 'gosc/1' }).find((g) => g.cechy.umowa === 'okno/3');
+  assert.ok(gosc, 'zasiany gość, który pisze');
+  const zOkna = await kradnij('pl7-z-okna-wlasciciela', {}, { kto: 'jozz', gosc: gosc.id });
+  assert.equal(zOkna.status, 422, JSON.stringify(zOkna));
+  assert.equal(zOkna.blad, cudzy.blad);
+  // jądro: akt bajtów jest prywatny, więc dziennik i treść po odcisku nie oddają ich nikomu poza właścicielem i wgrywającym
+  assert.equal(r.dziennik(0, 500, 'agent-a').akty.some((a) => a.rodzaj === 'bajty/1'), false, 'agent nie widzi w dzienniku cudzych bajtów');
+  assert.equal(r.zapisTresc(odcisk, 'agent-a').status, 404);
+  assert.equal(r.zapisTresc(odcisk, 'jozz').ok, true);
+  // kto sam wgrał te same bajty, ma je i tak: może położyć własny plik
+  ok(await s.bajty('agent-a', tajne, { op: 'pl7-wlasne-wgranie' }));
+  assert.equal(ok(await kradnij('pl7-po-wlasnym-wgraniu')).skutek, 'polozone');
+  assert.equal((await kradnij('pl7-drugi-agent', {}, { kto: 'agent-b' })).skutek, 'polozone', 'agent-b widzi teraz plik agenta-a z tymi bajtami, więc może je wskazać');
+  // jawny plik właściciela: bajty może pobrać każdy uczestnik, więc może je też wskazać we własnym pliku
+  const jawne = bajty(1200, 43);
+  const jp = ok(await plik('jozz', 'pl7-jawny-plik', jawne, { nazwa: 'Jawny krój' }));
+  const jawnyOdcisk = s.rzecz(jp.rzecz).cechy.tresc;
+  assert.equal(ok(await kradnij('pl7-kopia-jawnego', { tresc: jawnyOdcisk, rozmiar: jawne.length }, { kto: 'agent-b' })).ok, true);
+  assert.equal(ok(await kradnij('pl7-kopia-z-okna', { tresc: jawnyOdcisk, rozmiar: jawne.length }, { kto: 'jozz', gosc: gosc.id })).ok, true, 'okno wskaże bajty pliku, który widzą obie pary oczu');
+  // propozycja: agent proponuje plik z własnymi bajtami tam, gdzie tylko proponuje, a właściciel ją przyjmuje
+  const wlasne = bajty(900, 47);
+  const z = ok(await s.bajty('agent-a', wlasne, { op: 'pl7-do-propozycji' }));
+  const prop = ok(await s.ruch('agent-a', { op: 'pl7-propozycja', co: 'poloz', rodzaj: 'plik/1', obszar: null, cechy: { nazwa: 'Proponowany', typ: 'font/woff2', rozmiar: wlasne.length, tresc: z.zapis } }));
+  assert.equal(prop.skutek, 'propozycja');
+  const przyjeta = ok(await s.ruch('jozz', { op: 'pl7-przyjecie', co: 'przyjmij', propozycja: prop.propozycja }));
+  assert.equal(przyjeta.skutek, 'przyjeta');
+  const pobrane = await pytanie('/api/srodowisko/bajty?rzecz=' + przyjeta.rzecz, 'agent-b');
+  assert.deepEqual(new Uint8Array(await pobrane.arrayBuffer()), wlasne);
+  // tajny plik dalej jest dla agenta plikiem, którego nie ma
+  assert.equal((await pytanie('/api/srodowisko/bajty?rzecz=' + tp.rzecz + '&odcisk=' + odcisk, 'agent-b')).status, 404);
+});
+
+test('PL8. plik zostaje plikiem: treści nie da się podmienić przez rodzaj pośredni, a inna rzecz nie staje się plikiem', async () => {
+  const { s, ok, bajty, plik, pytanie } = await swiat();
+  const a = bajty(2000, 51), b = bajty(2100, 52);
+  const p = ok(await plik('agent-a', 'pl8-plik', a));
+  const odcisk = s.rzecz(p.rzecz).cechy.tresc;
+  const zb = ok(await s.bajty('agent-a', b, { op: 'pl8-inne-bajty' }));
+  let rz = s.rzecz(p.rzecz);
+  // plik -> rodzaj bez kształtu, plik -> rodzaj z kształtem: obie drogi zamknięte, także dla właściciela
+  for (const [kto, rodzaj, cechy] of [['agent-a', 'cos-bez-ksztaltu/1', { tresc: 'x' }], ['agent-a', 'projekt/1', { nazwa: 'Już nie plik' }], ['jozz', 'projekt/1', { nazwa: 'Już nie plik' }]]) {
+    const w = await s.ruch(kto, { op: 'pl8-zmiana-' + kto + '-' + rodzaj.replace(/[^a-z]/g, ''), co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj, cechy });
+    assert.equal(w.status, 422, JSON.stringify(w));
+    assert.match(w.blad, /zostaje plikiem/);
+  }
+  // inna rzecz -> plik: też nie
+  const proj = ok(await s.ruch('agent-a', { op: 'pl8-projekt', co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'Zwykła rzecz' } }));
+  const pr = s.rzecz(proj.rzecz);
+  const naPlik = await s.ruch('agent-a', { op: 'pl8-na-plik', co: 'poloz', rzecz: pr.id, wersja: pr.wersja, rodzaj: 'plik/1', cechy: { nazwa: 'Podmieniony', typ: 'font/woff2', rozmiar: b.length, tresc: zb.zapis } });
+  assert.equal(naPlik.status, 422, JSON.stringify(naPlik));
+  assert.match(naPlik.blad, /nie staje się plikiem/);
+  // kto przypiął plik odciskiem, dostaje dalej te same bajty
+  rz = s.rzecz(p.rzecz);
+  assert.deepEqual([rz.rodzaj, rz.cechy.tresc], ['plik/1', odcisk]);
+  const przypiety = await pytanie('/api/srodowisko/bajty?rzecz=' + p.rzecz + '&odcisk=' + odcisk);
+  assert.equal(przypiety.status, 200);
+  assert.deepEqual(new Uint8Array(await przypiety.arrayBuffer()), a);
+});
+
+test('PL9. dobowe granice liczą tylko nowe bajty i są trzy: Miejsce, wszyscy poza właścicielem razem, każdy z osobna', async () => {
+  const { r, s, ok, bajty } = await swiat(['agent-a', 'agent-b']);
+  const dzien = 'bajty:' + new Date(r.teraz()).toISOString().slice(0, 10);
+  const u = bajty(50000, 61);
+  for (let i = 0; i < 40; i++) ok(await s.bajty('agent-a', u, { op: 'pl9-ten-sam-' + i }));
+  assert.deepEqual([r.meta(dzien), r.meta(dzien + ':inni'), r.meta(dzien + ':agent-a')], ['50000', '50000', '50000'], 'ten sam plik pod czterdziestoma op liczy się raz');
+  ok(await s.bajty('jozz', bajty(700, 62), { op: 'pl9-wlasciciel-1' }));
+  assert.deepEqual([r.meta(dzien), r.meta(dzien + ':inni'), r.meta(dzien + ':jozz')], ['50700', '50000', null], 'właściciel nie zużywa części pozostałych i nie ma własnej granicy poza granicą Miejsca');
+  // jeden agent przy swojej granicy: on staje, drugi agent i właściciel nie
+  r.ustawMeta(dzien + ':agent-a', String(NAJWIECEJ_BAJTOW_UCZESTNIKA_NA_DOBE - 10));
+  const swoja = await s.bajty('agent-a', bajty(100, 63), { op: 'pl9-ponad-swoja' });
+  assert.equal(swoja.status, 429, JSON.stringify(swoja));
+  assert.match(swoja.blad, /wgrałeś dziś/);
+  assert.equal(ok(await s.bajty('agent-a', u, { op: 'pl9-znane-bajty' })).zapis.length, 64, 'bajty, które już są, przechodzą także przy granicy');
+  ok(await s.bajty('agent-b', bajty(100, 64), { op: 'pl9-drugi-agent' }));
+  ok(await s.bajty('jozz', bajty(100, 65), { op: 'pl9-wlasciciel-2' }));
+  // wszyscy poza właścicielem przy wspólnej granicy: agenci stają, właściciel nie
+  r.ustawMeta(dzien + ':inni', String(NAJWIECEJ_BAJTOW_INNYCH_NA_DOBE - 10));
+  const wspolna = await s.bajty('agent-b', bajty(100, 66), { op: 'pl9-ponad-wspolna' });
+  assert.equal(wspolna.status, 429, JSON.stringify(wspolna));
+  assert.match(wspolna.blad, /poza właścicielem/);
+  ok(await s.bajty('jozz', bajty(100, 67), { op: 'pl9-wlasciciel-3' }));
+  // granica całego Miejsca zatrzymuje także właściciela
+  r.ustawMeta(dzien, String(NAJWIECEJ_BAJTOW_NA_DOBE - 10));
+  const cale = await s.bajty('jozz', bajty(100, 68), { op: 'pl9-ponad-miejsce' });
+  assert.equal(cale.status, 429, JSON.stringify(cale));
+  assert.match(cale.blad, /to Miejsce przyjęło dziś/);
+});
+
+test('PL10. rodzina kroju to nazwy rodzin, nie dowolny napis', async () => {
+  const { s, ok } = await swiat();
+  const ustaw = (op, rodzina) => s.ruch('jozz', { op, co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: 'wyglad.kroj.imiona', wartosc: { rodzina } } });
+  for (const [i, dobra] of ['Anybody, sans-serif', '"Segoe UI", system-ui, -apple-system', "'Zażółć Gęślą', serif", 'Recursive_Mono-1.085'].entries()) {
+    ok(await ustaw('pl10-dobra-' + i, dobra));
+    assert.equal(pasuje({ typ: 'kroj' }, { rodzina: dobra }), true, dobra);
+  }
+  for (const [i, zla] of ['x"; } body { background: url(https://zly.example/a) } .y { font-family: "z', 'a; color: red', 'url(https://zly.example/f.woff2)', 'a\nb', '<b>'].entries()) {
+    const w = await ustaw('pl10-zla-rodzina-' + i, zla);
+    assert.equal(w.status, 422, JSON.stringify(w));
+    assert.equal(pasuje({ typ: 'kroj' }, { rodzina: zla }), false, zla);
+  }
 });
 
 test('PL5. krój z pliku: wartość kroju wskazuje plik razem z odciskiem; plik musi być krojem, a odcisk jego odciskiem', async () => {

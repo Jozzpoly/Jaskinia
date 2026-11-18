@@ -42,6 +42,8 @@ export const NAZWY_POKRETEL = POKRETLA.map((p) => p.nazwa).join(',');
 
 const KOLOR = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
 const liczba = (x) => typeof x === 'number' && Number.isFinite(x);
+// Rodzina kroju: nazwy rodzin jak w CSS, nie dowolny napis (ten sam wzorzec co w worker/ustawienia.mjs).
+const RODZINA_KROJU = /^[\p{L}\p{N} ,'"._-]{1,300}$/u;
 const obiekt = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
 const idzieZa = (w) => (obiekt(w) && Object.keys(w).length === 1 && typeof w.z === 'string' ? w.z : null);
 
@@ -55,7 +57,7 @@ export const pasuje = (d, w) => {
     case 'wybor': return Array.isArray(d.wartosci) && d.wartosci.includes(w);
     case 'tak-nie': return typeof w === 'boolean';
     case 'tekst': return typeof w === 'string' && w.length <= 2000;
-    case 'kroj': return obiekt(w) && typeof w.rodzina === 'string' && !!w.rodzina.trim() && w.rodzina.length <= 300
+    case 'kroj': return obiekt(w) && typeof w.rodzina === 'string' && !!w.rodzina.trim() && RODZINA_KROJU.test(w.rodzina)
       && (w.grubosc === undefined || (liczba(w.grubosc) && w.grubosc >= 1 && w.grubosc <= 1000))
       && (w.osie === undefined || (obiekt(w.osie) && Object.keys(w.osie).length <= 8 && Object.entries(w.osie).every(([n, x]) => /^[A-Za-z]{4}$/.test(n) && liczba(x))))
       && (w.plik === undefined || (obiekt(w.plik) && typeof w.plik.rzecz === 'string' && /^[0-9a-z]{26}$/.test(w.plik.rzecz) && typeof w.plik.odcisk === 'string' && /^[0-9a-f]{64}$/.test(w.plik.odcisk)));
