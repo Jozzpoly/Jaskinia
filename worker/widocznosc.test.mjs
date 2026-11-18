@@ -103,7 +103,13 @@ test('W7. nowa trasa czytająca nie ominie okularów po cichu', async () => {
   assert.ok(od > 0 && do_ > od, 'bloki GET i POST stoją tam, gdzie je ten sprawdzian szuka');
   const blok = zrodlo.slice(od, do_);
   const bezKomentarzy = blok.replace(/\/\/[^\n]*/g, '');
-  const golo = [...bezKomentarzy.matchAll(/(?<![A-Za-z0-9_.])s\.[a-zA-Z_]+/g)].map((m) => m[0]);
+  // Wzorzec: "s." nie będące częścią dłuższej nazwy ani dostępem do pola (x.s.y). Do 18 XI wykluczał każde "s." po
+  // kropce, więc nie widział rozwinięcia [...s.ksztalty()], i właśnie tak jedna trasa (lista rodzajów) czytała surowe
+  // środowisko obok okularów (Fable, przebieg pod żywym adresem). Strażnik, który łapie jeden kształt zapisu, jest dziurą.
+  const WZORZEC = /(?<![A-Za-z0-9_])(?<![A-Za-z0-9_)\]]\.)s\.[a-zA-Z_]+/g;
+  const znajdz = (tekst) => [...tekst.matchAll(WZORZEC)].map((m) => m[0]);
+  assert.deepEqual(znajdz('json({ k: [...s.ksztalty().values()] }); f(s.spis()); x = s.ile(); opis.s.pole; this.s.q(); w.rzecz(id); opcje.kto'), ['s.ksztalty', 's.spis', 's.ile'], 'wzorzec widzi rozwinięcie i zwykłe wołanie, a nie widzi pola o nazwie s');
+  const golo = znajdz(bezKomentarzy);
   assert.deepEqual(golo, [], `trasa czytająca sięga po surowe środowisko zamiast po widok czytającego: ${golo.join(', ')}. Użyj w.<...> albo napisz tutaj, dlaczego ta jedna ma widzieć wszystko.`);
 });
 

@@ -144,7 +144,9 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     if (sciezka === '/api/srodowisko/spojnosc') {
       return json({ ok: true, ...sprawdzSpojnosc(w, { ile: liczba(p.get('ile')) || undefined, pomin: liczba(p.get('pomin')) || 0, rodzaj: p.get('rodzaj') || null, najwyzej: liczba(p.get('najwyzej')) || undefined }) });
     }
-    if (sciezka === '/api/srodowisko/ksztalty') return json({ ok: true, ksztalty: [...s.ksztalty().values()].map((k) => ({ ...k.cechy, rzecz: k.id, wersja: k.wersja })) });
+    // Lista rodzajów oczami czytającego: kształt leżący w obszarze, którego czytający nie widzi, nie stoi na liście.
+    // Do 18 XI ta jedna trasa czytała surowe środowisko zapisem [...s.ksztalty()], którego strażnik W7 nie widział.
+    if (sciezka === '/api/srodowisko/ksztalty') return json({ ok: true, ksztalty: [...w.ksztalty().values()].map((k) => ({ ...k.cechy, rzecz: k.id, wersja: k.wersja })) });
   }
   if (request.method === 'POST') {
     if (sciezka === '/api/srodowisko/ruch') {

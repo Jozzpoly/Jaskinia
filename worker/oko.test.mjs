@@ -210,3 +210,24 @@ test('OK6. żadna strona tekstowa dla agentów nie niesie gołego "undefined": k
     for (const pole of ['nazwa', 'ktoredy', 'opis', 'wejscie', 'wynik']) assert.equal(typeof c[pole] === 'string' && c[pole].length > 0, true, `czasownik ${c.nazwa}: pole ${pole}`);
   }
 });
+
+test('OK7. lista rodzajów przez drzwi idzie oczami czytającego: kształt z zamkniętego obszaru nie stoi na niej ani dla agenta, ani dla zwiedzającego, ani dla narzędzia w oknie', async () => {
+  const { obsluzSrodowisko } = await import('./srodowisko-http.mjs');
+  let t = Date.UTC(2026, 10, 18, 15, 0, 0);
+  const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+  const s = new Srodowisko(r);
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }));
+  const ok = (w) => { assert.equal(w.ok, true, JSON.stringify(w)); return w; };
+  const T = ok(await s.ruch('jozz', { op: 'ok7-tajne-001', co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Tajne', widzi: 'wlasciciel', ile_wolno: 'nic' } })).rzecz;
+  const k = ok(await s.ruch('jozz', { op: 'ok7-ksztalt-01', co: 'poloz', rodzaj: 'ksztalt/1', obszar: T, cechy: { dla: 'tajnyrodzaj/1', tytul: 'nazwa', opis: 'opis-tajnego-rodzaju', cechy: { nazwa: { typ: 'tekst', wymagana: true, opis: 'cecha-tajna' } } } })).rzecz;
+  const gosc = s.spis({ rodzaj: 'gosc/1' }).find((g) => g.cechy.umowa === 'okno/3');
+  const pytanie = async (kto, naglowki = {}) => (await obsluzSrodowisko(s, new Request('https://proba.example/api/srodowisko/ksztalty', { headers: { ...(kto ? { 'x-kto': kto } : {}), ...naglowki } }))).text();
+  assert.match(await pytanie('jozz'), /opis-tajnego-rodzaju/, 'właściciel widzi swój kształt');
+  for (const [kto, naglowki, kim] of [['agent-a', {}, 'agent'], [null, {}, 'zwiedzający'], ['jozz', { 'x-gosc': gosc.id }, 'narzędzie w oknie właściciela'], ['agent-a', { 'x-gosc': gosc.id }, 'narzędzie w oknie agenta']]) {
+    const tekst = await pytanie(kto, naglowki);
+    for (const slad of ['tajnyrodzaj', 'opis-tajnego-rodzaju', 'cecha-tajna', k]) assert.equal(tekst.includes(slad), false, `${kim}: lista rodzajów niesie "${slad}"`);
+    // zwiedzający poza podglądem nie widzi obszaru głównego (widzi: uczestnicy), więc jego lista jest pusta, tak jak spis
+    if (kto) assert.match(tekst, /"dla":\s*"projekt\/1"/, `${kim}: jawne rodzaje dalej są na liście`);
+    else assert.deepEqual(JSON.parse(tekst).ksztalty, [], 'zwiedzający: lista rodzajów jest pusta jak jego spis');
+  }
+});
