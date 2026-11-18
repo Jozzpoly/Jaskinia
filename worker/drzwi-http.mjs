@@ -2,38 +2,55 @@
 // Status: próba (TYMCZASOWE.md).
 //
 // Co tu jest, czego nie ma w drzwi.mjs: pamięć. Sprawdzenie podpisu jest czystą funkcją, ale wyzwanie musi być
-// JEDNORAZOWE, a poświadczenie musi gdzieś leżeć. Wyzwania leżą w pamięci obiektu Miejsca (storage klucz-wartość,
-// nie w spisie rzeczy: to sekret na dwie minuty, nie fakt o świecie). Poświadczenia leżą w spisie jako rzeczy
+// JEDNORAZOWE, a poświadczenie musi gdzieś leżeć. Samo wyzwanie nie leży nigdzie: niesie swój termin i podpis
+// Miejsca (drzwi.mjs: zrobWyzwanie). Leży tylko krótka lista wyzwań JUŻ UŻYTYCH (storage klucz-wartość, nie spis
+// rzeczy: to nie fakt o świecie, tylko pamięć drzwi na pięć minut). Poświadczenia leżą w spisie jako rzeczy
 // rodzaju poswiadczenie/1 w obszarze Drzwi (widzi: wlasciciel) - bo to fakt o świecie i właściciel ma je widzieć,
 // móc nazwać i móc odłożyć. Klucz PRYWATNY nie opuszcza jego urządzenia; my mamy publiczny, który nie jest sekretem.
 //
 // Czemu wyzwanie jest jednorazowe, a nie tylko krótkie: licznik podpisów authenticatora bywa zawsze zerowy
 // (passkey Apple), więc licznik nie obroni przed powtórzeniem starego podpisu. Obroni wyzwanie, którego już nie ma.
 import { json } from './trasy.mjs';
-import { sprawdzZalozenie, sprawdzWejscie, zrobSesje, ciastkoNaglowek, ciastkoKoniec, b64uZ, b64uDo,
-  sekretSesji, WYZWANIE_WAZNE_MS, SESJA_WAZNA_MS } from './drzwi.mjs';
+import { sprawdzZalozenie, sprawdzWejscie, zrobSesje, ciastkoNaglowek, ciastkoKoniec, b64uDo,
+  sekretSesji, zrobWyzwanie, czytajWyzwanie, WYZWANIE_WAZNE_MS, SESJA_WAZNA_MS } from './drzwi.mjs';
 
 export const ADRES_DRZWI = '/api/drzwi/';
 // Ile wyzwań na minutę wolno wydać jednemu obiektowi Miejsca. Licznik stoi w PAMIĘCI instancji, nie w zapisie:
 // kosztuje zero, a działa dokładnie wtedy, gdy ma działać - gdy ktoś wali w drzwi, obiekt jest obudzony.
 // Po uśpieniu okno startuje od nowa i to jest w porządku: spanie znaczy, że nikt nie wali.
 export const WYZWAN_NA_MINUTE = 30;
-// Ile wyzwań może naraz leżeć w pamięci obiektu. Dwie minuty życia razy trzydzieści na minutę to najwyżej
-// sześćdziesiąt uczciwych; sto dwadzieścia jest zapasem, po którym najstarsze ustępują.
-export const WYZWAN_NARAZ = 120;
 
-// WYZWANIA LEŻĄ W PAMIĘCI OBIEKTU, NIE W JEGO TRWAŁEJ PAMIĘCI. Do 18 XI 2026 szły do `ctx.storage.put`
-// z opcją `expirationTtl` — a tej opcji pamięć Durable Object NIE ZNA (to opcja Workers KV), więc była cicho
-// przemilczana i każde pukanie obcego zostawiało w Miejscu wpis NA ZAWSZE. Obcy bez klucza mógł tak pisać do
-// Miejsca, a dobowy bezpiecznik tego nie widział, bo to nie są wiersze bazy (atak Fable na te drzwi).
-// Cena wyboru: po uśpieniu obiektu niedokończone wyzwanie przepada i dotknięcie trzeba powtórzyć. Przy życiu
-// dwóch minut to jedno dotknięcie telefonu więcej, a nie utrata dostępu.
-function polozWyzwanie(m, w, cel) {
+// UŻYTE WYZWANIA: jedyny ślad drzwi w trwałej pamięci obiektu, i powstaje dopiero PO podpisie, który przeszedł.
+// Wyzwania nie trzeba pamiętać od wydania do użycia, bo niesie swój termin i podpis Miejsca. Pamiętać trzeba tylko,
+// że JUŻ go użyto: inaczej ten sam podpis dałoby się powtórzyć do końca terminu, a licznik podpisów bywa zawsze
+// zerowy (passkey Apple), więc sam nie obroni. Obcy pukający nie zostawia tu nic; lista trzyma tylko wyzwania
+// jeszcze ważne, najwyżej ZUZYTYCH_NAJWYZEJ (dopisać do niej może tylko urządzenie, które naprawdę otwiera drzwi).
+// Historia dwóch pomyłek, obie moje (Opus Code): do 18 XI rano wyzwania szły do `ctx.storage.put` z opcją
+// `expirationTtl`, której pamięć Durable Object NIE ZNA (to opcja Workers KV), więc każde pukanie obcego zostawało
+// w Miejscu na zawsze (atak Fable). Potem przez pół dnia leżały w pamięci instancji, z komentarzem, że żyją dwie
+// minuty - a obiekt zasypia po ok. 10 s ciszy i wyzwanie przepadało w połowie gestu (pierwsza próba Jozza na
+// telefonie, DT11).
+const KLUCZ_ZUZYTYCH = 'drzwi:zuzyte-wyzwania';
+export const ZUZYTYCH_NAJWYZEJ = 64;
+const JUZ_UZYTE = 'już go użyto: jedno wyzwanie otwiera drzwi tylko raz; zacznij od nowa';
+async function zuzyj(m, los, az) {
   const teraz = Date.now();
-  if (!m._wyzwania) m._wyzwania = new Map();
-  for (const [k, v] of m._wyzwania) if (!(v.do > teraz)) m._wyzwania.delete(k);
-  while (m._wyzwania.size >= WYZWAN_NARAZ) m._wyzwania.delete(m._wyzwania.keys().next().value);
-  m._wyzwania.set(w, { cel, do: teraz + WYZWANIE_WAZNE_MS });
+  const st = m.ctx && m.ctx.storage;
+  if (!m._zuzyte) m._zuzyte = new Map();
+  for (const [k, d] of m._zuzyte) if (!(d > teraz)) m._zuzyte.delete(k);
+  let lista = [];
+  try {
+    const z = st && typeof st.get === 'function' ? await st.get(KLUCZ_ZUZYTYCH) : null;
+    if (Array.isArray(z)) lista = z.filter((e) => Array.isArray(e) && e[1] > teraz);
+  } catch { lista = []; }
+  if (m._zuzyte.has(los) || lista.some((e) => e[0] === los)) return false;
+  m._zuzyte.set(los, az);
+  lista.push([los, az]);
+  // Nieudany zapis nie zamyka tu drzwi: jednorazowości pilnuje wtedy pamięć instancji, dopóki obiekt nie zaśnie.
+  // Czy platforma przepuści odpowiedź po nieudanym zapisie (np. przy wyczerpanym dobowym limicie konta), NIE
+  // sprawdziliśmy - przy takim limicie i tak stoi każda trasa z bazą (AGENTS.md, zasada 13).
+  try { if (st && typeof st.put === 'function') await st.put(KLUCZ_ZUZYTYCH, lista.slice(-ZUZYTYCH_NAJWYZEJ)); } catch { /* jw. */ }
+  return true;
 }
 const CELE = ['zaloz', 'wejdz'];
 
@@ -88,16 +105,15 @@ export async function obsluzDrzwi(m, request) {
     const cel = CELE.includes(c.cel) ? c.cel : null;
     if (!cel) return json({ ok: false, blad: `cel: "zaloz" (nowe poświadczenie) albo "wejdz"` }, 400);
     if (cel === 'zaloz' && kto !== wlasciciel) return json({ ok: false, blad: 'nowe poświadczenie zakłada tylko właściciel, i tylko wtedy, gdy JUŻ jest wpuszczony (kluczem albo poprzednimi drzwiami)' }, 403);
-    // Wyzwanie do wejścia zostawia ślad w pamięci obiektu, a prosić o nie może każdy - to jest powierzchnia
-    // do zalewania. Dwa tanie progi: tam, gdzie nie ma czym wejść, nie wydajemy nic, i nie więcej niż
-    // WYZWAN_NA_MINUTE na obiekt. Oba odmawiają BEZ zapisu, więc zalewanie nic nie kosztuje Miejsca.
+    // Prosić o wyzwanie do wejścia może każdy. Wydanie nie zostawia żadnego zapisu, ale liczy poświadczenia
+    // (wiersze czytane, wspólne dla konta - zasada 13), więc stoją dwa tanie progi: tam, gdzie nie ma czym wejść,
+    // nie wydajemy nic, i nie więcej niż WYZWAN_NA_MINUTE na obiekt. Oba odmawiają BEZ zapisu.
     const ilePoswiadczen = m.srod.ile({ rodzaj: 'poswiadczenie/1' });
     if (cel === 'wejdz' && ilePoswiadczen === 0) return json({ ok: false, blad: 'to Miejsce nie ma jeszcze żadnego poświadczenia: najpierw dodaj urządzenie, będąc wpuszczonym kluczem' }, 404);
     const teraz = Date.now();
     if (!m._drzwiOkno || teraz - m._drzwiOkno.od > 60000) m._drzwiOkno = { od: teraz, ile: 0 };
     if (++m._drzwiOkno.ile > WYZWAN_NA_MINUTE) return json({ ok: false, blad: 'za dużo prób otwarcia drzwi w ciągu minuty; spróbuj za chwilę' }, 429);
-    const w = b64uZ(crypto.getRandomValues(new Uint8Array(32)));
-    polozWyzwanie(m, w, cel);
+    const w = await zrobWyzwanie(sekret, cel);
     // Przy ZAKŁADANIU przeglądarka ma wiedzieć, czego nie zakładać drugi raz — a o to prosi tylko właściciel,
     // który JUŻ jest wpuszczony (sprawdzone wyżej). Przy WEJŚCIU nie wydajemy niczego: poświadczenia są
     // odnajdywalne (discoverable), więc przeglądarka sama wie, czym wejść, a lista identyfikatorów w odpowiedzi
@@ -114,16 +130,15 @@ export async function obsluzDrzwi(m, request) {
     });
   }
 
-  // Wyzwanie zużywa się raz. Pobieramy i od razu usuwamy: drugi raz tego samego podpisu już nie da się użyć.
+  // Wyzwanie sprawdzamy jego własnym podpisem i terminem; czy już go użyto, mówi `zuzyj` - wołane dopiero PO
+  // podpisie urządzenia, który przeszedł, bo tylko taki gest ma prawo zostawić ślad w Miejscu.
   const wezWyzwanie = async (cel) => {
     const w = typeof c.wyzwanie === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(c.wyzwanie) ? c.wyzwanie : null;
     if (!w) return { blad: 'wyzwanie: to, które wydały drzwi w kroku zacznij' };
-    const zapis = m._wyzwania ? m._wyzwania.get(w) : null;
-    if (m._wyzwania) m._wyzwania.delete(w);
-    if (!zapis) return { blad: 'tego wyzwania nie ma: albo już go użyto, albo minęły dwie minuty; zacznij od nowa' };
-    if (zapis.cel !== cel) return { blad: `to wyzwanie było wydane do kroku ${zapis.cel}, nie do ${cel}` };
-    if (!(zapis.do > Date.now())) return { blad: 'wyzwanie się przeterminowało; zacznij od nowa' };
-    return { w };
+    const z = await czytajWyzwanie(sekret, w);
+    if (!z.ok) return { blad: z.blad };
+    if (z.cel !== cel) return { blad: `to wyzwanie było wydane do kroku ${z.cel}, nie do ${cel}` };
+    return { w, los: z.los, az: z.az };
   };
 
   // --- 2. założenie poświadczenia (jego ręką, raz na urządzenie) -----------------------------------------------
@@ -140,6 +155,7 @@ export async function obsluzDrzwi(m, request) {
     } catch (e) { return json({ ok: false, blad: 'clientDataJSON i authenticatorData podaje się w base64url: ' + String(e.message || e) }, 400); }
     const z = await sprawdzZalozenie({ clientDataJSON, authenticatorData, wyzwanie: wz.w, origin, nazwaStrony });
     if (!z.ok) return json({ ok: false, blad: z.blad }, 400);
+    if (!(await zuzyj(m, wz.los, wz.az))) return json({ ok: false, blad: JUZ_UZYTE }, 400);
     const juz = m.srod.wszystkie({ rodzaj: 'poswiadczenie/1', odlozone: 'razem' }).find((p) => p.cechy.poswiadczenie === z.poswiadczenie);
     if (juz) return json({ ok: false, blad: 'to poświadczenie jest już zapisane', rzecz: juz.id }, 409);
     const nazwa = typeof c.nazwa === 'string' && c.nazwa.trim() ? c.nazwa.trim().slice(0, 80) : 'urządzenie';
@@ -173,6 +189,7 @@ export async function obsluzDrzwi(m, request) {
       wyzwanie: wz.w, origin, nazwaStrony,
     });
     if (!w.ok) return json({ ok: false, blad: w.blad }, 401);
+    if (!(await zuzyj(m, wz.los, wz.az))) return json({ ok: false, blad: JUZ_UZYTE }, 401);
     // Ślad wejścia zapisujemy, ale nie na każdym wejściu: zapis kosztuje wiersze, a licznik zerowy nic nie zmienia.
     // Po dojściu do dobowego limitu ŚLAD odpada, a wejście zostaje. To jest świadoma asymetria: bezpiecznik ma
     // zatrzymywać zmiany, nigdy zamykać właścicielowi drzwi do własnego Miejsca.

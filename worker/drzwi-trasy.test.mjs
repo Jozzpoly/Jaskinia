@@ -8,7 +8,7 @@ import { Miejsce } from './miejsce-do.mjs';
 import worker from './index.mjs';
 import { sqlZNode } from './sql-node.mjs';
 import { skrot } from './miejsce.mjs';
-import { b64uZ, b64uDo, CIASTKO, zrobSesje, nazwaStronyZAdresu } from './drzwi.mjs';
+import { b64uZ, b64uDo, CIASTKO, zrobSesje, nazwaStronyZAdresu, WYZWANIE_WAZNE_MS } from './drzwi.mjs';
 import { WYZWAN_NA_MINUTE } from './drzwi-http.mjs';
 
 const SEKRET = 'sekret-sesji-do-sprawdzianu-32-znaki';
@@ -54,18 +54,21 @@ async function telefon(nazwaStrony = NAZWA) {
   };
 }
 
-// --- Miejsce z pamięcią klucz-wartość (wyzwania) ---------------------------------------------------------------
-function miejsce(dodatkowe = {}) {
-  const kv = new Map();
-  const ctx = {
+// --- Miejsce z pamięcią klucz-wartość ---------------------------------------------------------------------------
+// `poprzednie` = to samo Miejsce po uśpieniu: nowa instancja (konstruktor od nowa, pamięć obiektu pusta) na TEJ SAMEJ
+// trwałej pamięci. Tak wygląda obudzenie obiektu Cloudflare po ok. 10 s ciszy. Wartości są kopiowane przy zapisie
+// i odczycie, jak w prawdziwej pamięci obiektu, żeby sprawdzian nie przeszedł dzięki wspólnej referencji.
+function miejsce(dodatkowe = {}, poprzednie = null) {
+  const kv = poprzednie ? poprzednie.kv : new Map();
+  const ctx = poprzednie ? poprzednie.ctx : {
     storage: {
       sql: sqlZNode(),
-      put: async (k, v) => { kv.set(k, v); },
-      get: async (k) => kv.get(k),
+      put: async (k, v) => { kv.set(k, structuredClone(v)); },
+      get: async (k) => (kv.has(k) ? structuredClone(kv.get(k)) : undefined),
       delete: async (k) => { kv.delete(k); },
     },
   };
-  return { obiekt: new Miejsce(ctx, { WLASCICIEL: 'jozz', SEKRET_SESJI: SEKRET, ...dodatkowe }), kv };
+  return { obiekt: new Miejsce(ctx, { WLASCICIEL: 'jozz', SEKRET_SESJI: SEKRET, ...dodatkowe }), kv, ctx };
 }
 const zad = (sciezka, { kto = '', cialo, metoda = 'POST', naglowki = {} } = {}) =>
   new Request(ADRES + sciezka, { method: metoda, headers: { 'x-kto': kto, 'x-origin': ADRES, 'x-imiona': 'agent-probny', 'content-type': 'application/json', ...naglowki }, body: cialo === undefined ? undefined : JSON.stringify(cialo) });
@@ -120,9 +123,12 @@ test('DT2. wyzwanie zużywa się raz, a cudzy krok nim nie wejdzie', async () =>
   const cialo = { wyzwanie: z2.wyzwanie, poswiadczenie: t.id, ...(await t.wejdz(z2.wyzwanie, { licznik: 1 })) };
   assert.equal((await dane(await obiekt.fetch(zad('/api/drzwi/wejdz', { cialo })))).ok, true);
   const drugi = await dane(await obiekt.fetch(zad('/api/drzwi/wejdz', { cialo })));
-  assert.equal(drugi.ok, false, 'ten sam podpis drugi raz nie wchodzi, choć licznik authenticatora się nie zmienił');
-  assert.match(drugi.blad, /już go użyto|przeterminowa/);
-  assert.equal([...kv.keys()].length, 0, 'po użyciu nie zostaje w pamięci żadne wyzwanie');
+  assert.equal(drugi.ok, false, 'ten sam podpis drugi raz nie wchodzi');
+  // Tu odmawia już licznik (urósł do 1 przy pierwszym wejściu). Ścieżkę bez licznika, jak w passkey Apple,
+  // gdzie broni WYŁĄCZNIE jednorazowość wyzwania, sprawdza DT11.
+  assert.match(drugi.blad, /już go użyto|przeterminowa|licznik authenticatora nie urósł/);
+  assert.deepEqual([...kv.keys()], ['drzwi:zuzyte-wyzwania'], 'w trwałej pamięci drzwi leży tylko lista użytych wyzwań');
+  assert.equal(kv.get('drzwi:zuzyte-wyzwania').length, 2, 'dwa udane otwarcia (założenie i wejście) i nic więcej');
 
   // wyzwanie wydane do zakładania nie otwiera wejścia
   const z3 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
@@ -304,5 +310,64 @@ test('DT10. zalewanie drzwi prośbami o wyzwanie kończy się odmową BEZ zapisu
     if (o.status === 429) odmowy++;
   }
   assert.ok(odmowy >= 10, `po progu drzwi odmawiają (odmów: ${odmowy}, ostatni status: ${ostatni})`);
-  assert.ok(kv.size - przed <= WYZWAN_NA_MINUTE, `odmowa nic nie zapisuje (przybyło ${kv.size - przed} wyzwań)`);
+  assert.equal(kv.size - przed, 0, `pukanie nie zapisuje niczego, także przed progiem (przybyło ${kv.size - przed} wpisów)`);
+});
+
+test('DT11. wyzwanie przeżywa uśpienie obiektu: wydane przed snem otwiera po przebudzeniu, ale tylko raz', async () => {
+  // Jozz 18 XI 2026 na telefonie: pierwsza, wolna próba dodania urządzenia i pierwsza próba wejścia padły, druga,
+  // szybka, przeszła. Przyczyna: obiekt Miejsca zasypia po ok. 10 s bez żądań (dokumentacja Cloudflare, „Durable
+  // Object Lifecycle”: „when hibernated, the in-memory state is discarded”), a wyzwania leżały w pamięci obiektu.
+  const pierwszy = miejsce();
+  const t = await telefon();
+  const z1 = await dane(await pierwszy.obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+  const poSnie = miejsce({}, pierwszy);
+  const zap = await dane(await poSnie.obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: z1.wyzwanie, nazwa: 'telefon', ...t.zaloz(z1.wyzwanie) } })));
+  assert.equal(zap.ok, true, 'założenie po przebudzeniu: ' + JSON.stringify(zap));
+
+  const z2 = await dane(await poSnie.obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } })));
+  // licznik 0, jak w passkey Apple: przed powtórzeniem broni WYŁĄCZNIE jednorazowość wyzwania
+  const cialo = { wyzwanie: z2.wyzwanie, poswiadczenie: t.id, ...(await t.wejdz(z2.wyzwanie, { licznik: 0 })) };
+  const we = await dane(await miejsce({}, pierwszy).obiekt.fetch(zad('/api/drzwi/wejdz', { cialo })));
+  assert.equal(we.ok, true, 'wejście po przebudzeniu: ' + JSON.stringify(we));
+
+  // jednorazowość nie może zależeć od tego, czy obiekt w międzyczasie spał
+  const znowu = await dane(await miejsce({}, pierwszy).obiekt.fetch(zad('/api/drzwi/wejdz', { cialo })));
+  assert.equal(znowu.ok, false, 'ten sam podpis po kolejnym śnie: ' + JSON.stringify(znowu));
+  assert.match(znowu.blad, /już go użyto/);
+});
+
+test('DT12. wyzwania nie trzeba pamiętać, bo jest podpisane: podrobione, przeterminowane i cudze nie otwierają', async () => {
+  const { obiekt } = miejsce();
+  const t = await telefon();
+  const z1 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+  assert.equal((await dane(await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: z1.wyzwanie, ...t.zaloz(z1.wyzwanie) } })))).ok, true);
+  const wejdzZ = async (w) => dane(await obiekt.fetch(zad('/api/drzwi/wejdz', { cialo: { wyzwanie: w, poswiadczenie: t.id, ...(await t.wejdz(w)) } })));
+
+  // 1. podrobione: przestawiony jeden bit terminu ważności, a urządzenie podpisuje właśnie to podrobione
+  const z2 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } })));
+  const b = b64uDo(z2.wyzwanie);
+  b[5] ^= 0x40;
+  const podrobione = await wejdzZ(b64uZ(b));
+  assert.equal(podrobione.ok, false, JSON.stringify(podrobione));
+  assert.match(podrobione.blad, /nie pochodzi od tych drzwi/);
+
+  // 2. przeterminowane: ten sam zegar Miejsca, termin plus sekunda
+  const z3 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } })));
+  const zegar = Date.now;
+  try {
+    Date.now = () => zegar() + WYZWANIE_WAZNE_MS + 1000;
+    const stare = await wejdzZ(z3.wyzwanie);
+    assert.equal(stare.ok, false, JSON.stringify(stare));
+    assert.match(stare.blad, /przeterminowało/);
+  } finally { Date.now = zegar; }
+  // to samo wyzwanie przed terminem dalej otwiera: nieudana próba go nie zużyła
+  assert.equal((await wejdzZ(z3.wyzwanie)).ok, true, 'przeterminowanie sprawdzono na zegarze, nie na zużyciu');
+
+  // 3. cudze: wydane przez Miejsce z innym sekretem (np. z podglądu) nie otwiera tego Miejsca
+  const obce = miejsce({ SEKRET_SESJI: 'zupelnie-inny-sekret-podgladu-32zn' });
+  const zObce = await dane(await obce.obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+  const t2 = await telefon();
+  const cudze = await dane(await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: zObce.wyzwanie, ...t2.zaloz(zObce.wyzwanie) } })));
+  assert.equal(cudze.ok, false, JSON.stringify(cudze));
+  assert.match(cudze.blad, /nie pochodzi od tych drzwi/);
 });

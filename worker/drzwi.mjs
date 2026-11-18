@@ -28,7 +28,10 @@ export const sekretSesji = (env = {}) => {
   if (s.startsWith('podglad-') && env.PODGLAD !== 'tak') return null;
   return s;
 };
-export const WYZWANIE_WAZNE_MS = 2 * 60 * 1000;         // dotknięcie telefonu mieści się w dwóch minutach
+// Pięć minut, nie dwie: pierwsze założenie passkey na telefonie to czytanie, wybór, gdzie zapisać klucz, i dopiero
+// potem palec. Jozz 18 XI 2026: „zajeło mi chyba z ponad 2 minuty na całość”. Dłuższy termin nic nie kosztuje,
+// bo powtórzeniu podpisu broni jednorazowość wyzwania (drzwi-http.mjs: zuzyj), nie jego krótkość.
+export const WYZWANIE_WAZNE_MS = 5 * 60 * 1000;
 export const SESJA_WAZNA_MS = 30 * 24 * 60 * 60 * 1000; // miesiąc: wejście ma być gestem na sekundę, nie co dzień
 const T = new TextEncoder();
 
@@ -108,6 +111,54 @@ const hmac = async (sekret, tekst) => {
   const k = await crypto.subtle.importKey('raw', T.encode(sekret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return new Uint8Array(await crypto.subtle.sign('HMAC', k, T.encode(tekst)));
 };
+
+// --- wyzwanie, którego Miejsce NIE MUSI pamiętać (18 XI 2026) ---------------------------------------------------
+// Obiekt Miejsca zasypia po ok. 10 s bez żądań i traci wtedy pamięć instancji (dokumentacja Cloudflare, „Durable
+// Object Lifecycle”: „When hibernated, the in-memory state is discarded”). Wyzwanie trzymane w pamięci przepadało
+// więc w połowie gestu każdemu, kto przy telefonie myślał dłużej niż kilka sekund - i tak padły pierwsze próby
+// Jozza, a drugie, szybkie, przeszły. Teraz wyzwanie NIESIE wszystko, co trzeba sprawdzić: wersję, cel, termin
+// i 16 losowych bajtów, a całość jest podpisana sekretem sesji. Bez sekretu nie da się go podrobić ani przedłużyć,
+// a do sprawdzenia nie trzeba niczego pamiętać, więc przeżywa każde uśpienie obiektu.
+const CELE_WYZWANIA = ['zaloz', 'wejdz'];
+const WERSJA_WYZWANIA = 1;
+const DL_TRESCI_WYZWANIA = 26;  // wersja (1), cel (1), termin w ms (8), los (16)
+const NIE_STAD = 'to wyzwanie nie pochodzi od tych drzwi; zacznij od nowa';
+// Przedrostek z ukośnikiem: pierwsza część żetonu sesji jest w base64url, więc ukośnika mieć nie może i żaden
+// podpis wyzwania nie da się przełożyć na podpis sesji ani odwrotnie.
+const podpisWyzwania = (sekret, tresc) => hmac(sekret, 'wyzwanie/1.' + b64uZ(tresc));
+
+export async function zrobWyzwanie(sekret, cel, { teraz = Date.now(), ile = WYZWANIE_WAZNE_MS } = {}) {
+  const k = CELE_WYZWANIA.indexOf(cel);
+  if (k < 0) throw new Error('cel wyzwania: zaloz albo wejdz');
+  const tresc = new Uint8Array(DL_TRESCI_WYZWANIA);
+  const d = new DataView(tresc.buffer);
+  const az = Math.floor(teraz + ile);
+  tresc[0] = WERSJA_WYZWANIA;
+  tresc[1] = k + 1;
+  d.setUint32(2, Math.floor(az / 2 ** 32));
+  d.setUint32(6, az >>> 0);
+  tresc.set(crypto.getRandomValues(new Uint8Array(16)), 10);
+  const podpis = await podpisWyzwania(sekret, tresc);
+  const w = new Uint8Array(DL_TRESCI_WYZWANIA + podpis.length);
+  w.set(tresc);
+  w.set(podpis, DL_TRESCI_WYZWANIA);
+  return b64uZ(w);
+}
+
+// Oddaje { ok, cel, az, los } albo { ok: false, blad }. `los` jest tożsamością wyzwania dla listy użytych.
+export async function czytajWyzwanie(sekret, w, { teraz = Date.now() } = {}) {
+  let u;
+  try { u = b64uDo(w); } catch { return { ok: false, blad: NIE_STAD }; }
+  if (u.length !== DL_TRESCI_WYZWANIA + 32 || u[0] !== WERSJA_WYZWANIA) return { ok: false, blad: NIE_STAD };
+  const tresc = u.slice(0, DL_TRESCI_WYZWANIA);
+  if (!rowne(u.slice(DL_TRESCI_WYZWANIA), await podpisWyzwania(sekret, tresc))) return { ok: false, blad: NIE_STAD };
+  const cel = CELE_WYZWANIA[tresc[1] - 1];
+  if (!cel) return { ok: false, blad: NIE_STAD };
+  const d = new DataView(tresc.buffer);
+  const az = d.getUint32(2) * 2 ** 32 + d.getUint32(6);
+  if (!(az > teraz)) return { ok: false, blad: `wyzwanie się przeterminowało (jest ważne ${Math.round(WYZWANIE_WAZNE_MS / 60000)} minut od naciśnięcia guzika); zacznij od nowa` };
+  return { ok: true, cel, az, los: b64uZ(tresc.slice(10)) };
+}
 
 // Sesja: imię, do kiedy, podpis. Nic nie trzeba pamiętać po stronie Miejsca, a sekret stoi w ustawieniach
 // Workera, nigdy w kodzie ani w danych (zasada 12).
