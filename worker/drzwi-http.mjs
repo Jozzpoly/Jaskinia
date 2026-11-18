@@ -15,9 +15,14 @@ import { sprawdzZalozenie, sprawdzWejscie, zrobSesje, ciastkoNaglowek, ciastkoKo
   sekretSesji, zrobWyzwanie, czytajWyzwanie, WYZWANIE_WAZNE_MS, SESJA_WAZNA_MS } from './drzwi.mjs';
 
 export const ADRES_DRZWI = '/api/drzwi/';
-// Ile wyzwań na minutę wolno wydać jednemu obiektowi Miejsca. Licznik stoi w PAMIĘCI instancji, nie w zapisie:
-// kosztuje zero, a działa dokładnie wtedy, gdy ma działać - gdy ktoś wali w drzwi, obiekt jest obudzony.
-// Po uśpieniu okno startuje od nowa i to jest w porządku: spanie znaczy, że nikt nie wali.
+// Ile PRÓB na minutę (zacznij, zapisz i wejdz razem) przyjmuje jeden obiekt Miejsca. Licznik stoi w PAMIĘCI
+// instancji, nie w zapisie: kosztuje zero, a działa dokładnie wtedy, gdy ma działać - gdy ktoś wali w drzwi, obiekt
+// jest obudzony. Po uśpieniu okno startuje od nowa i to jest w porządku: spanie znaczy, że nikt nie wali.
+// Do 18 XI wieczorem próg stał tylko przy wydawaniu wyzwań, i wystarczał, bo wyzwanie przepadało przy pierwszym
+// użyciu, także nieudanym. Odkąd wyzwanie niesie swój podpis i zużywa się dopiero po podpisie, który przeszedł,
+// jedno wyzwanie pozwalałoby na dowolnie wiele nieudanych prób przez pięć minut, a każda czyta wiersze ze
+// wspólnej puli konta (zasada 13). Dlatego próg liczy teraz każdy krok, i to PRZED pierwszym pytaniem do bazy.
+// Cena: kto wali w drzwi, zamyka je na minutę także właścicielowi; lepsze to niż zjedzona pula całego konta.
 export const WYZWAN_NA_MINUTE = 30;
 
 // UŻYTE WYZWANIA: jedyny ślad drzwi w trwałej pamięci obiektu, i powstaje dopiero PO podpisie, który przeszedł.
@@ -99,6 +104,11 @@ export async function obsluzDrzwi(m, request) {
   }
   const c = await cialoJson(request);
   if (c === null) return json({ ok: false, blad: 'ciało żądania ma być obiektem JSON' }, 400);
+  if (krok === 'zacznij' || krok === 'zapisz' || krok === 'wejdz') {
+    const teraz = Date.now();
+    if (!m._drzwiOkno || teraz - m._drzwiOkno.od > 60000) m._drzwiOkno = { od: teraz, ile: 0 };
+    if (++m._drzwiOkno.ile > WYZWAN_NA_MINUTE) return json({ ok: false, blad: 'za dużo prób otwarcia drzwi w ciągu minuty; spróbuj za chwilę' }, 429);
+  }
 
   // --- 1. wyzwanie ---------------------------------------------------------------------------------------------
   if (krok === 'zacznij') {
@@ -107,12 +117,9 @@ export async function obsluzDrzwi(m, request) {
     if (cel === 'zaloz' && kto !== wlasciciel) return json({ ok: false, blad: 'nowe poświadczenie zakłada tylko właściciel, i tylko wtedy, gdy JUŻ jest wpuszczony (kluczem albo poprzednimi drzwiami)' }, 403);
     // Prosić o wyzwanie do wejścia może każdy. Wydanie nie zostawia żadnego zapisu, ale liczy poświadczenia
     // (wiersze czytane, wspólne dla konta - zasada 13), więc stoją dwa tanie progi: tam, gdzie nie ma czym wejść,
-    // nie wydajemy nic, i nie więcej niż WYZWAN_NA_MINUTE na obiekt. Oba odmawiają BEZ zapisu.
+    // nie wydajemy nic, a wszystkie kroki razem mieszczą się w WYZWAN_NA_MINUTE (wyżej). Oba odmawiają BEZ zapisu.
     const ilePoswiadczen = m.srod.ile({ rodzaj: 'poswiadczenie/1' });
     if (cel === 'wejdz' && ilePoswiadczen === 0) return json({ ok: false, blad: 'to Miejsce nie ma jeszcze żadnego poświadczenia: najpierw dodaj urządzenie, będąc wpuszczonym kluczem' }, 404);
-    const teraz = Date.now();
-    if (!m._drzwiOkno || teraz - m._drzwiOkno.od > 60000) m._drzwiOkno = { od: teraz, ile: 0 };
-    if (++m._drzwiOkno.ile > WYZWAN_NA_MINUTE) return json({ ok: false, blad: 'za dużo prób otwarcia drzwi w ciągu minuty; spróbuj za chwilę' }, 429);
     const w = await zrobWyzwanie(sekret, cel);
     // Przy ZAKŁADANIU przeglądarka ma wiedzieć, czego nie zakładać drugi raz — a o to prosi tylko właściciel,
     // który JUŻ jest wpuszczony (sprawdzone wyżej). Przy WEJŚCIU nie wydajemy niczego: poświadczenia są

@@ -32,7 +32,7 @@ async function telefon(nazwaStrony = NAZWA) {
   const cose = new Uint8Array([0xa5, 0x01, 0x02, 0x03, 0x26, 0x20, 0x01, 0x21, ...bs(sur.slice(1, 33)), 0x22, ...bs(sur.slice(33, 65))]);
   const idP = crypto.getRandomValues(new Uint8Array(16));
   const skrotNazwy = await skrot256(T.encode(nazwaStrony));
-  const cd = (typ, w, origin = ADRES) => T.encode(JSON.stringify({ type: typ, challenge: w, origin, crossOrigin: false }));
+  const cd = (typ, w, origin = ADRES, crossOrigin = false) => T.encode(JSON.stringify({ type: typ, challenge: w, origin, crossOrigin }));
   const ad = ({ licznik = 0, zPoswiadczeniem = false } = {}) => {
     const dl = zPoswiadczeniem ? 16 + 2 + idP.length + cose.length : 0;
     const u = new Uint8Array(37 + dl);
@@ -44,8 +44,8 @@ async function telefon(nazwaStrony = NAZWA) {
   return {
     id: b64uZ(idP),
     zaloz: (w) => ({ clientDataJSON: b64uZ(cd('webauthn.create', w)), authenticatorData: b64uZ(ad({ zPoswiadczeniem: true })) }),
-    async wejdz(w, { licznik = 0, origin = ADRES } = {}) {
-      const clientDataJSON = cd('webauthn.get', w, origin);
+    async wejdz(w, { licznik = 0, origin = ADRES, crossOrigin = false } = {}) {
+      const clientDataJSON = cd('webauthn.get', w, origin, crossOrigin);
       const a = ad({ licznik });
       const doP = new Uint8Array(a.length + 32); doP.set(a); doP.set(await skrot256(clientDataJSON), a.length);
       const p = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, para.privateKey, doP));
@@ -370,4 +370,37 @@ test('DT12. wyzwania nie trzeba pamiętać, bo jest podpisane: podrobione, przet
   const cudze = await dane(await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: zObce.wyzwanie, ...t2.zaloz(zObce.wyzwanie) } })));
   assert.equal(cudze.ok, false, JSON.stringify(cudze));
   assert.match(cudze.blad, /nie pochodzi od tych drzwi/);
+});
+
+test('DT13. jedno wyzwanie nie daje nieskończenie wielu prób, a próg stoi przed pierwszym pytaniem do bazy', async () => {
+  // Regresja z tego samego wieczoru (18 XI 2026, Opus Code): wyzwanie zużywa się dopiero po podpisie, który przeszedł,
+  // więc próg tylko przy wydawaniu wyzwań przestał ograniczać próby wejścia. Jedno wyzwanie, dużo śmieciowych podpisów.
+  const { obiekt } = miejsce();
+  const t = await telefon();
+  const z1 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+  await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: z1.wyzwanie, ...t.zaloz(z1.wyzwanie) } }));
+  const z2 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } })));
+  const smiec = { wyzwanie: z2.wyzwanie, poswiadczenie: t.id, clientDataJSON: 'e30', authenticatorData: 'AAAA', podpis: 'AAAA' };
+  const statusy = [];
+  for (let i = 0; i < WYZWAN_NA_MINUTE + 5; i++) statusy.push((await obiekt.fetch(zad('/api/drzwi/wejdz', { cialo: smiec }))).status);
+  assert.ok(statusy.filter((s) => s === 429).length >= 5, `po progu odmowa 429, a było: ${statusy.join(',')}`);
+  assert.ok(statusy.slice(0, WYZWAN_NA_MINUTE - 3).every((s) => s !== 429), 'przed progiem drzwi odpowiadają na treść, nie progiem');
+});
+
+test('DT14. gest z ramki na cudzej stronie (crossOrigin) nie otwiera drzwi, choć podpis jest prawdziwy', async () => {
+  const { obiekt } = miejsce();
+  const t = await telefon();
+  const z1 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+  assert.equal((await dane(await obiekt.fetch(zad('/api/drzwi/zapisz', { kto: 'jozz', cialo: { wyzwanie: z1.wyzwanie, ...t.zaloz(z1.wyzwanie) } })))).ok, true);
+  const z2 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } })));
+  const prawdziwe = await t.wejdz(z2.wyzwanie);
+  // ta sama ceremonia, tylko przeglądarka mówi, że odbyła się w ramce osadzonej na cudzej stronie
+  const cd = JSON.parse(new TextDecoder().decode(b64uDo(prawdziwe.clientDataJSON)));
+  assert.equal(cd.crossOrigin, false, 'udawany telefon podaje crossOrigin jak przeglądarka');
+  const wRamce = await t.wejdz(z2.wyzwanie, { crossOrigin: true });
+  const we = await dane(await obiekt.fetch(zad('/api/drzwi/wejdz', { cialo: { wyzwanie: z2.wyzwanie, poswiadczenie: t.id, ...wRamce } })));
+  assert.equal(we.ok, false, JSON.stringify(we));
+  assert.match(we.blad, /ramce na cudzej stronie/);
+  // to samo wyzwanie z prawdziwej strony dalej otwiera: odmowa w ramce go nie zużyła
+  assert.equal((await dane(await obiekt.fetch(zad('/api/drzwi/wejdz', { cialo: { wyzwanie: z2.wyzwanie, poswiadczenie: t.id, ...prawdziwe } })))).ok, true);
 });

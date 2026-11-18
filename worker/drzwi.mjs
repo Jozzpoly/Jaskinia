@@ -213,6 +213,10 @@ const czytajClientData = (bajty, oczekiwanyTyp, wyzwanie, origin) => {
   if (c.type !== oczekiwanyTyp) return `clientDataJSON mówi type: ${c.type}, a tu są drzwi ${oczekiwanyTyp}`;
   if (typeof c.challenge !== 'string' || c.challenge !== wyzwanie) return 'wyzwanie w clientDataJSON jest inne niż to, które wydaliśmy';
   if (c.origin !== origin) return `clientDataJSON mówi origin: ${c.origin}, a te drzwi stoją pod ${origin}`;
+  // Gest w cudzej ramce: strona obcego adresu osadza stronę Miejsca i podsuwa właścicielowi guzik. Drzwi otwiera
+  // się tylko na własnej stronie, więc ceremonia z `crossOrigin: true` nie przechodzi (WebAuthn, weryfikacja
+  // clientDataJSON: crossOrigin ma być fałszem, chyba że strona świadomie chce działać w ramce - my nie chcemy).
+  if (c.crossOrigin === true) return 'ten gest odbył się w ramce na cudzej stronie, a te drzwi otwiera się tylko na stronie Miejsca';
   return null;
 };
 
