@@ -287,6 +287,17 @@ test('W16. widok czytelnika nie przepuszcza niczego po cichu: surowy SQL rzuca, 
     rola: 'prawa czytajacego, policzone o NIM; sama widocznosc z niej wychodzi, wiec nie moze od niej zalezec',
     wyrownajZNatury: 'ruch srodowiska (naprawa polozen), nie czytanie dla kogos',
     czytelnikOkna: 'nie oddaje tresci: liczy, czyimi oczami czyta narzedzie w oknie (slabszymi z dwoch); goscia pyta oczami otwierajacego (rzecz z dla)',
+    // Dopisane 18 XI wieczorem, gdy straznik zaczal liczyc PRZECHODNIO (ponizej): te dziewiec dochodzilo do bazy przez
+    // pomocnika i zadna wersja straznika ich nie widziala. Przejrzane jedna po drugiej; nowej dziury nie bylo.
+    tytul: 'nazwa rzeczy, ktora czytajacy JUZ trzyma; ksztalt bierze z celu swiadomie, zeby nazwa widocznej rzeczy nie znikala',
+    ocen: 'prawo pytajacego do ruchu, liczone o nim samym; to nie czytanie rzeczy dla kogos',
+    prawo: 'j.w.: czy TEN uczestnik moze, nie co lezy w swiecie',
+    ruch: 'ruch, nie czytanie; co ruch oddaje piszacemu, sprawdzaja ataki na zapis (atak_stos_http, a-gest)',
+    kod: 'zapis kodu goscia: oddaje tylko identyfikator wlasnego zapisu',
+    bajty: 'zapis bajtow pliku: oddaje tylko identyfikator i odcisk wlasnego zapisu',
+    zasiej: 'ruch srodowiska (zasiew), nie czytanie dla kogos',
+    gestDla: 'wlasne akty pytajacego (kto = on): identyfikatory rzeczy, ktore sam ruszyl, i numery aktow; bez tresci',
+    gestyDla: 'j.w.: wlasne gesty pytajacego, tylko znak, liczba rzeczy i czas',
   };
   // Pierwsza wersja tego straznika pytala tylko o SUROWY SQL w ciele metody - i dlatego przepuscila dwie metody,
   // ktore czytaja baze PRZEZ inna metode: `ksztalty` (lista rodzajow: ksztalt z zamknietego obszaru wychodzil
@@ -298,8 +309,23 @@ test('W16. widok czytelnika nie przepuszcza niczego po cichu: surowy SQL rzuca, 
     const d = Object.getOwnPropertyDescriptor(proto, n);
     return d && typeof d.value === 'function';
   });
-  const POSREDNIO = /this\.(wszystkie|spis|ile|rzecz|rzeczyWiele|wersja|wskazujaNa|historia|aktyRzeczy|ksztalty|przekroj|liczby)\(/;
-  const czyta = metody.filter((n) => /this\.q\(|\.sql\.exec\(/.test(String(proto[n])) || POSREDNIO.test(String(proto[n])));
+  // PRZECHODNIO (18 XI wieczorem): lista nazw "posrednio" byla drugim jednym ksztaltem bledu - metoda, ktora czyta
+  // przez pomocnika z podkresleniem albo przez trzecia metode, przechodzila po cichu. Liczymy domkniecie this.X(
+  // po WSZYSTKICH metodach prototypu, do surowego SQL; nowa droga do bazy padnie tu sama, bez dopisywania nazw.
+  const zrodlo = (n) => String(proto[n]);
+  const wszystkieMetody = Object.getOwnPropertyNames(proto).filter((n) => n !== 'constructor' && typeof Object.getOwnPropertyDescriptor(proto, n).value === 'function');
+  const SUROWY = /this\.q\(|\.sql\.exec\(/;
+  const pamiec = new Map();
+  const dochodzi = (n, stos = new Set()) => {
+    if (pamiec.has(n)) return pamiec.get(n);
+    if (stos.has(n)) return false;
+    stos.add(n);
+    const tak = SUROWY.test(zrodlo(n)) || [...zrodlo(n).matchAll(/this\.(\w+)\(/g)].some((m) => m[1] !== n && wszystkieMetody.includes(m[1]) && dochodzi(m[1], stos));
+    stos.delete(n);
+    pamiec.set(n, tak);
+    return tak;
+  };
+  const czyta = metody.filter((n) => dochodzi(n));
   const nieznane = czyta.filter((n) => !owiniete.has(n) && !Object.hasOwn(swiadomie, n));
   assert.deepEqual(nieznane, [], 'metoda publiczna, ktora czyta rzeczy (sama albo przez inna metode), a nie przechodzi przez okulary ani nie jest tu wypisana z powodem');
 });
