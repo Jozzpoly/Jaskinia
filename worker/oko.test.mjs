@@ -190,3 +190,23 @@ test('OK3. spis czasowników nazywa także to, co umie ręka: jedna tablica dla 
     if (o && Array.isArray(o.czasowniki)) assert.ok(o.czasowniki.some((c) => c.nazwa === 'reka:start.cofnij'), 'opis Miejsca niesie czasowniki ręki');
   }
 });
+
+test('OK6. żadna strona tekstowa dla agentów nie niesie gołego "undefined": każdy czasownik mówi, co bierze i co oddaje, albo tego pola nie drukuje', async () => {
+  const { obsluzSrodowisko } = await import('./srodowisko-http.mjs');
+  const { czasowniki, czasownikiReki } = await import('./opis.mjs');
+  let t = Date.UTC(2026, 10, 18, 13, 30, 0);
+  const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+  const s = new Srodowisko(r);
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }));
+  const strona = async (sciezka, kto = 'agent-a') => (await obsluzSrodowisko(s, new Request('https://proba.example' + sciezka, { headers: kto ? { 'x-kto': kto } : {} }))).text();
+  const gosc = s.spis({ rodzaj: 'gosc/1', limit: 1 })[0];
+  for (const sciezka of ['/co-tu-jest', '/rodzaje', '/ustawienia', '/umowa-okna', '/rzeczy', '/rodzaj/okno/1', '/rodzaj/plik/1', '/rodzaj/slowo/1', '/rzecz/' + gosc.id]) {
+    for (const kto of ['agent-a', 'jozz', null]) {
+      const tekst = await strona(sciezka, kto);
+      for (const smiec of ['undefined', '[object Object]', 'NaN']) assert.equal(tekst.includes(smiec), false, `${sciezka} dla ${kto || 'zwiedzającego'} niesie "${smiec}": ${(tekst.split('\n').find((l) => l.includes(smiec)) || '').slice(0, 160)}`);
+    }
+  }
+  for (const c of [...czasowniki(s.dla('agent-a')), ...czasownikiReki()]) {
+    for (const pole of ['nazwa', 'ktoredy', 'opis', 'wejscie', 'wynik']) assert.equal(typeof c[pole] === 'string' && c[pole].length > 0, true, `czasownik ${c.nazwa}: pole ${pole}`);
+  }
+});

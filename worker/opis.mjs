@@ -24,7 +24,8 @@ export const CO_ZNACZY = {
 
 // Czasowniki ręki w tym samym kształcie co pozostałe: nazwa zaczyna się od "reka:", a `ktoredy` mówi twarz i gest.
 export function czasownikiReki() {
-  return CZASOWNIKI_REKI.map((c) => ({ nazwa: 'reka:' + c.nazwa, ktoredy: `ręka na twarzy ${c.twarz}: ${c.jak}`, opis: c.co + (c.ruch ? ` (ruch ${c.ruch})` : '') + (c.zapisuje ? ` (zapisuje ${c.zapisuje})` : '') }));
+  return CZASOWNIKI_REKI.map((c) => ({ nazwa: 'reka:' + c.nazwa, ktoredy: `ręka na twarzy ${c.twarz}: ${c.jak}`, opis: c.co + (c.ruch ? ` (ruch ${c.ruch})` : '') + (c.zapisuje ? ` (zapisuje ${c.zapisuje})` : ''),
+    wejscie: c.klawisz ? `gest ręki albo klawisz ${c.klawisz}` : 'gest ręki', wynik: c.zapisuje ? `zapis rzeczy rodzaju ${c.zapisuje}` : (c.ruch ? `ruch ${c.ruch}` : 'nic nie zapisuje: zmienia tylko to, co widać') }));
 }
 
 export function czasowniki(s) {
@@ -44,8 +45,8 @@ export function czasowniki(s) {
     { nazwa: 'ksztalty', ktoredy: 'drzwi: GET /api/srodowisko/ksztalty; tekstem: /rodzaje; okno: read ksztalty', opis: 'wszystkie rodzaje rzeczy z opisem cech', wejscie: '-', wynik: '{ksztalty: [{dla, opis, cechy, …}]}' },
     { nazwa: 'cofnij-gest', ktoredy: 'drzwi: POST /api/srodowisko/ruch z co: cofnij-gest', opis: 'cofa jednym krokiem wszystko, co ruszył gest (ruchy z tym samym polem gest); wszystko albo nic; samo cofnięcie ze znakiem gestu da się ponowić', wejscie: '{op, co: "cofnij-gest", cofany: <znak gestu>, gest?: <znak tego cofnięcia>, czyj?: <imię; tylko właściciel>}', wynik: '{skutek: "cofniety-gest", rzeczy} albo 409 z listą rzeczy zmienionych po geście' },
     { nazwa: 'przywroc-uklad', ktoredy: 'drzwi: POST /api/srodowisko/ruch z co: przywroc-uklad', opis: 'ustawia położenia widoku tak, jak leżały w zapisanej chwili (rzecz chwila/1: nazwa, widok, akt); zapisuje tylko różnicę', wejscie: '{op, co: "przywroc-uklad", chwila: <id>, gest?}', wynik: '{skutek: "przywrocony-uklad", rzeczy}' },
-    { nazwa: 'gesty', ktoredy: 'drzwi: GET /api/srodowisko/gesty?ile=', opis: 'ostatnie gesty pytającego: znak, ile rzeczy ruszył, kiedy', wynik: '{gesty: [{gest, rzeczy, akt, kiedy}]}' },
-    { nazwa: 'widok-w-chwili', ktoredy: 'drzwi: GET /api/srodowisko/widok-w-chwili?widok=&akt=', opis: 'położenia widoku takie, jakie były przy danym akcie', wynik: '{polozenia: [{rzecz, akt, cechy}]}' },
+    { nazwa: 'gesty', ktoredy: 'drzwi: GET /api/srodowisko/gesty?ile=', opis: 'ostatnie gesty pytającego: znak, ile rzeczy ruszył, kiedy', wejscie: 'ile? (domyślnie 20); potrzebny klucz', wynik: '{gesty: [{gest, rzeczy, akt, kiedy}]}' },
+    { nazwa: 'widok-w-chwili', ktoredy: 'drzwi: GET /api/srodowisko/widok-w-chwili?widok=&akt=', opis: 'położenia widoku takie, jakie były przy danym akcie', wejscie: 'widok: identyfikator widoku, akt: numer aktu', wynik: '{polozenia: [{rzecz, akt, cechy}]}' },
     { nazwa: 'bajty', ktoredy: 'drzwi: POST /api/srodowisko/bajty?op=<identyfikator czynności> (bajty w ciele żądania) i GET /api/srodowisko/bajty?rzecz=<id>&odcisk=', opis: 'duża treść: bajty pliku wchodzą jako niezmienny zapis (do 1500000 bajtów), a wychodzą przez rzecz rodzaju plik/1, oczami czytającego; z odciskiem zawsze te same', wejscie: 'POST: ciało to bajty; potem rzecz plik/1 {nazwa, typ, rozmiar, tresc: <zapis>} zwykłym ruchem poloz. GET: rzecz = id pliku, odcisk (niewymagany) = przypięta wersja', wynik: 'POST: {zapis, rozmiar}; GET: bajty z typem z rzeczy' },
     { nazwa: 'ustawienia', ktoredy: 'drzwi: GET /api/srodowisko/ustawienia?dla=&nakladki=&nazwy=&deklaracje=tak (tekstem: /ustawienia)', opis: 'wartości wszystkich pokręteł policzone dla zasięgu: rzecz, jej obszar i obszary w górę, całe Miejsce, z włączonymi zestawami (motyw, preset)', wejscie: 'dla: rzecz, przez którą patrzysz (bez niej całe Miejsce); nakladki: profile albo inne rzeczy przed łańcuchem', wynik: '{wartosci: {nazwa: {wartosc, skad, zasieg, rzecz}}, lancuch, akt}' },
     { nazwa: 'spojnosc', ktoredy: 'drzwi: GET /api/srodowisko/spojnosc?ile=&pomin=&rodzaj=&najwyzej=', opis: 'sprawdzian spójności: które rzeczy NIE zgadzają się ze swoim własnym kształtem — leżą w innym obszarze niż rzecz, od której kształt każe im brać obszar (lezy_z), albo nie przechodzą dzisiejszego sprawdzenia cech. Tylko czyta, niczego nie naprawia: naprawa rzeczy jest ruchem i ma mieć autora. Przy urwaniu na budżecie mówi to wprost, bo nieznane to nie zero', wejscie: 'ile? (ile rzeczy naraz, domyślnie 3000), pomin?, rodzaj?, najwyzej? (ile niezgodności wypisać)', wynik: '{akt, sprawdzone, urwane, nastepne, bez_ksztaltu, ile_niezgodnych, rodziny: {lezy_z, ksztalt}, niezgodne: [{rzecz, rodzaj, obszar, rodzina, mowi}], mowi}' },
@@ -317,7 +318,8 @@ export function coTuJest(s, opcje = {}) {
     'Prośbę do właściciela zostawia się jako rzecz rodzaju prosba/1 ze stanem "czeka".',
     '',
     '7. SPIS CZASOWNIKÓW (wszystko, co da się tu zrobić; ten sam spis czyta strona i agent)',
-    d.czasowniki.map((c) => `  ${c.nazwa}: ${c.opis}\n      którędy: ${c.ktoredy}\n      wejście: ${c.wejscie}   wynik: ${c.wynik}`),
+    // Pole, którego czasownik nie ma, nie jest drukowane: inaczej w tekście dla agentów stało gołe słowo "undefined".
+    d.czasowniki.map((c) => `  ${c.nazwa}: ${c.opis}\n      którędy: ${c.ktoredy}` + (c.wejscie || c.wynik ? '\n      ' + [c.wejscie ? `wejście: ${c.wejscie}` : null, c.wynik ? `wynik: ${c.wynik}` : null].filter(Boolean).join('   ') : '')),
     '',
     '8. STAN BUDOWY (co środowisko umie i czego jeszcze nie; każda pozycja jest rzeczą rodzaju zdolnosc/1 i zmienia się ruchem)',
     'Budowa idzie etapami: grunt ma być solidny, zanim staną na nim ściany i kable; wykończenie jest na końcu; tworzenie jest celem.',
