@@ -67,6 +67,10 @@ async function srodowisko(request, env, url) {
   }
   const cialo = request.headers.get('x-cialo');
   if (cialo) naglowki.set('x-cialo', cialo.slice(0, 80));
+  // ruch z okna gościa: identyfikator gościa przechodzi dalej tak, jak przyszedł; czy taki gość jest i czy wolno mu
+  // pisać, sprawdza Miejsce
+  const gosc = request.headers.get('x-gosc');
+  if (gosc !== null) naglowki.set('x-gosc', gosc.slice(0, 40));
   const ct = request.headers.get('content-type');
   if (ct) naglowki.set('content-type', ct);
   let cialoZadania;

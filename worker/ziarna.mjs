@@ -4,7 +4,17 @@
 import { STOPNIE, UWAGI, WIDZI, UKLADA, szybkiOdcisk } from './srodowisko.mjs';
 
 const k = (nazwa, cechy) => ({ nazwa: 'ksztalt-' + nazwa, rodzaj: 'ksztalt/1', cechy });
-const zd = (nazwa, stan, opis, jak) => ({ nazwa: 'zdolnosc-' + nazwa, rodzaj: 'zdolnosc/1', cechy: { nazwa: opis.split(':')[0], stan, opis: opis.split(':').slice(1).join(':').trim(), ...(jak ? { jak } : {}) } });
+// Etapy budowy, w tej kolejności: grunt ma być solidny, zanim staną ściany; wykończenie jest na końcu; tworzenie jest
+// celem. Każda zdolność mówi, na którym etapie jest potrzebna, żeby stan budowy pokazywał też, czego brakuje i kiedy.
+export const ETAPY = [
+  { id: 'grunt', nazwa: 'Etap 1, grunt', opis: 'środowisko pod dom i jego mieszkańców: pamięć, tożsamość, prawa, drzwi, umowy i fakty, które odświeżają się same. Ma być solidny, zanim cokolwiek na nim stanie.' },
+  { id: 'sciany-i-kable', nazwa: 'Etap 2, ściany i kable', opis: 'organy jako konstrukcja (Start, okna, narzędzia), połączenia z agentami i światem, sprawdzenie, czy grunt unosi szerokie wymagania.' },
+  { id: 'wykonczenie', nazwa: 'Etap 3, wykończenie', opis: 'ręka i oko, wygląd, przytulność i treść w środku. Na końcu, po podstawach.' },
+  { id: 'tworzenie', nazwa: 'Etap 4, tworzenie', opis: 'wspólne budowanie światów w środku: to, po co jest całe Miejsce.' },
+];
+// Zdolności, które stały przed podziałem na etapy, a nie należą do gruntu.
+const ETAP_DAWNYCH = { start: 'sciany-i-kable', 'wolanie-czasownikow': 'sciany-i-kable', 'najety-mozg': 'sciany-i-kable', 'licznik-przeniesienia': 'wykonczenie' };
+const zd = (nazwa, stan, opis, jak, etap) => ({ nazwa: 'zdolnosc-' + nazwa, rodzaj: 'zdolnosc/1', cechy: { nazwa: opis.split(':')[0], stan, opis: opis.split(':').slice(1).join(':').trim(), ...(jak ? { jak } : {}), etap: etap || ETAP_DAWNYCH[nazwa] || 'grunt' } });
 
 // Przykładowy gość: jedna strona HTML, która rozmawia z gospodarzem umową okna (pokolenie 2).
 export const GOSC_LISTA = `<!doctype html>
@@ -74,6 +84,108 @@ powiedz({ type: 'hello', name: 'Lista rzeczy', version: '1', wants: ['rzeczy'] }
 </html>
 `;
 
+const GOSC_SLOWA = `<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Słowa</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 12px 14px; font: 15px/1.45 system-ui, sans-serif; }
+  h1 { font-size: 1.05rem; margin: 0 0 2px; }
+  #stan { margin: 0 0 10px; opacity: .75; font-size: .9rem; }
+  #wynik { margin: 0; font-size: .9rem; min-height: 1.3em; }
+  #nowe { display: grid; gap: 6px; margin: 0 0 12px; }
+  select, textarea, button { font: inherit; font-size: 16px; padding: 6px 8px; }
+  textarea { min-height: 3.4rem; }
+  button { justify-self: start; min-height: 44px; padding: 6px 14px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+  small { opacity: .65; }
+</style>
+</head>
+<body>
+<h1>Słowa</h1>
+<p id="stan">Czekam na gospodarza…</p>
+<div id="nowe">
+  <select id="przy" aria-label="Przy której rzeczy"></select>
+  <textarea id="tresc" aria-label="Twoje słowo" placeholder="Słowo przy tej rzeczy"></textarea>
+  <button type="button" id="zostaw">Zostaw słowo</button>
+  <p id="wynik" role="status"></p>
+</div>
+<ul id="lista"></ul>
+<script>
+// Gość Jaskini, który pisze: przykład umowy okna, pokolenie 3 (ruch z okna). Pełny opis: adres /umowa-okna.
+// Ruch zapisuje się pod imieniem tego gościa, nie tego, kto otworzył okno. Tam, gdzie gościowi wolno tylko
+// proponować, wynik to {skutek: "propozycja"}: czeka na właściciela i to jest poprawny wynik, nie błąd.
+const gospodarz = window.parent;
+let nr = 0;
+const czekaja = new Map();
+const powiedz = (m) => gospodarz.postMessage({ jaskinia: 1, ...m }, '*');
+function zapytaj(typ, wiecej, ms) {
+  return new Promise((tak, nie) => {
+    const id = ++nr;
+    czekaja.set(id, { tak, nie });
+    powiedz({ type: typ, id, ...wiecej });
+    setTimeout(() => { if (czekaja.delete(id)) nie(new Error('gospodarz nie odpowiedział')); }, ms);
+  });
+}
+const czytaj = (what, wiecej) => zapytaj('read', { what, ...wiecej }, 8000);
+const rusz = (move) => zapytaj('move', { move }, 15000);
+const stan = document.getElementById('stan'), wynik = document.getElementById('wynik');
+const ile = (n) => n + (n === 1 ? ' słowo' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? ' słowa' : ' słów'));
+addEventListener('message', (e) => {
+  const m = e.data;
+  if (e.source !== gospodarz || !m || m.jaskinia !== 1) return;
+  if (m.type === 'hi') { powiedz({ type: 'hello', name: 'Słowa', version: '1', wants: ['rzeczy'] }); pokaz(); }
+  else if (m.type === 'result') { const c = czekaja.get(m.id); if (c) { czekaja.delete(m.id); if (m.ok) c.tak(m.data); else c.nie(new Error(m.error)); } }
+  else if (m.type === 'changed') pokaz();
+});
+async function pokaz() {
+  try {
+    const [slowa, rzeczy] = await Promise.all([czytaj('spis', { rodzaj: 'slowo' }), czytaj('spis', {})]);
+    const tytuly = new Map(rzeczy.rzeczy.map((r) => [r.id, r.tytul]));
+    const przy = document.getElementById('przy');
+    const wybrane = przy.value;
+    przy.textContent = '';
+    for (const r of rzeczy.rzeczy.filter((x) => /^(projekt|repo|gosc|widok)\\//.test(x.rodzaj)).slice(0, 200)) {
+      const o = document.createElement('option'); o.value = r.id; o.textContent = r.tytul + ' [' + r.rodzaj + ']'; przy.append(o);
+    }
+    if (wybrane) przy.value = wybrane;
+    const lista = document.getElementById('lista');
+    lista.textContent = '';
+    for (const s of slowa.rzeczy.slice(0, 30)) {
+      const li = document.createElement('li');
+      li.textContent = s.cechy.tresc + ' ';
+      const m = document.createElement('small');
+      // autor: narzędzie stoi w dzienniku pod imieniem gosc-<id swojej rzeczy>, więc pokazujemy jego nazwę
+      const autor = s.utworzyl.startsWith('gosc-') && tytuly.get(s.utworzyl.slice(5)) ? 'narzędzie ' + tytuly.get(s.utworzyl.slice(5)) : s.utworzyl;
+      m.textContent = 'przy: ' + (s.cechy.dotyczy || []).map((id) => tytuly.get(id) || id.slice(0, 6)).join(', ') + ' · ' + autor;
+      li.append(m); lista.append(li);
+    }
+    stan.textContent = ile(slowa.razem) + ' w Miejscu';
+    powiedz({ type: 'state', text: ile(slowa.razem) });
+  } catch (err) { stan.textContent = 'Nie udało się przeczytać: ' + err.message; }
+}
+// Zwykły guzik, nie formularz: w piaskownicy gościa formularze są wyłączone, więc zdarzenie submit by nie przyszło.
+document.getElementById('zostaw').addEventListener('click', async () => {
+  const tresc = document.getElementById('tresc'), przy = document.getElementById('przy').value;
+  if (!tresc.value.trim() || !przy) { wynik.textContent = 'Wybierz rzecz i wpisz słowo.'; return; }
+  try {
+    const w = await rusz({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: tresc.value.trim(), dotyczy: [przy] } });
+    tresc.value = '';
+    // zdanie o skutku ma własne miejsce: lista odświeża się sama po każdej zmianie i nie może go zamazać
+    wynik.textContent = w.skutek === 'propozycja' ? 'Poszło jako propozycja (' + (w.powod || 'czeka na właściciela') + ').' : 'Zapisane pod imieniem tego narzędzia.';
+    pokaz();
+  } catch (err) { wynik.textContent = 'Nie zapisało się: ' + err.message; }
+});
+powiedz({ type: 'hello', name: 'Słowa', version: '1', wants: ['rzeczy'] });
+</script>
+</body>
+</html>
+`;
+
 // `uczestnicy` to imiona, które właściciel ustawił jako klucze. Od 17 XI 2026 prawa bierze się z rzeczy rodzaju
 // uczestnik/1, więc imię bez takiej rzeczy nie jest uczestnikiem - dlatego zasiew musi je znać. W Workerze podaje
 // je `_poznaj` z nagłówka zbudowanego z ustawienia KLUCZE; w sprawdzianie świat podaje je sam.
@@ -108,6 +220,7 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
     k('propozycja', { dla: 'propozycja/1', tytul: 'rodzaj', opis: 'Propozycja: ruch uczestnika, który nie ma prawa do skutku. Leży tam, gdzie rzecz, której dotyczy, i czeka, aż ktoś z prawem ją przyjmie albo odrzuci.',
       cechy: {
         od: { typ: 'tekst', wymagana: true, opis: 'kto proponuje' },
+        przez: { typ: 'tekst', opis: 'gdy proponuje gość z okna: kto otworzył to okno' },
         co: { typ: 'wybor', wartosci: ['poloz', 'odloz', 'przywroc', 'cofnij'], wymagana: true },
         rodzaj: { typ: 'tekst', wymagana: true, opis: 'rodzaj rzeczy, której dotyczy ruch' },
         tresc: { typ: 'dowolne', wymagana: true, opis: '{obszar, cechy}: to, co ruch chciał zapisać' },
@@ -141,7 +254,7 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
         opis: { typ: 'tekst', wymagana: true, opis: 'co ten gość pokazuje albo robi' },
         kod: { typ: 'zapis', rodzaj: 'kod/1', opis: 'zapis rodzaju kod/1 z jednym plikiem HTML; powstaje przez POST /api/srodowisko/kod' },
         adres: { typ: 'adres', opis: 'adres strony, która żyje poza Jaskinią (np. gra)' },
-        umowa: { typ: 'tekst', opis: 'pokolenie umowy okna, którym gość mówi, np. okno/2' },
+        umowa: { typ: 'tekst', opis: 'pokolenie umowy okna, którym gość mówi: okno/2 (czyta rzeczy) albo okno/3 (czyta i pisze: ruch z okna pod własnym imieniem gościa)' },
         czasowniki: { typ: 'dowolne', opis: 'lista {nazwa, opis, wejscie, wynik}: co ten gość umie zrobić na prośbę' },
       } }),
     k('zdolnosc', { dla: 'zdolnosc/1', tytul: 'nazwa', opis: 'Zdolność środowiska: co ono już umie, co umie cienko, a czego jeszcze nie. Stan budowy mieszka tu, a nie w czyjejś głowie.',
@@ -151,6 +264,7 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
         opis: { typ: 'tekst', wymagana: true },
         jak: { typ: 'tekst', opis: 'jak tego użyć albo czego brakuje' },
         dowod: { typ: 'tekst', opis: 'kto i jak to sprawdził' },
+        etap: { typ: 'wybor', wartosci: ['grunt', 'sciany-i-kable', 'wykonczenie', 'tworzenie'], opis: 'na którym etapie budowy ta zdolność jest potrzebna: grunt (środowisko pod dom i jego mieszkańców), ściany i kable (organy jako konstrukcja i połączenia), wykończenie (ręka, oko, treść), tworzenie (wspólne budowanie światów)' },
       } }),
     k('projekt', { dla: 'projekt/1', tytul: 'nazwa', opis: 'Projekt: jedno z dzieł właściciela (gra, lab, narzędzie). Nie musi mieć repozytorium.',
       cechy: {
@@ -244,10 +358,10 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
     zd('trasa', 'stoi', 'Trasa: jedno żądanie do drzwi i rzecz jest w Miejscu, widać ją w spisie i zostaje.'),
     zd('samowyjasnianie', 'stoi', 'Samowyjaśnianie pod adresem: /co-tu-jest mówi gołym tekstem, co tu jest, co się zmieniło, co komu wolno i jak coś dołożyć; powstaje z danych.'),
     zd('obszary', 'cienko', 'Obszary i prawo do skutku z danych: ten sam ruch daje skutek, propozycję albo odmowę zależnie od ustawienia obszaru.', 'Działa ile_wolno, liczone w obszarze, w którym rzecz leży, i w tym, do którego trafia, oraz widzi (osobna zdolność: widocznosc). Ustawienia uwaga i uklada są zapisane, ale nic jeszcze z nich nie wynika. Wszyscy agenci mają w obszarze to samo prawo.'),
-    zd('uczestnicy', 'cienko', 'Uczestnicy z danych: kto ma tu prawa, mówi rzecz rodzaju uczestnik/1, którą właściciel widzi i zmienia w Miejscu; klucz w ustawieniu Workera dowodzi tylko, KIM ktoś jest.', 'Rola (agent albo automat) jest cechą tej rzeczy; roli właściciela nadać nie może, bo właściciel to jedno imię z ustawienia Workera. Uczestnik odłożony traci prawa, a przywrócony je odzyskuje - i to jest dziś jedyny sposób odebrania wstępu bez zmiany ustawień. Imię, które nie ma swojej rzeczy uczestnika, nie jest uczestnikiem i słyszy to wprost, zamiast "podaj klucz" do kogoś, kto klucz właśnie podał. Czego nie ma: zaproszeń, zakładania kluczy w Miejscu (klucz nigdy nie jest daną), ani RÓŻNYCH praw dla różnych uczestników w tym samym obszarze - ile_wolno mówi o wszystkich agentach naraz.'), 
+    zd('uczestnicy', 'cienko', 'Uczestnicy z danych: kto ma tu prawa, mówi rzecz rodzaju uczestnik/1, którą właściciel widzi i zmienia w Miejscu; klucz w ustawieniu Workera dowodzi tylko, KIM ktoś jest.', 'Rola (agent albo automat) jest cechą tej rzeczy; roli właściciela nadać nie może, bo właściciel to jedno imię z ustawienia Workera. Uczestnik odłożony traci prawa, a przywrócony je odzyskuje - i to jest dziś jedyny sposób odebrania wstępu bez zmiany ustawień. Imię, które nie ma swojej rzeczy uczestnika, nie jest uczestnikiem i słyszy to wprost, zamiast "podaj klucz" do kogoś, kto klucz właśnie podał. Czego nie ma: zaproszeń, zakładania kluczy w Miejscu (klucz nigdy nie jest daną), ani RÓŻNYCH praw dla różnych uczestników w tym samym obszarze - ile_wolno mówi o wszystkich agentach naraz. Nie ma też roli dla drugiego człowieka: role są trzy (właściciel, agent, automat).'), 
     zd('propozycje', 'cienko', 'Propozycje: ruch bez prawa do skutku czeka, aż przyjmie go albo odrzuci właściciel albo ktoś, kto sam mógłby zrobić ten ruch ze skutkiem; autor może swoją wycofać.', 'Ruch, który zmienia coś zastrzeżonego dla właściciela, też staje się propozycją, tylko do niego. Nie ma wygasania ani warstwy do obejrzenia przed przyjęciem.'),
-    zd('goscie', 'cienko', 'Goście z kodem w piaskownicy: jeden plik HTML zapisany w Miejscu, podawany bez dostępu do sieci i do adresu Miejsca.', 'Gość czyta rzeczy przez umowę okna. Jeszcze nie proponuje ruchów z okna i nie ma własnej pamięci.'),
-    zd('umowa-okna', 'cienko', 'Umowa okna, pokolenie 2: przyrząd starej Jaskini (hello, state, signals, event, flag) i czytanie rzeczy.', 'Opis: /umowa-okna. Brakuje ruchów z okna, wołania czasowników gościa i okna w przestrzeni Startu.'),
+    zd('goscie', 'cienko', 'Goście z kodem w piaskownicy: jeden plik HTML zapisany w Miejscu, podawany bez dostępu do sieci i do adresu Miejsca.', 'Gość czyta rzeczy przez umowę okna, a z umową okno/3 także pisze pod własnym imieniem. Nie ma własnej pamięci.'),
+    zd('umowa-okna', 'cienko', 'Umowa okna, pokolenia 2 i 3: przyrząd starej Jaskini (hello, state, signals, event, flag), czytanie rzeczy (okno/2) i ruch z okna (okno/3); oba pokolenia działają obok siebie.', 'Opis: /umowa-okna. Brakuje czytania jako gość, wołania czasowników gościa, osadzania gościa w gościu i okna w przestrzeni Startu.'),
     zd('czasowniki', 'cienko', 'Spis czasowników: jedna lista tego, co da się zrobić, z wejściem i wynikiem.', 'Są czasowniki drzwi i okna. Czasowniki gości są tylko wypisane; wołać ich jeszcze się nie da.'),
     zd('na-zywo', 'cienko', 'Zmiany na żywo: otwarta strona dowiaduje się o cudzej zmianie od razu, bez przeładowania i bez pytania.', 'Kanał: połączenie pod /api/srodowisko/zywe niesie sam numer ostatniego aktu, a strona doczytuje tylko to, co się zmieniło (spis z po=<akt>). Gdy połączenie nie stoi, strona pyta o puls co kilka sekund. Niesprawdzone na prawdziwym telefonie ani przy słabej sieci.'),
     zd('wywoz', 'cienko', 'Wywóz i wwóz całości: właściciel dostaje wszystko jako jeden plik spod /api/miejsce/eksport; plik sam mówi, jak go czytać, a wwieziony do pustego Miejsca odtwarza to samo środowisko.', 'Obcy czytnik odtworzył spis z samego pliku (dowód D3, 17 XI, sędzia: Opus Code). Powrót do siebie pilnuje sprawdzian budowniczego; nikt obcy go jeszcze nie sądził.'),
@@ -267,12 +381,42 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
     zd('wolanie-czasownikow', 'brak', 'Wołanie czasowników gościa: agent bez przeglądarki prosi otwartego gościa, żeby coś zrobił, i dostaje wynik.'),
     zd('drugie-miejsce', 'brak', 'Drugie Miejsce: osobne Miejsce obok tego (na pokaz, dla labu), odniesienia między nimi i jedno otwierane w drugim jak gość.'),
     zd('najety-mozg', 'brak', 'Mózg najęty przez Jaskinię: agent działający w środku za API właściciela, z pułapem kosztu jako ustawieniem obszaru.', 'Kierunek, nie plan na teraz. Klucz nigdy nie jest daną: zapis trzyma nazwę sekretu.'),
+    // Czego brakuje do pełnej szerokości, nazwane wprost (17 XI, po rachunku budowniczego i sądzie drugiej linii).
+    // Stan budowy ma mówić nie tylko, co stoi, ale też czego nie ma i na którym etapie jest potrzebne.
+    zd('uwaga', 'brak', 'Uwaga z danych: ustawienie obszaru mówi, czy zdarzenie ma być ciszą, skrótem, znakiem czy budzeniem; uwaga i sprawczość są osobnymi ustawieniami.', 'Ustawienie uwaga jest zapisane w każdym obszarze, ale nic go jeszcze nie czyta: wszystko, co czeka, wygląda tak samo.'),
+    zd('tozsamosc-po-zmianie', 'brak', 'Tożsamość, która przeżywa zmianę: rzecz zostaje sobą po zmianie nazwy u źródła, a dwie rzeczy da się połączyć albo jedną rozdzielić, z rodowodem i bez gubienia wskazań.', 'Dziś zmiana nazwy repozytorium u źródła daje nową rzecz, a stara jest odkładana (kluczem jest nazwa). Łączenia i dzielenia nie ma.'),
+    zd('ustawienia', 'brak', 'Ustawienia jako dane: wszystko, co da się stroić, ma deklarację (typ, zakres), wartość z zasięgiem i historią oraz nazwane zestawy, zmieniane w działającym Miejscu.', 'Dziś są cztery ustawienia obszaru wpisane w kod, z czego działa jedno (ile_wolno). Wszystko, co stroi się na Starcie, jest stałą w kodzie.'),
+    zd('gosc-pisze', 'cienko', 'Gość, który pisze: narzędzie w oknie zakłada i zmienia rzeczy pod własnym imieniem (domyślnie jako propozycja) i czyta tylko to, co gościowi wolno.', 'Ruch z okna (umowa okno/3) zapisuje się pod imieniem gosc-<id>, a ten, kto otworzył okno, stoi przy nim jako kontekst. Gość ma w obszarze tyle prawa co agent i nigdy więcej niż otwierający. Nie ma jeszcze zgody dla wskazanego narzędzia we wskazanym obszarze, a czyta dalej tyle, co strona, która go otworzyła.'),
+    zd('narzedzia-agenta', 'brak', 'Narzędzia Miejsca w ręku agenta: czasowniki ze spisu stoją na liście narzędzi agenta (serwer narzędzi), więc agent używa ich bez czytania opisu i bez adresu w poleceniu.', 'Dziś spis czasowników jest tekstem wpisanym w kod, a agent musi przeczytać /co-tu-jest i sam złożyć żądanie.'),
+    zd('wersje-do-uruchomienia', 'brak', 'Wersje i buildy przychodzą same: nowa wersja labu albo działający build staje się rzeczą ze znakiem nowe i wejściem do uruchomienia.', 'Dziś same przychodzą fakty o repozytoriach i gałęziach, tak świeże jak odświeżenie starej Jaskini; wersji do uruchomienia nie ma, a znak nowe nie istnieje.'),
+    zd('doreczenie-slowa', 'brak', 'Słowo dociera do agenta: słowo zostawione przy rzeczy trafia do agentów, którzy się nią zajmują, od razu albo po ich obudzeniu, a odpowiedź wraca w to samo miejsce.', 'Dziś słowo jest rzeczą przy rzeczy i widać je na stronie, ale żaden agent się o nim nie dowie, dopóki sam nie zajrzy.'),
+    zd('wygasanie', 'brak', 'Wygasanie: prośba albo propozycja, na którą nikt nie musi odpowiadać, przedawnia się sama i zostawia ślad.', 'Dziś wszystko, co czeka, czeka bez końca; propozycja do rzeczy zmienionej w międzyczasie stoi na liście, choć nie da się jej już przyjąć.'),
+    zd('pokolenia', 'cienko', 'Pokolenia obok siebie: rodzaj, gość i umowa okna mają pokolenie w nazwie, a nowe staje obok starego, bez przepisywania zapisów.', 'Kształt pod rzeczami wolno tylko poszerzać; ostrzejszy opis to następne pokolenie. Nie ma pomiaru, ile rzeczy i gości stoi jeszcze na starym, ani przełączenia jednym ruchem (dowód D4 niezrobiony).'),
+    zd('duze-tresci', 'brak', 'Duże treści poza zapisem: build, model albo asset leży w magazynie, a rzecz trzyma wskazanie z odciskiem i rozmiarem.', 'Dziś rzecz może nosić tylko adres w sieci. Nie ma ani formatu wskazania, ani magazynu.'),
+    zd('czas-wstecz', 'cienko', 'Czas wstecz: każda rzecz ma historię wersji z autorem i da się ją cofnąć do dowolnej z nich.', 'Nie da się obejrzeć całego Miejsca w stanie z wybranej chwili.'),
+    zd('spojnosc', 'cienko', 'Spójność: środowisko mówi, co w nim samym jest krzywe (rzeczy niezgodne z własnym kształtem).', 'Przebieg na żądanie: GET /api/srodowisko/spojnosc. Dwie reguły w kodzie; docelowo sprawdzian wyprowadzony z kształtów. Zbudowała i sprawdziła druga linia.'),
+    zd('okna-w-przestrzeni', 'brak', 'Okna gości w przestrzeni: narzędzie albo gra leży na Starcie obok rzeczy, przesuwa się i skaluje razem z przestrzenią, zasypia poza ekranem; okno jest rzeczą, a widok da się położyć w widoku.', 'Dziś Start otwiera jedno okno gry nad płótnem, bez umowy okna.', 'sciany-i-kable'),
+    zd('pola', 'brak', 'Pola na Starcie: strefy przestrzeni z własnym ustawieniem, kto układa, ile wolno agentom i ile uwagi, zakładane i przestawiane ręką.', 'Mechanizm obszarów stoi i działa dla położeń; na płótnie nie ma jeszcze ani jednego Pola.', 'sciany-i-kable'),
+    zd('granie-i-wersje', 'brak', 'Granie i wszystko do odpalenia: buildy, wersje najnowsze, milowe i historyczne, kilka naraz obok siebie.', 'Dziś karta repozytorium ma jedno wejście do strony projektu.', 'sciany-i-kable'),
+    zd('statystyki', 'brak', 'Statystyki: organ, który pokazuje fakty z datą i źródłem i odświeża się sam.', 'Fakty leżą w Miejscu jako rzeczy; nic ich jeszcze nie pokazuje jako liczb w czasie.', 'sciany-i-kable'),
+    zd('zywe-swiaty', 'brak', 'Żywe światy w przestrzeni: gra albo symulacja działa w oknie, da się na nią patrzeć i ingerować na żywo; żywa instancja jest osobną rzeczą niż wersja i dzieło.', 'Dziś gra otwiera się w zwykłej ramce i nic o sobie nie mówi.', 'sciany-i-kable'),
+    zd('budzenie', 'brak', 'Budzenie: wpis może obudzić wskazanego agenta albo poczekać, aż obudzi się sam; agent może obudzić agenta.', 'W Miejscu nie ma jeszcze nic; poza nim działa jeden budzik u jednego dostawcy.', 'sciany-i-kable'),
+    zd('reka-i-oko', 'brak', 'Ręka i oko Startu: grupy, zaznaczanie wielu, reakcja sąsiadów od miejsca chwytu, notatki, powiązania, szukanie na płótnie, zapisane układy, motywy.', 'Szkielet ma w całości 5 z 27 punktów podłogi poprzedniej Ściany (osąd budowniczego, nie pomiar cudzą ręką). Świadomie na końcu, po podstawach.', 'wykonczenie'),
+    zd('tresc', 'brak', 'Treść w środku: dzieła właściciela z jego znaczeniem (rodziny, powiązania, opisy, historia), wnoszone i destylowane stopniowo.', 'Świadomie odłożone: ważniejsze jest, żeby fakty odświeżały się same i poprawnie, niż żeby od razu mieć w środku wszystko.', 'wykonczenie'),
+    zd('dla-zwiedzajacych', 'brak', 'Wejście dla zwiedzających: publiczna strona z wybranymi dziełami do obejrzenia i zagrania; publikacja jest gestem właściciela.', 'Wymaga widoczności z danych.', 'wykonczenie'),
+    zd('tworzenie', 'brak', 'Tworzenie: pracownie i narzędzia, w których właściciel i agenci razem budują światy (edytory obok działającego świata, wspólny rdzeń, biblioteka).', 'Po to jest całe Miejsce. Zaczyna się, gdy grunt, ściany i wykończenie stoją.', 'tworzenie'),
     { nazwa: 'gosc-lista', rodzaj: 'gosc/1',
       cechy: async (s) => {
         // op niesie odcisk treści: gdy kod przykładu zmieni się w źródle, powstaje nowy zapis zamiast konfliktu op
         const w = await s.r.wykonaj('srodowisko', { op: 'zasiew-kod-lista-' + szybkiOdcisk(GOSC_LISTA), co: 'zapisz', rodzaj: 'kod/1', tresc: GOSC_LISTA }, { slad: 'zasiew' });
         if (!w.ok) throw new Error('kod gościa: ' + w.blad);
         return { nazwa: 'Lista rzeczy', opis: 'Najprostszy gość: wszystkie rzeczy pogrupowane według rodzaju. Przykład umowy okna do skopiowania.', kod: w.zapis ?? w.akt.zapis, umowa: 'okno/2' };
+      } },
+    { nazwa: 'gosc-slowa', rodzaj: 'gosc/1',
+      cechy: async (s) => {
+        const w = await s.r.wykonaj('srodowisko', { op: 'zasiew-kod-slowa-' + szybkiOdcisk(GOSC_SLOWA), co: 'zapisz', rodzaj: 'kod/1', tresc: GOSC_SLOWA }, { slad: 'zasiew' });
+        if (!w.ok) throw new Error('kod gościa: ' + w.blad);
+        return { nazwa: 'Słowa', opis: 'Gość, który pisze: zostawia słowo przy wybranej rzeczy i pokazuje ostatnie słowa. Przykład ruchu z okna (umowa okno/3) do skopiowania.', kod: w.zapis ?? w.akt.zapis, umowa: 'okno/3' };
       } },
   ];
 }

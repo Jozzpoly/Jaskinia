@@ -17,11 +17,16 @@
 // i docelowym, a propozycję przyjmuje tylko ten, kto sam mógłby zrobić ten ruch ze skutkiem. Wszystkie zmiany idą
 // jedną kolejką, więc ruch nie przeplata się z innym ruchem.
 import { poprawneImie, skrot } from './miejsce.mjs';
+import { PRZEDROSTEK_GOSCIA } from './klucze.mjs';
 import { opKlienta } from './ksztalty.mjs';
 
 export const SRODOWISKO = 'srodowisko-1';
 export const CZYTELNIK_PODGLADU = 'podglad'; // imię czytającego bez klucza na podglądzie; uczestnikiem jest tylko tam
 export const AUTOMAT = 'srodowisko'; // uczestnik, którym środowisko samo zasiewa swoje rzeczy; imię zastrzeżone
+// Trzeci parametr dróg zapisu to ślad ciała (napis) albo, przy ruchu z okna, {slad, przez}: ślad i imię tego, kto
+// otworzył okno, z którego pisze gość.
+const sladZ = (x) => (x && typeof x === 'object' ? x.slad : x) ?? null;
+const przezZ = (x) => (x && typeof x === 'object' && typeof x.przez === 'string' ? x.przez : null);
 
 const RODZAJ = /^[a-z][a-z0-9_.-]{0,79}\/[1-9][0-9]{0,5}$/;
 const RODZAJ_LUB_NAZWA = /^[a-z][a-z0-9_.-]{0,79}(\/[1-9][0-9]{0,5})?$/;
@@ -644,6 +649,9 @@ export class Srodowisko {
     if (!kto) return 'zwiedzajacy';
     if (kto === this.wlasciciel) return 'wlasciciel';
     if (kto === AUTOMAT) return 'automat';
+    // Gość (narzędzie w oknie) działa pod imieniem gosc-<identyfikator swojej rzeczy>. Imię bez takiej rzeczy nie ma
+    // żadnej roli. Rola gościa daje w obszarze tyle samo co rola agenta (ustawienie ile_wolno).
+    if (kto.startsWith(PRZEDROSTEK_GOSCIA)) { const g = this.rzecz(kto.slice(PRZEDROSTEK_GOSCIA.length)); return g && nazwaRodzaju(g.rodzaj) === 'gosc' ? 'gosc' : 'zwiedzajacy'; }
     const nr = this.ostatniNr();
     if (this._role.nr !== nr) this._role = { nr, mapa: new Map() };
     if (!this._role.mapa.has(kto)) {
@@ -851,15 +859,34 @@ export class Srodowisko {
   }
 
   // --- ruchy ----------------------------------------------------------------------------------------------------
-  async ruch(kto, cialo, { slad = null } = {}) {
+  async ruch(kto, cialo, { slad = null, gosc = null } = {}) {
     if (kto && !poprawneImie(kto)) return blad(401, 'nieznany wykonawca');
     if (kto === AUTOMAT) return blad(403, `imię ${AUTOMAT} jest zastrzeżone dla samego środowiska`);
+    if (kto && kto.startsWith(PRZEDROSTEK_GOSCIA)) return blad(403, `imiona zaczynające się od ${PRZEDROSTEK_GOSCIA} należą do gości w oknach; uczestnik z kluczem nie działa pod takim imieniem`);
     if (!cialo || typeof cialo !== 'object' || Array.isArray(cialo)) return blad(400, 'ciało żądania ma być obiektem JSON');
     if (!opKlienta(cialo.op)) return blad(400, 'op: Twój własny identyfikator tej czynności, 8 do 100 znaków z [A-Za-z0-9_-]; przy ponowieniu podaj ten sam, wtedy nic nie zrobi się dwa razy');
     const co = cialo.co;
-    if (co === 'poloz') return this._wKolejce(() => this._poloz(kto, cialo, slad));
-    if (co === 'odloz' || co === 'przywroc' || co === 'cofnij') return this._wKolejce(() => this._przestaw(kto, cialo, slad));
-    if (co === 'przyjmij' || co === 'odrzuc') return this._wKolejce(() => this._rozstrzygnij(kto, cialo, slad));
+    // Ruch z okna: aktorem jest gość (gosc-<id jego rzeczy>), a ten, kto otworzył okno, zostaje przy akcie jako kontekst.
+    // Dziennik nie mówi wtedy, że uczestnik zrobił coś, co zrobiło narzędzie w jego oknie. Prawo liczy się dla obu
+    // i wygrywa słabsze (w _zmien); okno, którego nikt nie otworzył kluczem, nie pisze wcale.
+    let aktor = kto, ctx = slad;
+    if (gosc !== null && gosc !== undefined) {
+      if (!kto) return blad(401, 'okno pisze tylko wtedy, gdy ten, kto je otworzył, wszedł kluczem');
+      if (typeof gosc !== 'string' || !ID.test(gosc)) return blad(400, 'gosc: identyfikator rzeczy rodzaju gosc (26 znaków)');
+      const g = this.rzecz(gosc);
+      if (!g || nazwaRodzaju(g.rodzaj) !== 'gosc') return blad(404, `nie ma gościa ${gosc}`);
+      if (g.odlozone) return blad(409, 'ten gość jest odłożony; odłożone narzędzie nie pisze');
+      if (g.cechy.umowa !== 'okno/3') return blad(409, 'ten gość mówi umową okna, która nie zna ruchów; żeby pisał, zgłoś go z "umowa":"okno/3"');
+      if (co === 'przyjmij' || co === 'odrzuc') return blad(403, 'propozycji nie rozstrzyga się z okna: przyjmuje i odrzuca uczestnik, własną ręką');
+      aktor = PRZEDROSTEK_GOSCIA + gosc;
+      // ślad ciała zostaje tylko wtedy, gdy mieści się w tym, co jądro przyjmuje (drukowalne znaki ASCII); to, w czyim
+      // oknie pisał gość, zostaje przy akcie zawsze
+      const czysty = typeof slad === 'string' && /^[ -~]{1,60}$/.test(slad) ? slad : null;
+      ctx = { slad: ('okno:' + kto + (czysty ? ' ' + czysty : '')).slice(0, 80), przez: kto };
+    }
+    if (co === 'poloz') return this._wKolejce(() => this._poloz(aktor, cialo, ctx));
+    if (co === 'odloz' || co === 'przywroc' || co === 'cofnij') return this._wKolejce(() => this._przestaw(aktor, cialo, ctx));
+    if (co === 'przyjmij' || co === 'odrzuc') return this._wKolejce(() => this._rozstrzygnij(aktor, cialo, ctx));
     return blad(400, 'co: poloz (dołóż albo zmień rzecz), odloz, przywroc, cofnij (rzecz do wcześniejszej wersji), przyjmij albo odrzuc (rozstrzygnij propozycję)');
   }
 
@@ -1064,7 +1091,13 @@ export class Srodowisko {
     const zNatury = n ? n.cecha : null;
     const spr = this._sprawdzTresc(rodzaj, cechy, obszar, stara, odlozone);
     if (!spr.ok) return co === 'cofnij' ? blad(409, 'dawna wersja nie przechodzi dzisiejszego sprawdzenia: ' + spr.blad, { bledy: spr.bledy }) : spr;
-    const ocena = this.ocen(kto, { stara, rodzaj, obszar, cechy });
+    let ocena = this.ocen(kto, { stara, rodzaj, obszar, cechy });
+    // Okno nie ma więcej prawa niż ten, kto je otworzył: z dwóch ocen (gościa i otwierającego) wygrywa słabsza.
+    const przez = przezZ(slad);
+    if (przez && ocena.tryb !== 'odmowa') {
+      const jego = this.ocen(przez, { stara, rodzaj, obszar, cechy });
+      if (jego.tryb === 'odmowa' || (jego.tryb === 'propozycja' && ocena.tryb === 'skutek')) ocena = jego;
+    }
     if (ocena.tryb === 'odmowa') return blad(ocena.status, ocena.powod);
     const uwagi = { ...(spr.nieznane.length ? { nieznane_cechy: spr.nieznane } : {}), ...(spr.bezKsztaltu ? { uwaga: `rodzaj ${rodzaj} nie ma kształtu: rzecz jest zapisana i widoczna, ale niczego w niej nie sprawdzono` } : {}) };
     if (ocena.tryb === 'skutek') {
@@ -1076,14 +1109,24 @@ export class Srodowisko {
     // Propozycja kosztuje uwagę właściciela, więc jeden uczestnik nie może ich mnożyć bez końca: jedna czekająca na
     // rzecz i najwyżej NAJWIECEJ_CZEKAJACYCH naraz (uwaga drugiej linii do PR 35: agent w pętli zalałby listę "czeka").
     if (stara) {
-      const juz = this.spis({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka', rzecz: stara.id }, limit: 1 })[0];
+      // przy ruchu z okna "ta sama propozycja" to ta sama rzecz, ten sam gość i ten sam otwierający: gość jest wspólny
+      // dla wszystkich, którzy otwierają to okno
+      const juz = this.spis({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka', rzecz: stara.id, ...(przez ? { przez } : {}) }, limit: 1 })[0];
       if (juz) return blad(409, `masz już czekającą propozycję zmiany tej rzeczy (${juz.id}); wycofaj ją (co: odrzuc) albo poczekaj na rozstrzygnięcie`, { propozycja: juz.id });
     }
-    if (this.ile({ rodzaj: 'propozycja/1', gdzie: { od: kto, stan: 'czeka' } }) >= NAJWIECEJ_CZEKAJACYCH) return blad(429, `masz już ${NAJWIECEJ_CZEKAJACYCH} czekających propozycji; wycofaj którąś (co: odrzuc) albo poczekaj, aż zostaną rozstrzygnięte`);
+    // Jeden licznik na uczestnika: jego propozycje złożone wprost i te z okien, które otworzył, razem. Przy ruchu
+    // z okna liczy się otwierający, nie gość: gość jest wspólny dla wszystkich otwierających, więc licznik na gościa
+    // pozwalał jednemu uczestnikowi zająć limit całego narzędzia (okno właściciela dostawało 429), a dwa osobne
+    // liczniki dawały jednemu uczestnikowi dwa limity naraz (niezależny atak, 17 XI 2026).
+    const czyja = przez || kto;
+    const czeka = this.ile({ rodzaj: 'propozycja/1', gdzie: { od: czyja, stan: 'czeka' } }) + this.ile({ rodzaj: 'propozycja/1', gdzie: { przez: czyja, stan: 'czeka' } });
+    if (czeka >= NAJWIECEJ_CZEKAJACYCH) return blad(429, przez
+      ? `z ruchów uczestnika ${przez} i z okien, które otworzył, czeka już ${NAJWIECEJ_CZEKAJACYCH} propozycji; najpierw trzeba je rozstrzygnąć`
+      : `masz już ${NAJWIECEJ_CZEKAJACYCH} czekających propozycji (razem z tymi z okien, które otworzyłeś); wycofaj którąś (co: odrzuc) albo poczekaj, aż zostaną rozstrzygnięte`);
     // propozycja: leży tam, gdzie leży rzecz, której dotyczy (albo tam, gdzie miała powstać nowa)
     const propId = await idZ('propozycja', kto, op);
     const obszarProp = stara ? stara.obszar : obszar;
-    const cp = { od: kto, co, rodzaj, tresc: { obszar: obszar ?? null, cechy, ...(odlozone ? { odlozone: true, ...(powod ? { powod } : {}) } : {}) },
+    const cp = { od: kto, ...(przez ? { przez } : {}), co, rodzaj, tresc: { obszar: obszar ?? null, cechy, ...(odlozone ? { odlozone: true, ...(powod ? { powod } : {}) } : {}) },
       ...(stara ? { rzecz: stara.id, wersja } : { nowa: id }), stan: 'czeka', ...(ocena.wymaga === 'wlasciciel' ? { wymaga: 'wlasciciel' } : {}) };
     const p = await this.r.przygotujPolozenie({ op, rodzaj: 'propozycja/1', tresc: trescRzeczy({ obszar: obszarProp, cechy: cp }), glowa: 'rzecz:' + propId, wersja: null });
     if (!p.ok) return p;
@@ -1092,7 +1135,7 @@ export class Srodowisko {
   }
 
   _zatwierdz(kto, lista, slad, wynik) {
-    const z = this.r.zatwierdzPolozenia(kto, lista.map((x) => x.p), { slad });
+    const z = this.r.zatwierdzPolozenia(kto, lista.map((x) => x.p), { slad: sladZ(slad) });
     if (!z.ok) return z;
     if (!z.powtorzone) lista.forEach((x, i) => this._projekcja(x.id, x.rodzaj, x.obszar, x.p.id, z.wyniki[i].wersja, kto, x.cechy, x.ksztalt, x.odlozone, z.wyniki[i].kiedy));
     const pierwsza = this.rzecz(lista[0].id);
@@ -1164,7 +1207,8 @@ export class Srodowisko {
     const zn = this._zNatury(pr.cechy.rodzaj, cechy);
     const obszar = zn && !zn.brak ? zn.obszar : (t.obszar ?? null);
     const stara = pr.cechy.rzecz ? this.rzecz(pr.cechy.rzecz) : null;
-    const autor = kto === pr.cechy.od;
+    // Propozycję z okna może wycofać także ten, kto okno otworzył (i tak jak autor nie może jej sam przyjąć).
+    const autor = kto === pr.cechy.od || (typeof pr.cechy.przez === 'string' && kto === pr.cechy.przez);
     // Kto rozstrzyga: właściciel, albo uczestnik, który ten sam ruch mógłby zrobić sam ze skutkiem. Autor może swoją
     // propozycję tylko wycofać.
     const sam = rola === 'wlasciciel' ? { tryb: 'skutek' } : this.ocen(kto, { stara: stara || null, rodzaj: pr.cechy.rodzaj, obszar, cechy });
