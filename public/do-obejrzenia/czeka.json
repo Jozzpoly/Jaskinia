@@ -1,14 +1,42 @@
 {
-  "wersja": 1,
-  "opis": "Rzeczy, które czekają na ruch właściciela. Powstało 15 XI 2026, bo powiedział, że prośby agentów przepadają mu w natłoku rozmów, a nie ma tradycji przewijania ścian tekstu. Wpis schodzi stąd tylko wtedy, gdy on odpowie albo gdy agent go wycofa z powodem. Pole sprawdzone mówi, kiedy agent ostatni raz potwierdził, że wpis jest jeszcze aktualny - nie kiedy powstał.",
-  "zebrane_z": "prywatna pamięć wspólna i repozytoria, nie z historii rozmów - wszystko, o co proszono wyłącznie w czacie przed 15 XI, może tu nie być",
-  "czeka": [],
-  "odlozone_przez_ciebie": [
-    {
-      "co": "Dług z pieniędzmi i dostępem: otwarte Workers AI w trzech starych workerach i stare klucze dostawcy w jednym z labów",
-      "twoja_decyzja": "Sam odłożyłeś to na później, dla tańszego modelu - to jest zapisane i nie jest przypomnieniem.",
-      "od": "2026-11-13",
-      "sprawdzone": "2026-11-15"
-    }
-  ]
+ "wersja": 1,
+ "opis": "Rzeczy, które czekają na ruch właściciela. Powstało 15 XI 2026, bo powiedział, że prośby agentów przepadają mu w natłoku rozmów, a nie ma tradycji przewijania ścian tekstu. Wpis schodzi stąd tylko wtedy, gdy on odpowie albo gdy agent go wycofa z powodem. Pole sprawdzone mówi, kiedy agent ostatni raz potwierdził, że wpis jest jeszcze aktualny - nie kiedy powstał.",
+ "zebrane_z": "prywatna pamięć wspólna i repozytoria, nie z historii rozmów - wszystko, o co proszono wyłącznie w czacie przed 15 XI, może tu nie być",
+ "czeka": [
+  {
+   "nr": 5,
+   "co": "Drzwi jednym dotknieciem: sprawdz na swoim telefonie, czy zalozy passkey dla tego adresu",
+   "dlaczego_ty": "To jedyny krok calych drzwi, ktorego zaden skrypt nie zrobi za Ciebie. Caly lancuch sprawdzony udawanym telefonem i atakiem drugiej linii (6 z 6 dziur zamknietych), ale czy TWOJ telefon zalozy passkey dla adresu na workers.dev, wie tylko Twoj telefon.",
+   "jak": "1. Otworz adres na telefonie. 2. Guzik „Wejdź” w prawym gornym rogu. 3. „Wejdź jako właściciel próbny” (na podgladzie nie potrzebujesz zadnego klucza). 4. Panel zostanie otwarty na „Dodaj to urządzenie” — wpisz np. „telefon” i nacisnij. Telefon zapyta o odcisk, twarz albo PIN. 5. Potem „wyjdź” i sprawdz, czy wraca guzik „Wejdź dotknięciem” i czy wpuszcza bez niczego.",
+   "jesli_nic": "Drzwi zostaja niesprawdzone u Ciebie i nie wchodza do prawdziwej Jaskini. Jesli NIE zadziala, to też jest wynik: znaczy, ze potrzebna bedzie wlasna domena, a to juz Twoja decyzja o pieniadzach.",
+   "uwaga": "To jest PODGLAD, nie Twoja prawdziwa Jaskinia. Passkey jest przypisany do dokladnego adresu, wiec to, co tu zalozysz, bedzie trzeba zalozyc jeszcze raz pod prawdziwym adresem. Tu sprawdzamy TYLKO to, czy Twoj telefon w ogole to potrafi. Nic prywatnego tu nie ma i nic nie tracisz.",
+   "od": "2026-11-18",
+   "kto": "Opus Code",
+   "adres": "https://opus-code-drzwi-jaskinia.jozzpoly.workers.dev/",
+   "waga": "teraz",
+   "sprawdzone": "2026-11-18",
+   "dowod": "Strona sprawdzona pod tym adresem na szerokosci telefonu 18 XI o 17:3x: guzik Wejdź stoi w prawym gornym rogu, wejscie probnym wlascicielem dziala, panel zostaje otwarty na kroku Dodaj to urzadzenie z polem na nazwe. Atak na drzwi (narzedzia/atak_drzwi.mjs): 0 z 6."
+  },
+  {
+   "nr": 6,
+   "co": "Ksztalt rodzaju raz zmieniony Twoja reka zamarza wobec calego przyszlego kodu — po cichu",
+   "dlaczego_ty": "To jest pytanie o fundament, nie usterka. Dzis zasiew „ustepuje rece”: rzecz, ktora ruszyl czlowiek, zostaje taka, jak ja zostawil. Ale ta sama regula dotyczy KSZTALTOW, a ksztalt to reguly sprawdzania danych. Czyli jeden Twoj ruch na rodzaju „projekt” sprawia, ze zadna nowa regula, ktora kiedykolwiek napiszemy, juz tam nie dojdzie — i nikt Ci tego nie powie.",
+   "jesli_nic": "Nic sie nie psuje dzis. Psuje sie za miesiac, na Twoim Miejscu, w sposob, ktorego nie da sie zauwazyc.",
+   "moje_zdanie": "Ksztalt to umowa o danych, a nie Twoja tresc. Powinien sie odswiezac, a Twoja reczna zmiana powinna byc widoczna roznica („ten rodzaj odbiega od kodu”), nie cichym zamrozeniem. Ale to zmiana zachowania fundamentu, wiec nie robie jej sam.",
+   "od": "2026-11-18",
+   "kto": "Opus Code",
+   "adres": "https://github.com/Jozzpoly/Jaskinia/blob/opus-code/drzwi/proby/w3-skan-okularow/ksztalt-zamarza.mjs",
+   "waga": "kiedys",
+   "sprawdzone": "2026-11-18",
+   "dowod": "KOPIA=<katalog> node proby/w3-skan-okularow/ksztalt-zamarza.mjs — wlasciciel zmienia opis ksztaltu, nowy kod dokłada wymagana ceche, wynik: zrobione 0, nowa regula nie doszla."
+  }
+ ],
+ "odlozone_przez_ciebie": [
+  {
+   "co": "Dług z pieniędzmi i dostępem: otwarte Workers AI w trzech starych workerach i stare klucze dostawcy w jednym z labów",
+   "twoja_decyzja": "Sam odłożyłeś to na później, dla tańszego modelu - to jest zapisane i nie jest przypomnieniem.",
+   "od": "2026-11-13",
+   "sprawdzone": "2026-11-15"
+  }
+ ]
 }

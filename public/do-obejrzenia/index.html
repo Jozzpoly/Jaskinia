@@ -211,6 +211,13 @@ fetch('zgloszenia.json', { cache: 'no-store' })
           + '<p class="dlaczego">' + esc(k.dlaczego_ty) + '</p>'
           + '<p class="skutek"><b>Jeśli nic nie zrobisz:</b> ' + esc(k.jesli_nic) + '</p>'
           + (k.czego_brakuje ? '<p class="skutek"><b>Czego brakuje, żeby to było możliwe:</b> ' + esc(k.czego_brakuje) + '</p>' : '')
+          // Wpis, ktory prosi go o RUCH, musi powiedziec, co dokladnie ma zrobic - inaczej jest kolejnym
+          // zadaniem do odszyfrowania. `jak` to kroki jego reka, `uwaga` to czego NIE zaklada, `moje_zdanie`
+          // to nasza rekomendacja, osobno od faktow. Pole, ktorego ta strona nie rysuje, jest polem, ktore
+          // przepada po cichu: do 18 XI przepadlyby wszystkie trzy.
+          + (k.jak ? '<p class="skutek"><b>Co zrobić:</b> ' + esc(k.jak) + '</p>' : '')
+          + (k.uwaga ? '<p class="skutek"><b>Uwaga:</b> ' + esc(k.uwaga) + '</p>' : '')
+          + (k.moje_zdanie ? '<p class="skutek"><b>Nasze zdanie (nie fakt):</b> ' + esc(k.moje_zdanie) + '</p>' : '')
           + (adres ? '<p><a class="otworz" href="' + esc(adres) + '">Otwórz</a></p>' : '')
           + '<p class="meta">' + esc(odkad(k.od)) + ' · prosi: ' + esc(k.kto)
           + (potw ? ' · ' + potw : '')
