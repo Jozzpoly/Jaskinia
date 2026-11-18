@@ -55,6 +55,10 @@ export const TYPY_POKRETEL = {
 };
 const BEZ_ODWOLAN = ['zestawy', 'dowolne'];
 const liczba = (x) => typeof x === 'number' && Number.isFinite(x);
+// Rodzina kroju to nazwy rodzin jak w CSS: litery, cyfry, spacja, przecinek, cudzysłów prosty, kropka, - i _. Dowolny
+// napis nie wstrzykiwał niczego dziś (twarz przypisuje rodzinę jedną własnością), ale byłby pułapką dla każdego, kto
+// kiedyś złoży z niej arkusz tekstem (niezależny atak, 18 XI 2026). Ten sam wzorzec stoi w public/pokretla.mjs.
+const RODZINA_KROJU = /^[\p{L}\p{N} ,'"._-]{1,300}$/u;
 const obiekt = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
 
 // Odwołanie (wartość pochodna): nazwa pokrętła, za którym wartość idzie, albo null, gdy wartość jest zwykła.
@@ -94,7 +98,7 @@ export function wadaWartosci(d, w, maRzecz = () => null) {
       return null;
     }
     case 'kroj':
-      if (!obiekt(w) || typeof w.rodzina !== 'string' || !w.rodzina.trim() || w.rodzina.length > 300) return 'krój to {rodzina: napis jak w CSS, do 300 znaków, …}';
+      if (!obiekt(w) || typeof w.rodzina !== 'string' || !w.rodzina.trim() || !RODZINA_KROJU.test(w.rodzina)) return 'krój to {rodzina: nazwy rodzin jak w CSS (litery, cyfry, spacja, przecinek, cudzysłów prosty, kropka, - i _), do 300 znaków, …}';
       if (w.grubosc !== undefined && !(liczba(w.grubosc) && w.grubosc >= 1 && w.grubosc <= 1000)) return 'grubość kroju to liczba od 1 do 1000';
       if (w.osie !== undefined && !(obiekt(w.osie) && Object.keys(w.osie).length <= 8 && Object.entries(w.osie).every(([n, x]) => /^[A-Za-z]{4}$/.test(n) && liczba(x)))) return 'osie kroju to obiekt {czteroliterowa nazwa osi: liczba}, najwyżej 8 osi';
       if (w.plik !== undefined && !(obiekt(w.plik) && typeof w.plik.rzecz === 'string' && ID.test(w.plik.rzecz) && typeof w.plik.odcisk === 'string' && /^[0-9a-f]{64}$/.test(w.plik.odcisk))) return 'plik kroju to {rzecz: <id rzeczy plik/1>, odcisk: <64 znaki szesnastkowe>}';

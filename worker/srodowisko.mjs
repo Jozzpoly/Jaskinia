@@ -20,7 +20,7 @@ import { poprawneImie, skrot } from './miejsce.mjs';
 import { PRZEDROSTEK_GOSCIA } from './klucze.mjs';
 import { opKlienta } from './ksztalty.mjs';
 import { sprawdzUstawienie, POKRETLO_ZESTAWOW } from './ustawienia.mjs';
-import { sprawdzPlik, naBase64, NAJWIEKSZY_PLIK, NAJWIECEJ_BAJTOW_NA_DOBE } from './pliki.mjs';
+import { sprawdzPlik, wolnoWskazacBajty, naBase64, NAJWIEKSZY_PLIK, NAJWIECEJ_BAJTOW_NA_DOBE, NAJWIECEJ_BAJTOW_INNYCH_NA_DOBE, NAJWIECEJ_BAJTOW_UCZESTNIKA_NA_DOBE } from './pliki.mjs';
 import { sprawdzOko } from './oko.mjs';
 
 export const SRODOWISKO = 'srodowisko-1';
@@ -64,9 +64,9 @@ export const DOMYSLNE = { ile_wolno: 'proponowac', uwaga: 'znak', widzi: 'uczest
 export const ROLE = ['wlasciciel', 'agent', 'automat'];
 // Rodzaje, których kształt i rzeczy trzymają całość w ryzach: zmienia je tylko właściciel.
 // Rodzaje, które środowisko rozumie samo: kształt ich następnego pokolenia też ustala tylko właściciel.
-const RODZAJE_SRODOWISKA = ['ksztalt', 'obszar', 'uczestnik', 'propozycja', 'poswiadczenie', 'pokretlo', 'wartosc', 'zestaw'];
+const RODZAJE_SRODOWISKA = ['ksztalt', 'obszar', 'uczestnik', 'propozycja', 'poswiadczenie', 'pokretlo', 'wartosc', 'zestaw', 'plik', 'okno'];
 // poswiadczenie/1 przychodzi z drzwiami wlasciciela (PR 51): stoi tu zawczasu, zeby rozstrzygniecie konfliktu przy scalaniu nie wypisalo go z rdzenia.
-const KSZTALTY_RDZENIA = ['ksztalt/1', 'obszar/1', 'uczestnik/1', 'propozycja/1', 'poswiadczenie/1'];
+const KSZTALTY_RDZENIA = ['ksztalt/1', 'obszar/1', 'uczestnik/1', 'propozycja/1', 'poswiadczenie/1', 'plik/1', 'okno/1'];
 // Ile propozycji jednego uczestnika może czekać naraz: lista "czeka na właściciela" ma zostać listą, nie zalewem.
 export const NAJWIECEJ_CZEKAJACYCH = 20;
 // Co da się zrobić z rzeczą jednym ruchem i jak nazywa się skutek.
@@ -461,6 +461,24 @@ export class Srodowisko {
     });
   }
 
+  // Czyimi oczami czyta narzędzie w oknie: słabszymi z dwóch, swoimi (gosc-<id jego rzeczy>) i tego, kto okno otworzył.
+  // Zapis z okna liczył już prawo dla obu; czytanie szło kluczem otwierającego, więc narzędzie w oknie właściciela
+  // widziało to, co widzi tylko on (niezależny atak, 18 XI 2026). Zwraca imię, pod którym liczyć widoczność, albo null,
+  // czyli zwiedzającego: gdy gościa nie ma, jest odłożony albo otwierający go nie widzi, i wtedy, gdy żadna z dwóch par
+  // oczu nie widzi nie więcej niż druga (dziś się nie zdarza; gdy widoczność zacznie zależeć od osoby, okno ma wtedy
+  // widzieć mniej, a nie więcej).
+  czytelnikOkna(kto, gosc) {
+    if (typeof gosc !== 'string' || !ID.test(gosc)) return null;
+    const g = this.rzecz(gosc, { dla: kto ?? null });
+    if (!g || nazwaRodzaju(g.rodzaj) !== 'gosc' || g.odlozone) return null;
+    const imie = PRZEDROSTEK_GOSCIA + gosc;
+    const a = new Set(this._niewidoczneDla(kto ?? null) || []), b = new Set(this._niewidoczneDla(imie) || []);
+    const zawiera = (x, y) => [...y].every((e) => x.has(e));
+    if (zawiera(a, b)) return kto ?? null; // otwierający nie widzi więcej niż narzędzie
+    if (zawiera(b, a)) return imie;        // narzędzie nie widzi więcej niż otwierający
+    return null;
+  }
+
   _niewidoczneDla(kto) {
     const rola = this.rola(kto);
     if (rola === 'wlasciciel') return null;
@@ -796,6 +814,14 @@ export class Srodowisko {
     if (rola === 'zwiedzajacy') return { tryb: 'odmowa', status: 401, powod: this.powodBrakuPrawa(kto, 'do ruchu') };
     if (rodzaj === 'propozycja/1' || (stara && stara.rodzaj === 'propozycja/1')) return { tryb: 'odmowa', status: 403, powod: 'propozycje powstają same, gdy ruch nie ma prawa do skutku; zmienia je tylko przyjęcie albo odrzucenie (co: przyjmij, co: odrzuc)' };
     if (rola === 'wlasciciel') return { tryb: 'skutek' };
+    // Okno jest osobiste: należy do tego, czyje imię niesie cecha czyje. Kładzie je, zmienia, odkłada i cofa tylko on
+    // sam, swoim kluczem. Nie inny uczestnik: agent kładł okno z imieniem właściciela i strona właściciela sama otwierała
+    // u niego cudze narzędzie, albo zajmował z wyprzedzeniem klucz jego okna i dalej je zmieniał (niezależny atak,
+    // 18 XI 2026). I nie narzędzie w oknie: okna otwiera ręka, nie inne okno. Odmowa, nie propozycja: cudzego okna nie
+    // ma po co proponować. Właściciel Miejsca może, jak wszystko; strona i tak wraca tylko do okien, które uczestnik
+    // zapisał sam (public/okna.mjs).
+    const czyje = [nazwaRodzaju(rodzaj) === 'okno' ? cechy.czyje : undefined, stara && nazwaRodzaju(stara.rodzaj) === 'okno' ? stara.cechy.czyje : undefined].filter((x) => x !== undefined);
+    if (czyje.length && (rola === 'gosc' || czyje.some((c) => c !== kto))) return { tryb: 'odmowa', status: 403, powod: 'okno należy do tego, kto je otworzył (cecha czyje): kładzie je i zmienia tylko on sam, swoim kluczem, nie inny uczestnik i nie narzędzie w oknie' };
     let wynik = { tryb: 'skutek' };
     const miejsca = [{ rodzaj, obszar }];
     if (stara) miejsca.push({ rodzaj: stara.rodzaj, obszar: stara.obszar });
@@ -1056,6 +1082,9 @@ export class Srodowisko {
     const widzi = patrzacy.length
       ? (id) => { for (const k of patrzacy) if (this.rzecz(id, { dla: k }) === null) return null; return this.rzecz(id); }
       : (id) => this.rzecz(id);
+    // Kto pisze i przez czyje okno: potrzebne tam, gdzie prawo zależy od tego, co piszący sam zrobił (wskazanie zapisu
+    // z bajtami, worker/pliki.mjs).
+    widzi.kto = kto; widzi.przez = przez;
     widzi.obszar = (id) => patrzacy.every((k) => { const zle = this._niewidoczneDla(k); return !zle || !zle.includes(id ?? null); });
     // Dawny stan rzeczy (wersja, stan sprzed gestu, stan w zapisanej chwili): widać go, gdy widać obszar, w którym rzecz
     // wtedy leżała. Stan, który tego nie wie, widzi tylko ten, przed kim nic nie jest zamknięte.
@@ -1124,12 +1153,16 @@ export class Srodowisko {
       }
     }
     const ksztalt = this.ksztaltDla(rodzaj);
-    if (!ksztalt) return { ok: true, ksztalt: null, nieznane: Object.keys(cechy), bezKsztaltu: true };
+    // Plik pilnuje swojej treści także wtedy, gdy rodzaj nie ma kształtu (albo rzecz przechodzi do takiego rodzaju).
+    if (!ksztalt) { const wp = sprawdzPlik(this, rodzaj, cechy, stara, widzi); return wp ? blad(422, wp.blad) : { ok: true, ksztalt: null, nieznane: Object.keys(cechy), bezKsztaltu: true }; }
     // Odniesienie, które stało w rzeczy już wcześniej, zostaje bez pytania o widoczność: agent ma móc zmienić rzecz,
     // którą właściciel przypiął do czegoś zamkniętego. Każde NOWE odniesienie piszący musi widzieć.
     const dawne = stara && widzi !== this._maRzecz ? new Set(odniesieniaZCech(this.ksztaltDla(stara.rodzaj), stara.cechy).map(([, cel]) => cel)) : null;
     const maRzecz = dawne ? (id) => (dawne.has(id) ? this.rzecz(id) : widzi(id)) : widzi;
-    const { bledy, nieznane } = sprawdzCechy(ksztalt, cechy, maRzecz, this._maZapis);
+    // Zapis z bajtami, którego piszący nie ma prawa wskazać, jest dla niego zapisem, którego nie ma, i brzmi tak samo:
+    // inaczej odmowa mówiłaby, że takie bajty w Miejscu są (worker/pliki.mjs, wolnoWskazacBajty).
+    const maZapis = (zid) => { const rz = this._maZapis(zid); return rz === 'bajty/1' && !wolnoWskazacBajty(this, zid, stara, widzi) ? null : rz; };
+    const { bledy, nieznane } = sprawdzCechy(ksztalt, cechy, maRzecz, maZapis);
     if (bledy.length) return blad(422, `rzecz rodzaju ${rodzaj} nie przeszła sprawdzenia: ` + bledy.join('; '), { bledy, ksztalt: '/rodzaj/' + rodzaj });
     if (ksztalt.klucz && stara && nazwaRodzaju(stara.rodzaj) === nazwaRodzaju(rodzaj)) {
       const sk = this.ksztaltDla(stara.rodzaj);
@@ -1141,7 +1174,7 @@ export class Srodowisko {
     const wada = sprawdzUstawienie(this, rodzaj, cechy, widzi, obszar ?? null);
     if (wada) return blad(422, wada.blad, wada.bledy ? { bledy: wada.bledy } : {});
     // Plik: typ z zamkniętej listy, a rozmiar i odcisk muszą się zgadzać z zapisem, który wskazuje (worker/pliki.mjs).
-    const wadaPliku = sprawdzPlik(this, rodzaj, cechy, stara);
+    const wadaPliku = sprawdzPlik(this, rodzaj, cechy, stara, widzi);
     if (wadaPliku) return blad(422, wadaPliku.blad);
     // Słowo może nieść stan oka: co widział ten, kto je zostawił (worker/oko.mjs).
     const wadaOka = sprawdzOko(this, rodzaj, cechy);
@@ -1625,6 +1658,9 @@ export class Srodowisko {
     const pr = swoja ? surowa : widzi(c.propozycja);
     if (!pr || pr.rodzaj !== 'propozycja/1') return blad(404, `nie ma propozycji ${c.propozycja}`);
     if (pr.cechy.stan !== 'czeka') return blad(409, `ta propozycja jest już rozstrzygnięta: ${pr.cechy.stan}`);
+    // Przyjmujący przyjmuje dokładnie to, co zaproponowano: prawo autora propozycji do wskazania zapisu z bajtami
+    // (sam je wgrał) liczy się także przy przyjęciu.
+    widzi.takze = [pr.cechy.od];
     const t = pr.cechy.tresc && typeof pr.cechy.tresc === 'object' ? pr.cechy.tresc : {};
     const cechy = t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {};
     // Propozycja pamięta obszar z chwili, w której powstała. Rzecz, która z natury należy do innej, bierze go z tamtej
@@ -1691,7 +1727,9 @@ export class Srodowisko {
   }
 
   // Bajty pliku: niezmienny zapis rodzaju bajty/1 (treść w base64). Wskazuje go cecha `tresc` rzeczy rodzaju plik/1.
-  // Sam zapis niczego nie otwiera: bajty wychodzą drzwiami tylko przez rzecz, którą czytający widzi (worker/pliki.mjs).
+  // Sam zapis niczego nie otwiera: bajty wychodzą drzwiami tylko przez rzecz, którą czytający widzi, a rzecz może
+  // wskazać zapis tylko wtedy, gdy piszący sam go wgrał albo widzi plik, który go niesie (worker/pliki.mjs). Akt zapisu
+  // bajtów jest w jądrze prywatny: w dzienniku widzą go właściciel i ten, kto wgrał.
   async bajty(kto, u8, { op, slad = null } = {}) {
     const rola = this.rola(kto);
     if (rola === 'zwiedzajacy') return blad(401, this.powodBrakuPrawa(kto, 'do zapisania pliku'));
@@ -1700,15 +1738,34 @@ export class Srodowisko {
     if (u8.length > NAJWIEKSZY_PLIK) return blad(413, `plik ma ${u8.length} bajtów, a jeden plik może mieć najwyżej ${NAJWIEKSZY_PLIK}; magazynu na większe rzeczy jeszcze nie ma`);
     if (!opKlienta(op)) return blad(400, 'op: w adresie, ?op=<8 do 100 znaków z [A-Za-z0-9_-]>');
     return this._wKolejce(async () => {
-      // Dobowa granica bajtów: bezpiecznik zapisów liczy wiersze, a jeden wiersz z plikiem waży tyle, co tysiące zwykłych.
-      const klucz = 'bajty:' + new Date(this.r.teraz()).toISOString().slice(0, 10);
-      const dzis = Number(this.r.meta(klucz)) || 0;
-      if (dzis + u8.length > NAJWIECEJ_BAJTOW_NA_DOBE) return blad(429, `to Miejsce przyjęło dziś ${dzis} bajtów plików; dobowa granica to ${NAJWIECEJ_BAJTOW_NA_DOBE} i chroni magazyn, wraca o północy czasu UTC`);
-      const w = await this.r.wykonaj(kto, { op: op + '.bajty', co: 'zapisz', rodzaj: 'bajty/1', tresc: naBase64(u8) }, { slad });
+      // Dobowe granice bajtów: bezpiecznik zapisów liczy wiersze, a jeden wiersz z plikiem waży tyle, co tysiące zwykłych.
+      // Liczą się tylko NOWE zapisy: te same bajty wysłane drugi raz niczego w magazynie nie dokładają, a liczone
+      // pozwalały jednemu agentowi tym samym plikiem pod nowymi op zamknąć wgrywanie całemu Miejscu do północy
+      // (niezależny atak, 18 XI 2026). Trzy granice: całe Miejsce, wszyscy poza właścicielem razem (połowa, więc
+      // właściciel zawsze ma swoją część) i każdy z nich z osobna.
+      const tresc = naBase64(u8);
+      const przyg = await this.r.przygotujZapis({ rodzaj: 'bajty/1', tresc, prywatne: true });
+      if (!przyg.ok) return przyg;
+      const dzien = 'bajty:' + new Date(this.r.teraz()).toISOString().slice(0, 10);
+      const liczniki = [[dzien, NAJWIECEJ_BAJTOW_NA_DOBE, 'to Miejsce przyjęło dziś']];
+      if (rola !== 'wlasciciel') liczniki.push([dzien + ':inni', NAJWIECEJ_BAJTOW_INNYCH_NA_DOBE, 'uczestnicy poza właścicielem wgrali dziś razem'], [dzien + ':' + kto, NAJWIECEJ_BAJTOW_UCZESTNIKA_NA_DOBE, 'wgrałeś dziś']);
+      if (!this._maZapis(przyg.id)) {
+        for (const [klucz, granica, zdanie] of liczniki) {
+          const jest = Number(this.r.meta(klucz)) || 0;
+          if (jest + u8.length > granica) return blad(429, `${zdanie} ${jest} bajtów nowych plików; dobowa granica to ${granica} i chroni magazyn, wraca o północy czasu UTC`);
+        }
+      }
+      const w = await this.r.wykonaj(kto, { op: op + '.bajty', co: 'zapisz', rodzaj: 'bajty/1', tresc, prywatne: true }, { slad });
       if (!w.ok) return w;
-      if (!w.powtorzone) this.r.ustawMeta(klucz, String(dzis + u8.length));
+      if (w.nowy === true) for (const [klucz] of liczniki) this.r.ustawMeta(klucz, String((Number(this.r.meta(klucz)) || 0) + u8.length));
       return { ok: true, powtorzone: w.powtorzone, zapis: w.zapis ?? w.akt.zapis, rozmiar: u8.length };
     });
+  }
+
+  // Czy ten uczestnik sam wgrał ten zapis: ma przy nim własny akt zapisu. Zapis rodzaju bajty/1 powstaje tylko drzwiami
+  // bajtów (i drzwiami jądra, które wpuszczają samego właściciela).
+  _wgral(kto, zapis) {
+    return typeof kto === 'string' && this.q(`SELECT 1 AS j FROM akty WHERE zapis = ? AND kto = ? AND co = 'zapisz' LIMIT 1`, zapis, kto).length > 0;
   }
 
   _bajtyZapisu(zapis) {
