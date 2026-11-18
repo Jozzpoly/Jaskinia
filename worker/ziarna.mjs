@@ -441,6 +441,7 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
     zd('ksztalty', 'stoi', 'Rodzaj jako dana: nowy rodzaj rzeczy dokłada się ruchem (rzecz rodzaju ksztalt/1); sprawdzanie jest przy zapisie, nieznana cecha zostaje zachowana.'),
     // Pierwsze pokrętła: jedna tablica (public/pokretla.mjs), z której twarz bierze wartości domyślne, a zasiew rzeczy.
     { nazwa: 'pokretlo-' + POKRETLO_ZESTAWOW, rodzaj: 'pokretlo/1', cechy: { nazwa: POKRETLO_ZESTAWOW, typ: 'zestawy', domyslna: [], grupa: 'Zestawy', opis: 'Które zestawy (motywy, presety) są włączone w tym zasięgu; późniejszy na liście wygrywa. Lista nie dziedziczy się: każdy zasięg włącza swoje.', zrodlo: 'środowisko' } },
+    { nazwa: 'pokretlo-srodowisko.twarz_domyslna', rodzaj: 'pokretlo/1', cechy: { nazwa: 'srodowisko.twarz_domyslna', typ: 'wybor', wartosci: ['gospodarz', 'start'], domyslna: 'gospodarz', grupa: 'Środowisko', opis: 'Która twarz otwiera się pod głównym adresem: strona gospodarza (zaplecze) albo Start. Przełączenie jest zwykłą wartością: ma autora, historię i cofnięcie; pod adresem /?zostan zawsze zostaje strona gospodarza.' } },
     ...POKRETLA.map((d) => ({ nazwa: 'pokretlo-' + d.nazwa, rodzaj: 'pokretlo/1', cechy: { ...d, zrodlo: 'tablica pokręteł (public/pokretla.mjs)' } })),
     zd('trasa', 'stoi', 'Trasa: jedno żądanie do drzwi i rzecz jest w Miejscu, widać ją w spisie i zostaje.'),
     zd('samowyjasnianie', 'stoi', 'Samowyjaśnianie pod adresem: /co-tu-jest mówi gołym tekstem, co tu jest, co się zmieniło, co komu wolno i jak coś dołożyć; powstaje z danych.'),

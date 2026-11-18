@@ -28,7 +28,8 @@ async function swiat() {
 
 test('U1. pierwsze pokrętła są rzeczami z jednej tablicy, a ich tożsamość jest nazwą: ta sama deklaracja dołożona ręką trafia w tę samą rzecz', async () => {
   const { s, licz } = await swiat();
-  assert.equal(s.ile({ rodzaj: 'pokretlo/1' }), POKRETLA.length + 1, 'tablica i pokrętło zestawów');
+  assert.equal(s.ile({ rodzaj: 'pokretlo/1' }), POKRETLA.length + 2, 'tablica, pokrętło zestawów i pokrętło twarzy domyślnej');
+  assert.equal(licz('agent-a').wartosci['srodowisko.twarz_domyslna'].wartosc, 'gospodarz', 'główny adres domyślnie otwiera stronę gospodarza');
   const u = licz('agent-a', { deklaracje: true });
   assert.equal(u.format, FORMAT_USTAWIEN);
   for (const d of POKRETLA) {

@@ -730,7 +730,7 @@
   // zostawia wygląd domyślny.
   let P = null, modulPokretel = null, modulKrojow = null, modulOka = null, podglad = null, ust = null, odciskUstawien = null, pytamOUstawienia = false;
   const bajtyPliku = async (plik) => { const o = await fetch('/api/srodowisko/bajty?rzecz=' + plik.rzecz + '&odcisk=' + plik.odcisk, { headers: naglowki({ accept: '*/*' }) }); if (!o.ok) throw new Error('nie ma pliku ' + plik.rzecz); return o.arrayBuffer(); };
-  let pelneKiedy = 0, pelneZegar = null, pelneOdRazu = false;
+  let pelneKiedy = 0, pelneZegar = null, pelneOdRazu = false, twarzSprawdzona = false;
   const PANEL_NAJCZESCIEJ_MS = 15000;
   const bezpiecznie = new URLSearchParams(location.search).has('bezpiecznie');
   const systemCiemny = () => matchMedia('(prefers-color-scheme: dark)').matches;
@@ -803,6 +803,12 @@
       pelneKiedy = Date.now();
       try {
         ust = await czytaj('/api/srodowisko/ustawienia?deklaracje=tak');
+        // Twarz domyślna jest ustawieniem: gdy mówi "start", główny adres otwiera Start. Tylko przy wejściu, nigdy w trybie
+        // bezpiecznym ani pod adresem z ?zostan (tak tu wraca Start), więc do strony gospodarza zawsze da się dojść.
+        const pierwsze = !twarzSprawdzona;
+        twarzSprawdzona = true;
+        const domyslna = ust.wartosci && ust.wartosci['srodowisko.twarz_domyslna'];
+        if (pierwsze && domyslna && domyslna.wartosc === 'start' && !bezpiecznie && location.pathname === '/' && !new URLSearchParams(location.search).has('zostan')) { location.replace('/start/'); return; }
         // Role palety zadeklarowane w Miejscu: strona uczy się ich, odtąd pyta o nie po nazwie i mówi je oknom narzędzi.
         let nowe = false;
         for (const d of ust.deklaracje || []) if (d.typ === 'kolor' && typeof d.nazwa === 'string' && (d.nazwa.startsWith(modulPokretel.PALETA.jasna) || d.nazwa.startsWith(modulPokretel.PALETA.ciemna)) && P.znaj(d)) nowe = true;
