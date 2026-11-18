@@ -555,8 +555,10 @@ async function cofnijAlboPonow(ponow) {
   const cofany = z[z.length - 1], gest = nowyGest();
   const o = await drzwi.ruch({ co: 'cofnij-gest', cofany, gest });
   if (!o.ok) {
-    // gest, którego Miejsce nie zna (inne Miejsce, inny uczestnik), schodzi ze stosu; każda inna odmowa go zostawia
-    if (/^nie ma gestu/.test(o.blad)) { z.pop(); zapiszStos(); }
+    // Gest, którego Miejsce nie zna (inne Miejsce pod tym samym adresem, przywrócona starsza historia): wszystko, co
+    // leży pod nim na liście, jest jeszcze starsze, więc lista czyści się cała, zamiast odbijać się po jednym geście.
+    // Każda inna odmowa zostawia listę, jak była.
+    if (/^nie ma gestu/.test(o.blad)) { z.length = 0; zapiszStos(); komunikat('Tego gestu to Miejsce już nie zna, więc lista cofania zaczyna się od nowa.', true); return; }
     komunikat(o.blad, true);
     return;
   }
