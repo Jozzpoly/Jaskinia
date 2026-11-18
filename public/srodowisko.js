@@ -322,9 +322,14 @@
   }
   const slowaPrzy = (id) => rzeczy.filter((r) => r.rodzaj.startsWith('slowo/') && Array.isArray(r.cechy.dotyczy) && r.cechy.dotyczy.includes(id)).sort((a, b) => String(b.utworzono).localeCompare(String(a.utworzono)));
   // Słowo przy rzeczy: uwaga albo pomysł zostawiony dokładnie tam, gdzie dotyczy, a nie w rozmowie.
+  // Stan oka do słowa: co było widać, gdy je pisano (public/oko.mjs). Bez modułu albo przy błędzie słowo idzie bez niego.
+  async function okoGospodarza() {
+    if (!modulOka) return {};
+    try { return { oko: await modulOka.stanOka({ twarz: 'gospodarz', pliki: ['/srodowisko.js', '/pokretla.mjs', '/kroje.mjs'], akt, ciemny: P ? P.ciemna(matchMedia('(prefers-color-scheme: dark)').matches) : null, bezpiecznie: new URLSearchParams(location.search).has('bezpiecznie'), stan: { okna: okna.size } }) }; } catch { return {}; }
+  }
   function slowoPrzy(r) {
     const sa = slowaPrzy(r.id);
-    const p = pole('slowo:' + r.id, 'Zostaw słowo', 'Twoje słowo przy tej rzeczy', (w, o) => ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [r.id] } }, 'Słowo zostawione przy: ' + r.tytul, o));
+    const p = pole('slowo:' + r.id, 'Zostaw słowo', 'Twoje słowo przy tej rzeczy', async (w, o) => ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [r.id], ...(await okoGospodarza()) } }, 'Słowo zostawione przy: ' + r.tytul, o));
     return [el('div', { klasa: 'ruchy' }, el('button', { tekst: sa.length ? 'słowo (' + sa.length + ')' : 'słowo', title: 'Zostaw słowo przy tej rzeczy', klik: p.pokaz })),
       p.pudlo,
       sa.length ? el('ul', { klasa: 'slowa' }, sa.slice(0, 3).map((s) => el('li', {}, el('span', { tekst: s.cechy.tresc }), el('span', { klasa: 'bok', tekst: s.utworzyl + ' · ' + kiedy(s.utworzono) })))) : null];
@@ -660,7 +665,7 @@
     }
 
     const sa = slowaPrzy(r.id);
-    const sl = pole('k:slowo:' + r.id, 'Zostaw słowo', 'Twoje słowo przy tej rzeczy', (w, o) => ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [r.id] } }, 'Słowo zostawione przy: ' + r.tytul, o));
+    const sl = pole('k:slowo:' + r.id, 'Zostaw słowo', 'Twoje słowo przy tej rzeczy', async (w, o) => ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [r.id], ...(await okoGospodarza()) } }, 'Słowo zostawione przy: ' + r.tytul, o));
     k.push(el('h4', { tekst: sa.length ? 'Słowa przy tej rzeczy (' + sa.length + ')' : 'Słowa przy tej rzeczy' }),
       sa.length ? el('ul', { klasa: 'slowa kr-slowa' }, sa.map((s) => el('li', {}, el('span', { klasa: 'kr-tekst', tekst: s.cechy.tresc }), el('span', { klasa: 'bok', tekst: s.utworzyl + ' · ' + kiedy(s.utworzono) })))) : el('p', { klasa: 'ciche', tekst: 'Jeszcze żadnych.' }),
       el('div', { klasa: 'ruchy' }, el('button', { tekst: 'Zostaw słowo', klik: sl.pokaz })), sl.pudlo);
@@ -695,7 +700,7 @@
   // zmianie, w biegu) i daje ręce panel: każde zadeklarowane pokrętło z polem według typu. W trakcie kręcenia zmiana
   // jest podglądem (bez zapisu; widzą ją też inne karty tego adresu), zapis idzie przy puszczeniu. Adres z ?bezpiecznie
   // zostawia wygląd domyślny.
-  let P = null, modulPokretel = null, modulKrojow = null, podglad = null, ust = null, odciskUstawien = null, pytamOUstawienia = false;
+  let P = null, modulPokretel = null, modulKrojow = null, modulOka = null, podglad = null, ust = null, odciskUstawien = null, pytamOUstawienia = false;
   const bajtyPliku = async (plik) => { const o = await fetch('/api/srodowisko/bajty?rzecz=' + plik.rzecz + '&odcisk=' + plik.odcisk, { headers: naglowki({ accept: '*/*' }) }); if (!o.ok) throw new Error('nie ma pliku ' + plik.rzecz); return o.arrayBuffer(); };
   let pelneKiedy = 0, pelneZegar = null, pelneOdRazu = false;
   const PANEL_NAJCZESCIEJ_MS = 15000;
@@ -857,6 +862,7 @@
       ...[...grupy].map(([g, lista]) => { const det = el('details', { open: otwarte.has(g) ? true : null }, el('summary', {}, g + ' ', el('span', { klasa: 'ile', tekst: String(lista.length) })), el('ul', { klasa: 'lista ust' }, lista.map(wiersz))); det.dataset.grupa = g; return det; }));
     pudlo.hidden = false;
   }
+  import('/oko.mjs').then((m) => { modulOka = m; }).catch(() => { /* bez tego modułu słowo idzie bez stanu oka */ });
   import('/kroje.mjs').then((m) => { modulKrojow = m; zastosujWyglad(); }).catch(() => { /* bez tego modułu kroje zostają przy rodzinach, które urządzenie już ma */ });
   import('/pokretla.mjs').then((m) => {
     modulPokretel = m;

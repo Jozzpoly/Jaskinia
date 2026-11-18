@@ -21,6 +21,7 @@ import { PRZEDROSTEK_GOSCIA } from './klucze.mjs';
 import { opKlienta } from './ksztalty.mjs';
 import { sprawdzUstawienie, POKRETLO_ZESTAWOW } from './ustawienia.mjs';
 import { sprawdzPlik, naBase64, NAJWIEKSZY_PLIK, NAJWIECEJ_BAJTOW_NA_DOBE } from './pliki.mjs';
+import { sprawdzOko } from './oko.mjs';
 
 export const SRODOWISKO = 'srodowisko-1';
 export const CZYTELNIK_PODGLADU = 'podglad'; // imię czytającego bez klucza na podglądzie; uczestnikiem jest tylko tam
@@ -1131,6 +1132,9 @@ export class Srodowisko {
     // Plik: typ z zamkniętej listy, a rozmiar i odcisk muszą się zgadzać z zapisem, który wskazuje (worker/pliki.mjs).
     const wadaPliku = sprawdzPlik(this, rodzaj, cechy, stara);
     if (wadaPliku) return blad(422, wadaPliku.blad);
+    // Słowo może nieść stan oka: co widział ten, kto je zostawił (worker/oko.mjs).
+    const wadaOka = sprawdzOko(this, rodzaj, cechy);
+    if (wadaOka) return blad(422, wadaOka.blad);
     return { ok: true, ksztalt, nieznane };
   }
 

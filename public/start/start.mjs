@@ -7,6 +7,7 @@
 // Co jest stanem oka (nie trafia do Miejsca): kamera, liczba stały/ciekły, wybrana rzecz. Co jest zapisem: położenie
 // rzeczy z ręki, przy puszczeniu, jako rzecz rodzaju miejsce w widoku Start (więc ma autora, historię i prawa z obszaru).
 import { Drzwi } from './drzwi.mjs';
+import { stanOka } from '../oko.mjs';
 import { NAZWY_POKRETEL, Pokretla, KOLORY, RODZAJE_USTAWIEN, krojNaCss, polaczPodglad } from '../pokretla.mjs';
 import { rodzinaKroju } from '../kroje.mjs';
 import { zbudujSwiat, ukladStaly, poleCieklego, ukladCiekly, miedzy, lagodnie, krotkieImie, zywosc, galezieWPolu, trafienie,
@@ -507,7 +508,10 @@ function rysujKarte() {
     el('div', { klasa: 'ruchy' }, el('button', { tekst: 'Zostaw słowo', klik: async (e) => {
       const w = tekstSlowa.value.trim(); if (!w) return;
       e.currentTarget.disabled = true;
-      const o = await drzwi.ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [p.id] } });
+      // Słowo niesie stan oka: co było widać, gdy je pisano (wersja twarzy, akt, widok, ekran, kamera, układ).
+      const oko = await stanOka({ twarz: 'start', pliki: ['/start/start.mjs', '/start/drzwi.mjs', '/start/swiat.mjs', '/pokretla.mjs', '/kroje.mjs'], akt: drzwi.akt, widok: widok ? widok.id : null, ciemny: P.ciemna(matchMedia('(prefers-color-scheme: dark)').matches), bezpiecznie: P.bezpiecznie,
+        stan: { ciekly: Math.round(t * 100) / 100, ...(kam ? { kamera: { x: Math.round(kam.x), y: Math.round(kam.y), k: Math.round(kam.k * 1000) / 1000 } } : {}) } }).catch(() => null);
+      const o = await drzwi.ruch({ co: 'poloz', rodzaj: 'slowo/1', cechy: { tresc: w, dotyczy: [p.id], ...(oko ? { oko } : {}) } });
       if (!o.ok) { e.currentTarget.disabled = false; komunikat(o.blad, true); return; }
       tekstSlowa.value = '';
       await drzwi.dogon().catch(() => {});
