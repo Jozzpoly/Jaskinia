@@ -17,6 +17,9 @@ async function miejsce(request, env) {
   const k = await ktoTo(request, env);
   if (!k.ok) return json({ blad: k.blad }, k.status);
   const naglowki = new Headers({ 'x-kto': k.kto });
+  // Jeśli tożsamość przyszła z ciastka drzwi, Miejsce dostaje też poświadczenie, którym ją otwarto, i samo
+  // sprawdza, czy ono jeszcze żyje: odłożone urządzenie ma zamykać wejście, a nie tylko znikać z listy.
+  if (k.poswiadczenie) naglowki.set('x-sesja-pos', String(k.poswiadczenie).slice(0, 256));
   const ct = request.headers.get('content-type');
   if (ct) naglowki.set('content-type', ct);
   const doMiejsca = new Request(request.url, { method: request.method, headers: naglowki, body: request.method === 'GET' ? undefined : await request.text() });
@@ -39,13 +42,15 @@ async function srodowisko(request, env, url) {
   // Drzwi właściciela same wpuszczają: do nich wolno przyjść bez niczego, bo to one dają tożsamość.
   // Który ich krok wymaga właściciela, rozstrzyga samo Miejsce (drzwi-http.mjs), nie ten front.
   const drzwi = url.pathname.startsWith('/api/drzwi/');
-  let kto = '';
+  let kto = '', poswiadczenieSesji = '';
   if (maTozsamosc(request)) {
     const k = await ktoTo(request, env);
     // Ciastko mogło się przeterminować albo zostać po innym Miejscu: wtedy czytamy dalej jak bez klucza,
     // zamiast odmawiać wszystkiego komuś, kto po prostu ma stare ciastko w przeglądarce.
-    if (!k.ok && request.headers.has('authorization')) return json({ blad: k.blad }, k.status);
-    if (k.ok) kto = k.kto;
+    // Ciastko z CUDZEGO adresu to nie „stare ciastko w przeglądarce”, a żądanie wysłane przez obcą stronę:
+    // takie odmawiamy wprost i mówimy dlaczego, zamiast odbijać je dalej jako „brak klucza”.
+    if (!k.ok && (request.headers.has('authorization') || k.status === 403)) return json({ blad: k.blad }, k.status);
+    if (k.ok) { kto = k.kto; poswiadczenieSesji = k.poswiadczenie || ''; }
   }
   if (!kto && !drzwi && request.method !== 'GET') {
     return json({ blad: 'do ruchu potrzebny jest klucz: nagłówek Authorization: Bearer <klucz>' }, 401);
@@ -53,6 +58,7 @@ async function srodowisko(request, env, url) {
     return json({ blad: 'to Miejsce nie jest publiczne: do czytania potrzebny jest klucz (nagłówek Authorization: Bearer <klucz>)' }, 401);
   }
   const naglowki = new Headers({ 'x-kto': kto, 'x-origin': url.origin });
+  if (poswiadczenieSesji) naglowki.set('x-sesja-pos', String(poswiadczenieSesji).slice(0, 256));
   if (zywe) {
     // Kanał na żywo. Przeglądarka nie umie dołączyć klucza do otwarcia połączenia, więc wolno je otworzyć bez klucza:
     // takie połączenie poza podglądem niczego nie słyszy, dopóki nie przedstawi się kluczem pierwszą wiadomością.

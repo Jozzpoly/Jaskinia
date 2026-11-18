@@ -18,7 +18,23 @@ export const ADRES_DRZWI = '/api/drzwi/';
 // kosztuje zero, a działa dokładnie wtedy, gdy ma działać - gdy ktoś wali w drzwi, obiekt jest obudzony.
 // Po uśpieniu okno startuje od nowa i to jest w porządku: spanie znaczy, że nikt nie wali.
 export const WYZWAN_NA_MINUTE = 30;
-const KLUCZ_WYZWANIA = (w) => 'drzwi:wyzwanie:' + w;
+// Ile wyzwań może naraz leżeć w pamięci obiektu. Dwie minuty życia razy trzydzieści na minutę to najwyżej
+// sześćdziesiąt uczciwych; sto dwadzieścia jest zapasem, po którym najstarsze ustępują.
+export const WYZWAN_NARAZ = 120;
+
+// WYZWANIA LEŻĄ W PAMIĘCI OBIEKTU, NIE W JEGO TRWAŁEJ PAMIĘCI. Do 18 XI 2026 szły do `ctx.storage.put`
+// z opcją `expirationTtl` — a tej opcji pamięć Durable Object NIE ZNA (to opcja Workers KV), więc była cicho
+// przemilczana i każde pukanie obcego zostawiało w Miejscu wpis NA ZAWSZE. Obcy bez klucza mógł tak pisać do
+// Miejsca, a dobowy bezpiecznik tego nie widział, bo to nie są wiersze bazy (atak Fable na te drzwi).
+// Cena wyboru: po uśpieniu obiektu niedokończone wyzwanie przepada i dotknięcie trzeba powtórzyć. Przy życiu
+// dwóch minut to jedno dotknięcie telefonu więcej, a nie utrata dostępu.
+function polozWyzwanie(m, w, cel) {
+  const teraz = Date.now();
+  if (!m._wyzwania) m._wyzwania = new Map();
+  for (const [k, v] of m._wyzwania) if (!(v.do > teraz)) m._wyzwania.delete(k);
+  while (m._wyzwania.size >= WYZWAN_NARAZ) m._wyzwania.delete(m._wyzwania.keys().next().value);
+  m._wyzwania.set(w, { cel, do: teraz + WYZWANIE_WAZNE_MS });
+}
 const CELE = ['zaloz', 'wejdz'];
 
 const bajty = (s, ile) => {
@@ -81,12 +97,20 @@ export async function obsluzDrzwi(m, request) {
     if (!m._drzwiOkno || teraz - m._drzwiOkno.od > 60000) m._drzwiOkno = { od: teraz, ile: 0 };
     if (++m._drzwiOkno.ile > WYZWAN_NA_MINUTE) return json({ ok: false, blad: 'za dużo prób otwarcia drzwi w ciągu minuty; spróbuj za chwilę' }, 429);
     const w = b64uZ(crypto.getRandomValues(new Uint8Array(32)));
-    await m.ctx.storage.put(KLUCZ_WYZWANIA(w), { cel, do: Date.now() + WYZWANIE_WAZNE_MS }, { expirationTtl: Math.ceil(WYZWANIE_WAZNE_MS / 1000) + 60 });
-    const znane = m.srod.wszystkie({ rodzaj: 'poswiadczenie/1', gdzie: { imie: wlasciciel } }).map((p) => p.cechy.poswiadczenie);
+    polozWyzwanie(m, w, cel);
+    // Przy ZAKŁADANIU przeglądarka ma wiedzieć, czego nie zakładać drugi raz — a o to prosi tylko właściciel,
+    // który JUŻ jest wpuszczony (sprawdzone wyżej). Przy WEJŚCIU nie wydajemy niczego: poświadczenia są
+    // odnajdywalne (discoverable), więc przeglądarka sama wie, czym wejść, a lista identyfikatorów w odpowiedzi
+    // mówiła obcemu bez klucza, ile urządzeń ma właściciel i jak się nazywają w bajtach. Pierwsze pytanie
+    // u drzwi nie ma nic opowiadać o tym, kto za nimi mieszka (atak Fable na te drzwi, 18 XI 2026).
+    // `odlozone: 'razem'`, bo przeglądarka ma nie zakładać drugi raz TAKŻE urządzenia odłożonego: zapis odbiłby
+    // się o „to poświadczenie jest już zapisane” po niepotrzebnym dotknięciu telefonu.
+    const znane = cel === 'zaloz'
+      ? m.srod.wszystkie({ rodzaj: 'poswiadczenie/1', gdzie: { imie: wlasciciel }, odlozone: 'razem' }).map((p) => p.cechy.poswiadczenie)
+      : null;
     return json({
       ok: true, wyzwanie: w, wazne_ms: WYZWANIE_WAZNE_MS, nazwa_strony: nazwaStrony, imie: wlasciciel,
-      // Przy zakładaniu przeglądarka ma wiedzieć, czego NIE zakładać drugi raz; przy wejściu - czym może wejść.
-      ...(cel === 'zaloz' ? { juz_znane: znane } : { poswiadczenia: znane }),
+      ...(znane ? { juz_znane: znane } : {}),
     });
   }
 
@@ -94,8 +118,8 @@ export async function obsluzDrzwi(m, request) {
   const wezWyzwanie = async (cel) => {
     const w = typeof c.wyzwanie === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(c.wyzwanie) ? c.wyzwanie : null;
     if (!w) return { blad: 'wyzwanie: to, które wydały drzwi w kroku zacznij' };
-    const zapis = await m.ctx.storage.get(KLUCZ_WYZWANIA(w));
-    await m.ctx.storage.delete(KLUCZ_WYZWANIA(w));
+    const zapis = m._wyzwania ? m._wyzwania.get(w) : null;
+    if (m._wyzwania) m._wyzwania.delete(w);
     if (!zapis) return { blad: 'tego wyzwania nie ma: albo już go użyto, albo minęły dwie minuty; zacznij od nowa' };
     if (zapis.cel !== cel) return { blad: `to wyzwanie było wydane do kroku ${zapis.cel}, nie do ${cel}` };
     if (!(zapis.do > Date.now())) return { blad: 'wyzwanie się przeterminowało; zacznij od nowa' };
@@ -155,7 +179,7 @@ export async function obsluzDrzwi(m, request) {
     if (w.licznik > (Number(rz.cechy.licznik) || 0) && !m.budzet.przekroczony()) {
       await m.srod.ruch(wlasciciel, { op: 'drzwi-licznik-' + rz.id.slice(0, 10) + '-' + w.licznik, co: 'poloz', rzecz: rz.id, wersja: rz.wersja, rodzaj: 'poswiadczenie/1', obszar: rz.obszar, cechy: { ...rz.cechy, licznik: w.licznik, uzyte: new Date(m.rdzen.teraz()).toISOString() } }, { slad: 'drzwi' }).catch(() => null);
     }
-    const zeton = await zrobSesje(sekret, wlasciciel);
+    const zeton = await zrobSesje(sekret, wlasciciel, { poswiadczenie: rz.cechy.poswiadczenie });
     return json({ ok: true, skutek: 'wpuszczone', imie: wlasciciel, sesja_wazna_dni: Math.round(SESJA_WAZNA_MS / 86400000) }, 200, { 'set-cookie': ciastkoNaglowek(zeton) });
   }
 

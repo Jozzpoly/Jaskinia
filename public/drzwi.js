@@ -30,17 +30,19 @@ const zad = async (krok, cialo, naglowki = {}) => {
 
 const stanDrzwi = () => zad('stan');
 
-// Wejście: przeglądarka sama pokazuje, czym można wejść; my tylko mówimy, które poświadczenia znamy.
+// Wejście: przeglądarka sama pokazuje, czym można wejść, i sama je odnajduje (discoverable). Miejsce NIE podaje
+// listy poświadczeń — wydawało ją każdemu, kto zapukał, także obcemu bez klucza.
 async function wejdzDotknieciem() {
   const z = await zad('zacznij', { cel: 'wejdz' });
-  if (!z.poswiadczenia || !z.poswiadczenia.length) throw new Error('to Miejsce nie ma jeszcze żadnego poświadczenia: najpierw dodaj urządzenie, będąc wpuszczonym kluczem');
+  // Brak poświadczeń mówią same drzwi (404 w kroku `zacznij`), więc tutaj nie ma czego sprawdzać.
   const p = await navigator.credentials.get({
     publicKey: {
       challenge: b64uDo(z.wyzwanie),
       rpId: z.nazwa_strony,
       timeout: z.wazne_ms,
-      userVerification: 'preferred',
-      allowCredentials: z.poswiadczenia.map((id) => ({ type: 'public-key', id: b64uDo(id) })),
+      // Sprawdzenie człowieka jest WYMAGANE: Miejsce odmówi wejścia bez flagi UV, więc prośba o mniej kończyłaby
+      // się dotknięciem telefonu i odmową na końcu. Bez `allowCredentials`: przeglądarka pokazuje swoje własne.
+      userVerification: 'required',
     },
   });
   if (!p) throw new Error('przeglądarka nie podała podpisu');
@@ -63,7 +65,9 @@ async function dodajUrzadzenie(nazwa, naglowki = {}) {
       // Imię użytkownika jest jego imieniem w Miejscu, nie adresem e-mail: to jest jego Miejsce, nie usługa.
       user: { id: new TextEncoder().encode(z.imie), name: z.imie, displayName: z.imie },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-      authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' },
+      // `residentKey: 'required'`, bo wejście nie dostaje od Miejsca listy poświadczeń i urządzenie musi umieć
+      // odnaleźć swoje samo; `userVerification: 'required'`, bo tego żądają drzwi przy każdym wejściu.
+      authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
       attestation: 'none',
       timeout: z.wazne_ms,
       excludeCredentials: (z.juz_znane || []).map((id) => ({ type: 'public-key', id: b64uDo(id) })),

@@ -179,9 +179,27 @@ export class Miejsce {
     return odp;
   }
 
+  // Wejście z ciastka drzwi żyje tylko tak długo, jak poświadczenie, którym je otwarto. Worker sprawdził podpis
+  // ciastka i podał poświadczenie w `x-sesja-pos`; tylko Miejsce wie, czy ta rzecz jeszcze leży i czy nie jest
+  // odłożona. Sprawdzamy to RAZ, na wejściu, i odbieramy tożsamość całemu żądaniu — inaczej każda z czterech
+  // tras (drzwi, środowisko, stare drzwi, kanał) musiałaby o tym pamiętać osobno, a jedna by zapomniała.
+  _poswiadczenieZyje(pos) {
+    return this.srod.wszystkie({ rodzaj: 'poswiadczenie/1' }).some((p) => p.cechy.poswiadczenie === pos);
+  }
+
   async _obsluz(request) {
     const sciezka = new URL(request.url).pathname;
     this._zapamietajAdres(request);
+    const pos = request.headers.get('x-sesja-pos');
+    if (pos) {
+      await this._zasiew();
+      if (!this._poswiadczenieZyje(pos)) {
+        const h = new Headers(request.headers);
+        h.set('x-kto', '');
+        h.delete('x-sesja-pos');
+        request = new Request(request, { headers: h });
+      }
+    }
     if (sciezka === ADRES_ZYWEGO) return this._zywe(request);
     if (sciezka.startsWith(ADRES_DRZWI)) {
       await this._zasiew();

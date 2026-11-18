@@ -111,25 +111,34 @@ const hmac = async (sekret, tekst) => {
 
 // Sesja: imię, do kiedy, podpis. Nic nie trzeba pamiętać po stronie Miejsca, a sekret stoi w ustawieniach
 // Workera, nigdy w kodzie ani w danych (zasada 12).
-export async function zrobSesje(sekret, imie, { teraz = Date.now(), ile = SESJA_WAZNA_MS } = {}) {
+// Sesja NIESIE POŚWIADCZENIE, którym ją otwarto. Bez tego odłożenie poświadczenia (jego słowami: zgubiony
+// telefon) nie zamykało wejścia: ciastko dalej czytało i pisało jako właściciel, bo niosło samo imię.
+// Odebranie dostępu, które nie odbiera dostępu, jest gorsze niż jego brak - obiecuje coś, czego nie robi.
+export async function zrobSesje(sekret, imie, { teraz = Date.now(), ile = SESJA_WAZNA_MS, poswiadczenie = '' } = {}) {
   const az = teraz + ile;
-  const tresc = `${b64uZ(T.encode(imie))}.${az}`;
+  const tresc = `${b64uZ(T.encode(imie))}.${b64uZ(T.encode(String(poswiadczenie)))}.${az}`;
   return `${tresc}.${b64uZ(await hmac(sekret, tresc))}`;
 }
 export async function czytajSesje(sekret, zeton, { teraz = Date.now() } = {}) {
   if (typeof zeton !== 'string' || zeton.length > 1024) return null;
   const cz = zeton.split('.');
-  if (cz.length !== 3) return null;
-  const [imieB, azB, podpis] = cz;
-  const tresc = `${imieB}.${azB}`;
+  // Żeton w starym kształcie (imię, do kiedy, podpis) nie mówi, którym poświadczeniem go otwarto, więc nie da
+  // się go unieważnić razem z urządzeniem. Odrzucamy go wprost: koszt to jedno ponowne dotknięcie telefonu.
+  if (cz.length !== 4) return null;
+  const [imieB, posB, azB, podpis] = cz;
+  const tresc = `${imieB}.${posB}.${azB}`;
   let oczekiwany;
   try { oczekiwany = b64uZ(await hmac(sekret, tresc)); } catch { return null; }
   if (!rowne(T.encode(podpis), T.encode(oczekiwany))) return null;
   const az = Number(azB);
   if (!Number.isFinite(az) || az <= teraz) return null;
-  let imie;
-  try { imie = new TextDecoder().decode(b64uDo(imieB)); } catch { return null; }
-  return { imie, do: az };
+  let imie, poswiadczenie;
+  try {
+    imie = new TextDecoder().decode(b64uDo(imieB));
+    poswiadczenie = new TextDecoder().decode(b64uDo(posB));
+  } catch { return null; }
+  if (!poswiadczenie) return null;
+  return { imie, do: az, poswiadczenie };
 }
 
 export const ciastkoZNaglowka = (naglowek) => {
@@ -166,6 +175,10 @@ export async function sprawdzZalozenie({ clientDataJSON, authenticatorData, wyzw
   try { a = czytajAuthData(authenticatorData); } catch (e) { return { ok: false, blad: String(e.message || e) }; }
   if (!rowne(a.skrotNazwyStrony, await skrot(T.encode(nazwaStrony)))) return { ok: false, blad: 'authenticatorData jest dla innej nazwy strony niż ta' };
   if (!a.obecny) return { ok: false, blad: 'authenticator nie potwierdził, że ktoś przy nim był' };
+  // SPRAWDZENIE CZŁOWIEKA (flaga UV) jest tu wymagane, nie doradzane. Bez niego te drzwi obiecują „moje
+  // urządzenie i mój odcisk”, a dają „ktokolwiek, kto trzyma to urządzenie” — czyli każdego, kto je podniesie.
+  // Dlatego strona prosi o `userVerification: 'required'`, a Miejsce nie wierzy stronie i patrzy na flagę.
+  if (!a.sprawdzony) return { ok: false, blad: 'to urządzenie nie sprawdziło, że to Ty (odcisk, twarz albo PIN); te drzwi wymagają sprawdzenia' };
   if (!a.zPoswiadczeniem || !a.poswiadczenie || !a.poswiadczenie.length) return { ok: false, blad: 'authenticatorData nie niesie poświadczenia' };
   let k;
   try { k = await kluczZCose(a.cose); } catch (e) { return { ok: false, blad: String(e.message || e) }; }
@@ -182,6 +195,7 @@ export async function sprawdzWejscie({ clientDataJSON, authenticatorData, podpis
   try { a = czytajAuthData(authenticatorData); } catch (e) { return { ok: false, blad: String(e.message || e) }; }
   if (!rowne(a.skrotNazwyStrony, await skrot(T.encode(nazwaStrony)))) return { ok: false, blad: 'authenticatorData jest dla innej nazwy strony niż ta' };
   if (!a.obecny) return { ok: false, blad: 'authenticator nie potwierdził, że ktoś przy nim był' };
+  if (!a.sprawdzony) return { ok: false, blad: 'to urządzenie nie sprawdziło, że to Ty (odcisk, twarz albo PIN); te drzwi wymagają sprawdzenia' };
   if (licznikZnany > 0 && a.licznik <= licznikZnany) return { ok: false, blad: 'licznik authenticatora nie urósł: to wygląda na powtórzenie starego podpisu' };
   let klucz;
   try { klucz = await crypto.subtle.importKey('raw', b64uDo(kluczPubliczny), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']); } catch (e) { return { ok: false, blad: 'zapisany klucz publiczny nie da się wczytać: ' + String(e.message || e) }; }

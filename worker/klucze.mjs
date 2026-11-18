@@ -45,7 +45,23 @@ export async function ktoTo(request, env = {}) {
   const sekret = sekretSesji(env);
   if (zeton && sekret) {
     const sesja = await czytajSesje(sekret, zeton).catch(() => null);
-    if (sesja && sesja.imie === wlascicielZUstawien(env)) return { ok: true, kto: sesja.imie, skad: 'sesja' };
+    // SĄSIEDNI ADRES NIE JEST OBCY DLA PRZEGLĄDARKI. `workers.dev` stoi na publicznej liście sufiksów, więc
+    // wszystkie podglądy tego konta (`<galaz>-jaskinia.jozzpoly.workers.dev`) dzielą jedną domenę rejestrowalną
+    // i `SameSite=Strict` ich NIE rozdziela: strona z cudzej gałęzi wysyłała żądanie do prawdziwego Miejsca,
+    // przeglądarka dokładała ciastko właściciela i ruch przechodził jako jego (atak Fable, 18 XI 2026 — przeszło
+    // zarówno nowymi drzwiami środowiska, jak i starymi /api/miejsce). Dlatego tożsamość Z CIASTKA liczy się
+    // tylko wtedy, gdy żądanie przyszło z tego samego adresu. Klucz w nagłówku tego nie potrzebuje: żadna
+    // przeglądarka nie dokłada go sama.
+    const skadStrona = request.headers.get('origin');
+    let mojOrigin = null;
+    try { mojOrigin = new URL(request.url).origin; } catch { mojOrigin = null; }
+    const zTegoAdresu = skadStrona ? skadStrona === mojOrigin : request.method === 'GET';
+    if (sesja && sesja.imie === wlascicielZUstawien(env)) {
+      if (!zTegoAdresu) {
+        return { ok: false, status: 403, blad: 'wejście właściciela działa tylko na stronie tego Miejsca: to żądanie przyszło z innego adresu' };
+      }
+      return { ok: true, kto: sesja.imie, skad: 'sesja', poswiadczenie: sesja.poswiadczenie };
+    }
   }
   return { ok: false, status: 401, blad: 'potrzebny klucz: nagłówek Authorization: Bearer <klucz>, co najmniej 16 znaków (albo wejście drzwiami właściciela)' };
 }

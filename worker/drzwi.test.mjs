@@ -136,15 +136,20 @@ test('D5. authenticator, który nie mówi, że ktoś przy nim był, nie wchodzi'
 
 test('D6. sesja: własna przechodzi, podmieniona i przeterminowana nie', async () => {
   const teraz = Date.UTC(2026, 10, 17, 18, 0, 0);
-  const zeton = await zrobSesje(SEKRET, 'jozz', { teraz });
+  const zeton = await zrobSesje(SEKRET, 'jozz', { teraz, poswiadczenie: 'pos-telefon' });
   const s = await czytajSesje(SEKRET, zeton, { teraz });
-  assert.deepEqual(s, { imie: 'jozz', do: teraz + SESJA_WAZNA_MS });
+  assert.deepEqual(s, { imie: 'jozz', do: teraz + SESJA_WAZNA_MS, poswiadczenie: 'pos-telefon' });
 
   assert.equal(await czytajSesje('inny-sekret-tez-dlugi-32-znaki', zeton, { teraz }), null, 'cudzy sekret nie podrobi sesji');
   assert.equal(await czytajSesje(SEKRET, zeton, { teraz: teraz + SESJA_WAZNA_MS + 1 }), null, 'przeterminowana nie wchodzi');
   const cz = zeton.split('.');
-  assert.equal(await czytajSesje(SEKRET, `${b64uZ(T.encode('ktos-inny'))}.${cz[1]}.${cz[2]}`, { teraz }), null, 'podmiana imienia psuje podpis');
-  assert.equal(await czytajSesje(SEKRET, `${cz[0]}.${teraz + 10 * SESJA_WAZNA_MS}.${cz[2]}`, { teraz }), null, 'przedłużenie ważności psuje podpis');
+  assert.equal(cz.length, 4, 'żeton niesie imię, poświadczenie, ważność i podpis');
+  assert.equal(await czytajSesje(SEKRET, `${b64uZ(T.encode('ktos-inny'))}.${cz[1]}.${cz[2]}.${cz[3]}`, { teraz }), null, 'podmiana imienia psuje podpis');
+  assert.equal(await czytajSesje(SEKRET, `${cz[0]}.${b64uZ(T.encode('inne-poswiadczenie'))}.${cz[2]}.${cz[3]}`, { teraz }), null, 'podmiana poświadczenia psuje podpis');
+  assert.equal(await czytajSesje(SEKRET, `${cz[0]}.${cz[1]}.${teraz + 10 * SESJA_WAZNA_MS}.${cz[3]}`, { teraz }), null, 'przedłużenie ważności psuje podpis');
+  // Żeton w starym kształcie (bez poświadczenia) nie da się unieważnić z urządzeniem, więc nie wchodzi wcale.
+  const stary = `${cz[0]}.${cz[2]}.${cz[3]}`;
+  assert.equal(await czytajSesje(SEKRET, stary, { teraz }), null, 'stary trzyczłonowy żeton nie wchodzi');
   assert.equal(await czytajSesje(SEKRET, 'nie.jest.zetonem', { teraz }), null);
   assert.equal(await czytajSesje(SEKRET, '', { teraz }), null);
   // za krótki sekret to błąd ustawienia, nie cicha zgoda

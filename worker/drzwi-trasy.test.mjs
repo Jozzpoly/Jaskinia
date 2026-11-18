@@ -95,7 +95,11 @@ test('DT1. cała droga pod adresem: właściciel zakłada poświadczenie kluczem
 
   // wejście: BEZ klucza w nagłówku, tylko podpisem telefonu
   const z2 = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } })));
-  assert.deepEqual(z2.poswiadczenia, [t.id], 'drzwi mówią, czym można wejść');
+  // Drzwi NIE mówią pukającemu, czym można wejść: poświadczenia są odnajdywalne, a lista identyfikatorów
+  // mowiła każdemu obcemu, ile urządzeń ma właściciel (atak Fable na te drzwi, 18 XI 2026).
+  assert.equal(z2.poswiadczenia, undefined, 'lista poświadczeń nie wychodzi z drzwi');
+  assert.equal(z2.juz_znane, undefined, 'przy wejściu nie wychodzi też pod inną nazwą');
+  assert.ok(!JSON.stringify(z2).includes(t.id), 'ani nigdzie indziej w odpowiedzi');
   const odp = await obiekt.fetch(zad('/api/drzwi/wejdz', { cialo: { wyzwanie: z2.wyzwanie, poswiadczenie: t.id, ...(await t.wejdz(z2.wyzwanie, { licznik: 1 })) } }));
   const we = await dane(odp);
   assert.equal(we.ok, true, JSON.stringify(we));
@@ -186,9 +190,12 @@ test('DT5. nieznane poświadczenie brzmi tak samo jak odłożone: drzwi nie mów
   const nieznane = await sprobuj(inny.id, inny);
   assert.deepEqual(odlozone, nieznane, 'odłożone i nieznane brzmią co do znaku tak samo');
   assert.equal(odlozone[0], 401);
-  const z = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { cialo: { cel: 'wejdz' } })));
-  assert.ok(!z.poswiadczenia.includes(t.id), 'a lista, czym można wejść, nie wymienia odłożonego');
-  assert.equal(z.poswiadczenia.length, 1, 'zostaje to drugie');
+  // Lista poświadczeń nie wychodzi wcale, więc nie ma też czego z niej wykreślać; za to właściciel, który JUŻ
+  // jest wpuszczony, dostaje przy zakładaniu listę tego, czego nie zakładać drugi raz — i odłożone w niej jest.
+  const zz = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));
+  assert.ok(Array.isArray(zz.juz_znane) && zz.juz_znane.includes(zostaje.id), 'drugie urządzenie jest wśród znanych');
+  assert.ok(zz.juz_znane.includes(t.id), 'odłożone też, żeby przeglądarka nie zakładała go drugi raz');
+  assert.ok(!zz.juz_znane.includes(inny.id), 'a nieznane nie');
 });
 
 test('DT6. front Workera: do drzwi wolno przyjść bez niczego, a ciastko sesji jest tożsamością właściciela', async () => {
@@ -207,12 +214,21 @@ test('DT6. front Workera: do drzwi wolno przyjść bez niczego, a ciastko sesji 
   assert.equal(doObiektu.headers.get('x-kto'), '', 'i Miejsce wie, że nikt się jeszcze nie przedstawił');
   assert.equal(doObiektu.headers.get('x-origin'), ADRES, 'oraz pod jakim adresem stoi, bo od tego zależy nazwa strony');
 
-  // z ciastkiem sesji: właściciel bez nagłówka Authorization
-  const zeton = await zrobSesje(SEKRET, 'jozz');
-  const zCiastkiem = await we('/api/srodowisko/ruch', { cookie: `cos=1; ${CIASTKO}=${zeton}` });
+  // z ciastkiem sesji: właściciel bez nagłówka Authorization, ale TYLKO ze strony tego Miejsca
+  const zeton = await zrobSesje(SEKRET, 'jozz', { poswiadczenie: 'pos-telefon' });
+  const zCiastkiem = await we('/api/srodowisko/ruch', { cookie: `cos=1; ${CIASTKO}=${zeton}`, origin: ADRES });
   assert.equal(zCiastkiem.status, 200, 'ruch bez klucza, a z sesją, przechodzi');
   assert.equal(doObiektu.headers.get('x-kto'), 'jozz');
   assert.equal(doObiektu.headers.get('cookie'), null, 'nagłówki do Miejsca budujemy od zera: ciastko nie leci dalej');
+  assert.equal(doObiektu.headers.get('x-sesja-pos'), 'pos-telefon', 'Miejsce dostaje poświadczenie, żeby sprawdzić, czy jeszcze żyje');
+
+  // SĄSIEDNI PODGLĄD TO DLA PRZEGLĄDARKI TEN SAM SITE (workers.dev jest na publicznej liście sufiksów), więc
+  // SameSite=Strict go nie rozdziela i ciastko leci. Tożsamość z ciastka liczy się tylko z adresu tego Miejsca.
+  const SASIAD = 'https://jakas-galaz-jaskinia.jozzpoly.workers.dev';
+  const zSasiada = await we('/api/srodowisko/ruch', { cookie: `${CIASTKO}=${zeton}`, origin: SASIAD });
+  assert.equal(zSasiada.status, 403, 'ruch z sąsiedniego adresu z ciastkiem właściciela nie przechodzi');
+  const zSasiadaStare = await we('/api/miejsce/wywoz', { cookie: `${CIASTKO}=${zeton}`, origin: SASIAD }, 'GET');
+  assert.equal(zSasiadaStare.status, 403, 'także starymi drzwiami /api/miejsce');
 
   // podrobione i cudze ciastko nie jest tożsamością, a czytanie leci dalej jak bez klucza
   for (const z of [`${CIASTKO}=${zeton}x`, `${CIASTKO}=` + (await zrobSesje(SEKRET, 'agent-probny'))]) {
@@ -248,7 +264,8 @@ test('DT8. jawny sekret podglądu nie staje się sekretem prawdziwego Miejsca pr
   // i sesja podpisana jawnym sekretem nie jest tożsamością w prawdziwym Miejscu
   const { ktoTo } = await import('./klucze.mjs');
   const env = { KLUCZE: JSON.stringify({ jozz: await skrot(KLUCZ_WLASCICIELA) }), WLASCICIEL: 'jozz', SEKRET_SESJI: jawny };
-  const zCiastkiem = new Request(ADRES, { headers: { cookie: `${CIASTKO}=${await zrobSesje(jawny, 'jozz')}` } });
+  const zeton = await zrobSesje(jawny, 'jozz', { poswiadczenie: 'pos-telefon' });
+  const zCiastkiem = new Request(ADRES, { headers: { cookie: `${CIASTKO}=${zeton}`, origin: ADRES } });
   assert.equal((await ktoTo(zCiastkiem, { ...env, PODGLAD: 'tak' })).kto, 'jozz', 'na podglądzie wchodzi');
   assert.equal((await ktoTo(zCiastkiem, { ...env, PODGLAD: 'nie' })).ok, false, 'a w prawdziwym Miejscu nie');
 });
