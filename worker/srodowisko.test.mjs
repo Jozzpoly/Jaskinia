@@ -574,3 +574,46 @@ test('U2. rola bierze się z rzeczy uczestnika, ale roli właściciela nadać ni
   const proba = await s.ruch('agent-a', { op: op(), co: 'poloz', rzecz: u.id, wersja: teraz.wersja, rodzaj: 'uczestnik/1', cechy: { ...teraz.cechy, rola: 'agent' } });
   assert.notEqual(proba.skutek, 'polozone', JSON.stringify(proba));
 });
+
+test('ZS1. obudzone Miejsce nie pyta bazy o każde ziarno z osobna: ten sam zasiew drugi raz to jedno pytanie, a zmiana ziaren uruchamia pełne przejście', async () => {
+  const { Rdzen } = await import('./miejsce.mjs');
+  const { sqlZNode } = await import('./sql-node.mjs');
+  const { Srodowisko } = await import('./srodowisko.mjs');
+  const { ziarna } = await import('./ziarna.mjs');
+  const prawdziwy = sqlZNode();
+  let pytan = 0;
+  const liczacy = new Proxy(prawdziwy, { get(cel, n) { const w = Reflect.get(cel, n, cel); return n === 'exec' ? (...a) => { pytan++; return cel.exec(...a); } : (typeof w === 'function' ? w.bind(cel) : w); } });
+  let t = Date.UTC(2026, 10, 18, 14, 0, 0);
+  const r = new Rdzen(liczacy, { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+  const s = new Srodowisko(r);
+  const zestaw = ziarna({ wlasciciel: 'jozz' });
+  const pierwszy = await s.zasiej(zestaw);
+  assert.ok(pierwszy.length > 50, 'pierwszy zasiew kładzie ziarna');
+  const rzeczy = s.ile({ odlozone: 'razem' });
+  pytan = 0;
+  assert.deepEqual(await s.zasiej(ziarna({ wlasciciel: 'jozz' })), [], 'drugi raz nic nie sieje');
+  assert.ok(pytan <= 3, `ten sam zasiew drugi raz pyta bazę ${pytan} razy (ma najwyżej 3)`);
+  // zmiana ziarna w kodzie: pełne przejście odświeża to jedno ziarno i zapamiętuje nowy odcisk
+  const zmienione = ziarna({ wlasciciel: 'jozz' }).map((z) => (z.nazwa === 'obszar-nowe' ? { ...z, cechy: { ...z.cechy, opis: z.cechy.opis + ' (zmienione w kodzie)' } } : z));
+  assert.deepEqual(await s.zasiej(zmienione), ['obszar-nowe (odświeżone)']);
+  pytan = 0;
+  assert.deepEqual(await s.zasiej(zmienione), []);
+  assert.ok(pytan <= 3, `po odświeżeniu znowu ${pytan} pytań (ma najwyżej 3)`);
+  // nowe ziarno: też pełne przejście, a rzeczy przybywa dokładnie jedna
+  const dolozone = [...zmienione, { nazwa: 'proba-zs1', rodzaj: 'projekt/1', cechy: { nazwa: 'Projekt z ziarna' } }];
+  assert.deepEqual(await s.zasiej(dolozone), ['proba-zs1']);
+  assert.equal(s.ile({ odlozone: 'razem' }), rzeczy + 1);
+  // dosianie uczestnika nie rusza odcisku zasiewu podstawowego
+  await s.zasiej([{ nazwa: 'uczestnik-agent-zs1', rodzaj: 'uczestnik/1', cechy: { imie: 'agent-zs1', rola: 'agent' } }]);
+  assert.equal(s.rola('agent-zs1'), 'agent');
+  pytan = 0;
+  assert.deepEqual(await s.zasiej(dolozone), []);
+  assert.ok(pytan <= 3);
+  // ręka wygrywa jak dotąd: ziarno zmienione przez właściciela zostaje po jego zmianie także po zmianie kodu
+  const nowe = s.rzecz(r.meta('obszar_nowe'));
+  const reka = await s.ruch('jozz', { op: 'zs1-reka-0001', co: 'poloz', rzecz: nowe.id, wersja: nowe.wersja, rodzaj: 'obszar/1', cechy: { ...nowe.cechy, opis: 'Opis z ręki właściciela.' } });
+  assert.equal(reka.ok, true, JSON.stringify(reka));
+  const jeszczeInaczej = dolozone.map((z) => (z.nazwa === 'obszar-nowe' ? { ...z, cechy: { ...z.cechy, opis: 'Trzecia wersja z kodu.' } } : z));
+  assert.deepEqual(await s.zasiej(jeszczeInaczej), []);
+  assert.equal(s.rzecz(nowe.id).cechy.opis, 'Opis z ręki właściciela.');
+});

@@ -1834,6 +1834,17 @@ export class Srodowisko {
   }
 
   async _zasiej(ziarna) {
+    // Odcisk całego zasiewu. Obudzone Miejsce pytało bazę o każde ziarno z osobna (identyfikator, obszar, odcisk), choć
+    // nic się nie zmieniło: pod żywym adresem ok. 317 wierszy czytanych przy każdym obudzeniu, zanim padło pierwsze
+    // pytanie (zmierzone 18 XI 2026; dobowy limit wierszy jest wspólny dla całego konta). Gdy zestaw ziaren jest ten sam
+    // co przy ostatnim pełnym przejściu, wystarcza jedno pytanie. Odcisk liczy się z samych definicji (ziarno, którego
+    // cechy podaje funkcja, wchodzi tekstem tej funkcji), więc każda zmiana ziaren w kodzie uruchamia pełne przejście,
+    // a ono robi dokładnie to, co robiło dotąd. Tylko dla zasiewu podstawowego (tego z obszarem głównym): dosiewanie
+    // uczestnika idzie zwykłą drogą.
+    const calosc = ziarna.some((z) => z.meta === 'obszar_glowny')
+      ? szybkiOdcisk(JSON.stringify(ziarna.map((z) => [z.nazwa, z.rodzaj, z.obszar ?? null, z.meta ?? null, typeof z.cechy === 'function' ? 'funkcja:' + String(z.cechy) : z.cechy])))
+      : null;
+    if (calosc && this.r.meta('zasiew:calosc') === calosc) return [];
     const zrobione = [];
     const zapisz = async (z, id, cechy, obszar, op, wersja) => {
       const ksztalt = z.rodzaj === 'ksztalt/1' ? null : this.ksztaltDla(z.rodzaj);
@@ -1885,6 +1896,7 @@ export class Srodowisko {
       if (z.meta) this.r.ustawMeta(z.meta, id);
       zrobione.push(z.nazwa);
     }
+    if (calosc) this.r.ustawMeta('zasiew:calosc', calosc);
     return zrobione;
   }
 }
