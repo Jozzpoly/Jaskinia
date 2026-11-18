@@ -271,7 +271,7 @@ test('W16. widok czytelnika nie przepuszcza niczego po cichu: surowy SQL rzuca, 
   assert.throws(() => w.q('SELECT 1'), /nie podaje surowego SQL/);
   assert.equal(s.q('SELECT 1 AS x')[0].x, 1, 'na samym środowisku surowe zapytanie dalej działa');
 
-  const owiniete = new Set(['spis', 'wszystkie', 'ile', 'rzecz', 'rzeczyWiele', 'wersja', 'wskazujaNa', 'pamietaj', 'czeka', 'liczby', 'przekroj', 'q', 'ksztalty', 'ustawienie']);
+  const owiniete = new Set(['spis', 'wszystkie', 'ile', 'rzecz', 'rzeczyWiele', 'wersja', 'wskazujaNa', 'pamietaj', 'czeka', 'liczby', 'przekroj', 'q', 'ksztalty', 'ustawienie', 'widokNa']);
   const swiadomie = {
     historia: 'same numery aktow i autorzy, bez tresci; tresc podaje wersja(), a ta jest owinieta',
     aktyRzeczy: 'wiersze dziennika; kazdy i tak sprawdzany oczami czytelnika w opis.mjs (zmiany)',
@@ -280,6 +280,7 @@ test('W16. widok czytelnika nie przepuszcza niczego po cichu: surowy SQL rzuca, 
     ksztaltDla: 'ksztalt JEDNEGO rodzaju: nazwa i uklad rzeczy, ktora czytajacy juz widzi; lista rodzajow jest owinieta',
     rola: 'prawa czytajacego, policzone o NIM; sama widocznosc z niej wychodzi, wiec nie moze od niej zalezec',
     wyrownajZNatury: 'ruch srodowiska (naprawa polozen), nie czytanie dla kogos',
+    czytelnikOkna: 'nie oddaje tresci: liczy, czyimi oczami czyta narzedzie w oknie (slabszymi z dwoch); goscia pyta oczami otwierajacego (rzecz z dla)',
   };
   // Pierwsza wersja tego straznika pytala tylko o SUROWY SQL w ciele metody - i dlatego przepuscila dwie metody,
   // ktore czytaja baze PRZEZ inna metode: `ksztalty` (lista rodzajow: ksztalt z zamknietego obszaru wychodzil
