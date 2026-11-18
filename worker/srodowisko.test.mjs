@@ -592,13 +592,14 @@ test('ZS1. obudzone Miejsce nie pyta bazy o każde ziarno z osobna: ten sam zasi
   const rzeczy = s.ile({ odlozone: 'razem' });
   pytan = 0;
   assert.deepEqual(await s.zasiej(ziarna({ wlasciciel: 'jozz' })), [], 'drugi raz nic nie sieje');
-  assert.ok(pytan <= 3, `ten sam zasiew drugi raz pyta bazę ${pytan} razy (ma najwyżej 3)`);
+  // jedno pytanie o odcisk i po jednym, dwóch na każde ziarno liczone funkcją (dziś dwa przykładowe narzędzia)
+  assert.ok(pytan <= 8, `ten sam zasiew drugi raz pyta bazę ${pytan} razy (ma najwyżej 8; przed 18 XI: 243)`);
   // zmiana ziarna w kodzie: pełne przejście odświeża to jedno ziarno i zapamiętuje nowy odcisk
   const zmienione = ziarna({ wlasciciel: 'jozz' }).map((z) => (z.nazwa === 'obszar-nowe' ? { ...z, cechy: { ...z.cechy, opis: z.cechy.opis + ' (zmienione w kodzie)' } } : z));
   assert.deepEqual(await s.zasiej(zmienione), ['obszar-nowe (odświeżone)']);
   pytan = 0;
   assert.deepEqual(await s.zasiej(zmienione), []);
-  assert.ok(pytan <= 3, `po odświeżeniu znowu ${pytan} pytań (ma najwyżej 3)`);
+  assert.ok(pytan <= 8, `po odświeżeniu znowu ${pytan} pytań (ma najwyżej 8)`);
   // nowe ziarno: też pełne przejście, a rzeczy przybywa dokładnie jedna
   const dolozone = [...zmienione, { nazwa: 'proba-zs1', rodzaj: 'projekt/1', cechy: { nazwa: 'Projekt z ziarna' } }];
   assert.deepEqual(await s.zasiej(dolozone), ['proba-zs1']);
@@ -608,7 +609,7 @@ test('ZS1. obudzone Miejsce nie pyta bazy o każde ziarno z osobna: ten sam zasi
   assert.equal(s.rola('agent-zs1'), 'agent');
   pytan = 0;
   assert.deepEqual(await s.zasiej(dolozone), []);
-  assert.ok(pytan <= 3);
+  assert.ok(pytan <= 8);
   // ręka wygrywa jak dotąd: ziarno zmienione przez właściciela zostaje po jego zmianie także po zmianie kodu
   const nowe = s.rzecz(r.meta('obszar_nowe'));
   const reka = await s.ruch('jozz', { op: 'zs1-reka-0001', co: 'poloz', rzecz: nowe.id, wersja: nowe.wersja, rodzaj: 'obszar/1', cechy: { ...nowe.cechy, opis: 'Opis z ręki właściciela.' } });
@@ -616,4 +617,14 @@ test('ZS1. obudzone Miejsce nie pyta bazy o każde ziarno z osobna: ten sam zasi
   const jeszczeInaczej = dolozone.map((z) => (z.nazwa === 'obszar-nowe' ? { ...z, cechy: { ...z.cechy, opis: 'Trzecia wersja z kodu.' } } : z));
   assert.deepEqual(await s.zasiej(jeszczeInaczej), []);
   assert.equal(s.rzecz(nowe.id).cechy.opis, 'Opis z ręki właściciela.');
+  // ziarno liczone funkcją odświeża się, gdy zmieni się to, z czego liczy, choć tekst funkcji zostaje ten sam
+  // (tak przykładowe narzędzia biorą swój kod ze stałej): pierwsza wersja odcisku tego nie widziała
+  let zrodlo = 'pierwsza wersja';
+  const zFunkcja = () => [...jeszczeInaczej, { nazwa: 'proba-zs1-funkcja', rodzaj: 'projekt/1', cechy: async () => ({ nazwa: 'Projekt liczony funkcją', opis: zrodlo }) }];
+  assert.deepEqual(await s.zasiej(zFunkcja()), ['proba-zs1-funkcja']);
+  assert.deepEqual(await s.zasiej(zFunkcja()), []);
+  zrodlo = 'druga wersja';
+  assert.deepEqual(await s.zasiej(zFunkcja()), ['proba-zs1-funkcja (odświeżone)'], 'zmiana źródła poza tekstem funkcji uruchamia odświeżenie');
+  assert.equal(s.spis({ rodzaj: 'projekt/1', gdzie: { nazwa: 'Projekt liczony funkcją' }, limit: 1 })[0].cechy.opis, 'druga wersja');
+  assert.deepEqual(await s.zasiej(zFunkcja()), []);
 });

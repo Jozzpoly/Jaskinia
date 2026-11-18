@@ -1836,16 +1836,24 @@ export class Srodowisko {
   async _zasiej(ziarna) {
     // Odcisk całego zasiewu. Obudzone Miejsce pytało bazę o każde ziarno z osobna (identyfikator, obszar, odcisk), choć
     // nic się nie zmieniło: pod żywym adresem ok. 317 wierszy czytanych przy każdym obudzeniu, zanim padło pierwsze
-    // pytanie (zmierzone 18 XI 2026; dobowy limit wierszy jest wspólny dla całego konta). Gdy zestaw ziaren jest ten sam
-    // co przy ostatnim pełnym przejściu, wystarcza jedno pytanie. Odcisk liczy się z samych definicji (ziarno, którego
-    // cechy podaje funkcja, wchodzi tekstem tej funkcji), więc każda zmiana ziaren w kodzie uruchamia pełne przejście,
-    // a ono robi dokładnie to, co robiło dotąd. Tylko dla zasiewu podstawowego (tego z obszarem głównym): dosiewanie
-    // uczestnika idzie zwykłą drogą.
-    const calosc = ziarna.some((z) => z.meta === 'obszar_glowny')
-      ? szybkiOdcisk(JSON.stringify(ziarna.map((z) => [z.nazwa, z.rodzaj, z.obszar ?? null, z.meta ?? null, typeof z.cechy === 'function' ? 'funkcja:' + String(z.cechy) : z.cechy])))
-      : null;
-    if (calosc && this.r.meta('zasiew:calosc') === calosc) return [];
-    const zrobione = [];
+    // pytanie (zmierzone 18 XI 2026; dobowy limit wierszy jest wspólny dla całego konta). Gdy policzone ziarna są te same
+    // co przy ostatnim pełnym przejściu, wystarcza jedno pytanie o zapamiętany odcisk. Odcisk liczy się z POLICZONYCH
+    // cech wszystkich ziaren: ziarno, którego cechy podaje funkcja, jest przy obudzeniu liczone naprawdę, tak samo jak
+    // w pełnym przejściu. Pierwsza wersja (c9d4cc7) brała tekst funkcji, a przykładowe narzędzia biorą swój kod ze
+    // stałych spoza tego tekstu, więc zmiana kodu narzędzia nie odświeżyłaby go na istniejących Miejscach (własny
+    // przegląd tego samego dnia). Tylko dla zasiewu podstawowego (tego z obszarem głównym): dosiewanie uczestnika idzie
+    // zwykłą drogą. Pierwszy zasiew i każda zmiana ziaren idą pełnym przejściem, które robi dokładnie to, co dotąd.
+    const podstawowy = ziarna.some((z) => z.meta === 'obszar_glowny');
+    const odciskCalosci = (cechy) => szybkiOdcisk(JSON.stringify(ziarna.map((z, i) => [z.nazwa, z.rodzaj, z.obszar ?? null, z.meta ?? null, cechy[i]])));
+    const zapamietany = podstawowy ? this.r.meta('zasiew:calosc') : null;
+    if (zapamietany) {
+      try {
+        const cechy = [];
+        for (const z of ziarna) cechy.push(typeof z.cechy === 'function' ? await z.cechy(this) : z.cechy);
+        if (odciskCalosci(cechy) === zapamietany) return [];
+      } catch { /* ziarno, którego nie da się policzyć z góry: pełne przejście policzy je po kolei i powie, co jest nie tak */ }
+    }
+    const zrobione = [], policzone = [];
     const zapisz = async (z, id, cechy, obszar, op, wersja) => {
       const ksztalt = z.rodzaj === 'ksztalt/1' ? null : this.ksztaltDla(z.rodzaj);
       if (z.rodzaj === 'ksztalt/1') { const b = sprawdzKsztalt(cechy); if (b.length) throw new Error(`ziarno ${z.nazwa}: ${b.join('; ')}`); }
@@ -1859,6 +1867,7 @@ export class Srodowisko {
     for (const z of ziarna) {
       const klucz = 'ziarno:' + z.nazwa;
       const cechy = typeof z.cechy === 'function' ? await z.cechy(this) : z.cechy;
+      policzone.push(cechy);
       const obszar = z.obszar ? (this.r.meta('ziarno:' + z.obszar) || null) : null;
       const odcisk = szybkiOdcisk(JSON.stringify([z.rodzaj, obszar, cechy]));
       let id = this.r.meta(klucz);
@@ -1896,7 +1905,7 @@ export class Srodowisko {
       if (z.meta) this.r.ustawMeta(z.meta, id);
       zrobione.push(z.nazwa);
     }
-    if (calosc) this.r.ustawMeta('zasiew:calosc', calosc);
+    if (podstawowy) this.r.ustawMeta('zasiew:calosc', odciskCalosci(policzone));
     return zrobione;
   }
 }
