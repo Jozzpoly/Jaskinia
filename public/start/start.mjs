@@ -8,6 +8,7 @@
 // rzeczy z ręki, przy puszczeniu, jako rzecz rodzaju miejsce w widoku Start (więc ma autora, historię i prawa z obszaru).
 import { Drzwi } from './drzwi.mjs';
 import { stanOka } from '../oko.mjs';
+import { czasownikiTwarzy } from '../reka.mjs';
 import { NAZWY_POKRETEL, Pokretla, KOLORY, RODZAJE_USTAWIEN, krojNaCss, polaczPodglad } from '../pokretla.mjs';
 import { rodzinaKroju } from '../kroje.mjs';
 import { zbudujSwiat, ukladStaly, poleCieklego, ukladCiekly, miedzy, lagodnie, krotkieImie, zywosc, galezieWPolu, trafienie,
@@ -468,6 +469,16 @@ $('przelacz').addEventListener('click', () => {
   popros();
 });
 $('caly').addEventListener('click', () => { if (!swiat) return; animKam = { z: kam, na: kameraNa(t >= 0.5 ? pole : staly.granice, okno, t >= 0.5 ? 8 : 28, gora), od: performance.now(), ms: P.czas('odczucie.ruch.kamera_do_calosci') }; popros(); });
+// Pomoc rysuje się z jednej tablicy czasowników ręki (public/reka.mjs): ta sama tablica mówi agentom, co umie ręka.
+{
+  const lista = document.querySelector('#pomoc ul');
+  if (lista) {
+    const ogolne = [...lista.querySelectorAll('li')].filter((li) => !li.querySelector('b'));
+    lista.textContent = '';
+    for (const c of czasownikiTwarzy('start')) lista.append(el('li', {}, el('b', { tekst: c.co + ':' }), ' ' + c.jak + '.'));
+    lista.append(...ogolne);
+  }
+}
 $('pomoc-guzik').addEventListener('click', () => { const p = $('pomoc'); p.hidden = !p.hidden; $('pomoc-guzik').setAttribute('aria-expanded', p.hidden ? 'false' : 'true'); });
 
 // --- karta wybranej rzeczy: czym jest, skąd się tu wzięła, co da się z nią zrobić --------------------------------------

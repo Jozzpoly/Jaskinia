@@ -55,3 +55,26 @@ test('OK2. okno jest rzeczą i zasięgiem: jedno okno na uczestnika i narzędzie
   assert.equal(dlaOkna.wartosci['wyglad.paleta.jasna.akcent'].wartosc, '#aa00aa');
   assert.equal(dlaMiejsca.wartosci['wyglad.paleta.jasna.akcent'].skad, 'domyslna', 'wygląd Miejsca się nie zmienił');
 });
+
+test('OK3. spis czasowników nazywa także to, co umie ręka: jedna tablica dla pomocy na twarzy i dla agenta', async () => {
+  const { CZASOWNIKI_REKI, czasownikiTwarzy } = await import('../public/reka.mjs');
+  const { opisMiejsca, czasownikiReki } = await import('./opis.mjs');
+  assert.ok(CZASOWNIKI_REKI.length >= 10);
+  assert.equal(new Set(CZASOWNIKI_REKI.map((c) => c.nazwa)).size, CZASOWNIKI_REKI.length, 'nazwy są umową, więc się nie powtarzają');
+  for (const c of CZASOWNIKI_REKI) {
+    assert.match(c.nazwa, /^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/, c.nazwa);
+    assert.equal(c.nazwa.split('.')[0], c.twarz);
+    assert.ok(c.co && c.jak, c.nazwa);
+  }
+  assert.ok(czasownikiTwarzy('start').some((c) => c.nazwa === 'start.cofnij' && c.klawisz === 'Ctrl+Z'));
+  const reka = czasownikiReki();
+  assert.ok(reka.some((c) => c.nazwa === 'reka:start.zamien-projekty' && /zapisuje miejsce\/1/.test(c.opis) && /ręka na twarzy start/.test(c.ktoredy)));
+  if (typeof opisMiejsca === 'function') {
+    let t = Date.UTC(2026, 10, 18, 2, 30, 0);
+    const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+    const s = new Srodowisko(r);
+    await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }));
+    const o = opisMiejsca(s.dla('agent-a'), {});
+    if (o && Array.isArray(o.czasowniki)) assert.ok(o.czasowniki.some((c) => c.nazwa === 'reka:start.cofnij'), 'opis Miejsca niesie czasowniki ręki');
+  }
+});

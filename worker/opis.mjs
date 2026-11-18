@@ -5,6 +5,7 @@ import { TYPY, STOPNIE, USTAWIENIA } from './srodowisko.mjs';
 import { PREFIKS_PLIKU } from './obserwator.mjs';
 import { WERSJA } from './miejsce.mjs';
 import { ETAPY } from './ziarna.mjs';
+import { CZASOWNIKI_REKI } from '../public/reka.mjs';
 
 const dzien = (iso) => String(iso).replace('T', ' ').slice(0, 16) + ' UTC';
 const wiersze = (...w) => w.flat(9).filter((x) => x !== null && x !== undefined && x !== false).join('\n');
@@ -20,6 +21,11 @@ export const CO_ZNACZY = {
   porzadkowac: 'układ ma skutek od razu, zmiana treści jest propozycją',
   prowadzic: 'agenci dokładają i zmieniają sami, ruch ma skutek od razu',
 };
+
+// Czasowniki ręki w tym samym kształcie co pozostałe: nazwa zaczyna się od "reka:", a `ktoredy` mówi twarz i gest.
+export function czasownikiReki() {
+  return CZASOWNIKI_REKI.map((c) => ({ nazwa: 'reka:' + c.nazwa, ktoredy: `ręka na twarzy ${c.twarz}: ${c.jak}`, opis: c.co + (c.ruch ? ` (ruch ${c.ruch})` : '') + (c.zapisuje ? ` (zapisuje ${c.zapisuje})` : '') }));
+}
 
 export function czasowniki(s) {
   const lista = [
@@ -145,7 +151,8 @@ export function opisDane(s, { kto = null, jako = null, od = null, origin = '', p
     wyrownanie: s.wyrownano(),
     przeniesienie: { projekty_w_srodku: (liczby.find((l) => l.rodzaj === 'projekt/1') || { ile: 0 }).ile, publiczne_repozytoria: m ? { ile: m.cechy.wartosc, stan_na: m.cechy.stan_na || null, zrodlo: m.cechy.zrodlo || null } : null },
     obserwator: obserwator(s),
-    czasowniki: czasowniki(s),
+    // Spis nazywa także czasowniki ręki: co ręka może zrobić na twarzy, jakim gestem i co to zapisuje (public/reka.mjs).
+    czasowniki: [...czasowniki(s), ...czasownikiReki()],
     klucz_probny: podglad ? kluczProbny : null,
     // Tylko na podglądzie, gdzie klucze próbne i tak są jawne: strona może dać jeden guzik "wejdź jako właściciel
     // próbny", żeby ręka mogła spróbować gestów bez wpisywania czegokolwiek. W prawdziwym Miejscu tego pola nie ma.
