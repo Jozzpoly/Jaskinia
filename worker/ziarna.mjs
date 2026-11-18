@@ -333,7 +333,7 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
         nazwa: { typ: 'tekst', wymagana: true },
         typ: { typ: 'wybor', wymagana: true, wartosci: Object.keys(TYPY_PLIKOW), opis: 'typ treści; strony i obrazy ze skryptem nie są plikami (kod wchodzi jako gość)' },
         rozmiar: { typ: 'liczba', wymagana: true, opis: 'rozmiar w bajtach; musi się zgadzać z zapisem' },
-        tresc: { typ: 'zapis', rodzaj: 'bajty/1', wymagana: true, opis: 'odcisk zapisu z bajtami; zapis powstaje przez POST /api/srodowisko/bajty?op=<identyfikator czynności> z bajtami w ciele żądania' },
+        tresc: { typ: 'zapis', rodzaj: 'bajty/1', wymagana: true, opis: 'odcisk zapisu z bajtami; zapis powstaje przez POST /api/srodowisko/bajty?op=<identyfikator czynności> z bajtami w ciele żądania. Wskazać go może ten, kto go sam wgrał, albo ten, kto widzi plik, który już go niesie; cudzy odcisk brzmi jak zapis, którego nie ma' },
         opis: { typ: 'tekst', opis: 'skąd plik jest i na jakiej licencji' },
       } }),
     k('pokretlo', { dla: 'pokretlo/1', tytul: 'nazwa', klucz: ['nazwa'], opis: 'Pokrętło: deklaracja jednej rzeczy, którą da się stroić (kolor, czas ruchu, próg gestu). Mówi, jak się nazywa, jakiego jest typu, jaką ma wartość domyślną i co zmienia. Dokłada je każdy: twarz, narzędzie w oknie, agent. Wartości i wszystkie pokrętła naraz: /ustawienia.',
