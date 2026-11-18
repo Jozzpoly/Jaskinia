@@ -138,7 +138,9 @@
       const g = rzeczy.find((x) => x.id === o.cechy.gosc) || null;
       const w = modulOkien.oknoWracaSamo(o, g, ja);
       if (w.wraca) otworzGoscia(g, { cicho: true });
-      else if (w.powiedz && !powiedzianeOkna.has(o.id + ':' + o.wersja)) { powiedzianeOkna.add(o.id + ':' + o.wersja); komunikat(w.powiedz); }
+      // Okno, które nie wróciło, bo narzędzie się zmieniło: mówimy to raz i zapisujemy je jako zamknięte (jest moje,
+      // więc wolno mi), żeby strona nie powtarzała tego zdania przy każdym wejściu. Otworzy je dopiero ręka.
+      else if (w.powiedz && !powiedzianeOkna.has(o.id + ':' + o.wersja)) { powiedzianeOkna.add(o.id + ':' + o.wersja); komunikat(w.powiedz); if (g) zapamietajOkno({ id: g.id, tytul: g.tytul }, false); }
     }
   }
   function otworz({ klucz, tytul, adres, piaskownica, gosc = null }) {
