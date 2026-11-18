@@ -23,3 +23,19 @@ Sprawdza trzy twierdzenia u źródła, a nie z opisu: (1) czy drzwi ustawień s�
 (nakładka z ukrytym identyfikatorem wobec nakładki z identyfikatorem, którego nie ma — punkt chodzi
 tylko na gałęzi, która ma `worker/ustawienia.mjs`), (2) czy rodzaj z zamkniętego obszaru wychodzi
 w liście rodzajów, (3) czy uczestnik z odłożonym wpisem traci prawa.
+
+## Zasiew po skrócie (18 XI 2026): co jeszcze sprawdza ta próba
+
+Fable dołożył do zasiewu **odcisk całości** (`zasiew:calosc`): gdy lista ziaren jest ta sama co przy ostatnim
+pełnym przejściu, obudzenie Miejsca pyta bazy raz zamiast 243 razy (82 wiersze zamiast 317 pod adresem).
+Sam poprosił o cudze oczy właśnie tam, swoimi słowami: *„to jest mechanizm, który milczy, kiedy się myli”*.
+
+- `zasiew-po-skrocie.mjs` — czy skrót nie wyłącza naprawy rzeczy zajętej cudzą ręką i czy zasiew dalej
+  ustępuje ręce (odłożone zostaje odłożone). **Trzyma.**
+- `zasiew-widzi-zmiane.mjs` — czy odcisk widzi każdą zmianę ziaren: treści, ziarna liczonego **funkcją**
+  (to był kształt jego własnego wcześniejszego błędu), usunięcie ziarna z kodu i powrót do pełnej listy.
+  **Trzyma w czterech na cztery.**
+- `ksztalt-zamarza.mjs` — i rzecz starsza niż tamten skrót, która z niego wyszła: **kształt raz zmieniony
+  ręką właściciela nie dostanie żadnej nowej reguły sprawdzania z kodu, po cichu** (`zasiew ustępuje ręce`
+  dotyczy też kształtów). Nie jest to błąd w niczyjej zmianie; jest to pytanie o fundament, zgłoszone
+  z poleceniem: czy umowa o danych ma ustępować ręce tak samo jak treść właściciela.
