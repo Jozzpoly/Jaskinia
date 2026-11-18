@@ -65,7 +65,8 @@ export const ROLE = ['wlasciciel', 'agent', 'automat'];
 // Rodzaje, których kształt i rzeczy trzymają całość w ryzach: zmienia je tylko właściciel.
 // Rodzaje, które środowisko rozumie samo: kształt ich następnego pokolenia też ustala tylko właściciel.
 const RODZAJE_SRODOWISKA = ['ksztalt', 'obszar', 'uczestnik', 'propozycja', 'poswiadczenie', 'pokretlo', 'wartosc', 'zestaw'];
-const KSZTALTY_RDZENIA = ['ksztalt/1', 'obszar/1', 'uczestnik/1', 'propozycja/1'];
+// poswiadczenie/1 przychodzi z drzwiami wlasciciela (PR 51): stoi tu zawczasu, zeby rozstrzygniecie konfliktu przy scalaniu nie wypisalo go z rdzenia.
+const KSZTALTY_RDZENIA = ['ksztalt/1', 'obszar/1', 'uczestnik/1', 'propozycja/1', 'poswiadczenie/1'];
 // Ile propozycji jednego uczestnika może czekać naraz: lista "czeka na właściciela" ma zostać listą, nie zalewem.
 export const NAJWIECEJ_CZEKAJACYCH = 20;
 // Co da się zrobić z rzeczą jednym ruchem i jak nazywa się skutek.
