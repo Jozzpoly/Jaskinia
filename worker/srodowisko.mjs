@@ -1368,7 +1368,7 @@ export class Srodowisko {
     return this.spis({ rodzaj: 'propozycja/1', gdzie: { od: AUTOMAT, rzecz: id, stan: 'czeka' }, odlozone: 'razem', limit: 1 })[0] || null;
   }
 
-  // Propozycja zasiewu „domyślny zmienił się po zmianie ręką”: jedna czekająca na rzecz. Nowsza treść z kodu albo nowsza
+  // Propozycja zasiewu "domyślny zmienił się po zmianie ręką": jedna czekająca na rzecz. Nowsza treść z kodu albo nowsza
   // wersja rzeczy odświeża tę samą propozycję, zamiast kłaść drugą. Leży tam, gdzie rzecz (jak każda propozycja), a
   // przyjąć ją może tylko właściciel.
   async _polozDomyslny(rz, rodzaj, tresc, { nazwa = null, op }) {
