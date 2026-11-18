@@ -28,6 +28,15 @@
     if (!o.ok || !d || d.ok === false) throw new Error((d && (d.blad || d.error)) || 'odpowiedź ' + o.status);
     return d;
   };
+  // Czytanie w imieniu narzędzia w oknie: te same drzwi, ale z nagłówkiem X-Gosc, czyli słabszymi z dwóch par oczu
+  // (narzędzia i tego, kto okno otworzył). Okno bez rzeczy gościa (sam adres, np. wejście projektu) czyta bez klucza,
+  // jak zwiedzający: narzędzie w oknie nie dostaje oczu właściciela tylko dlatego, że to on je otworzył.
+  const czytajOknem = async (o, sciezka) => {
+    const odp = await fetch(sciezka, { headers: o.gosc ? naglowki({ 'x-gosc': o.gosc.id }) : { accept: 'application/json' }, cache: 'no-store' });
+    const d = await odp.json().catch(() => null);
+    if (!odp.ok || !d || d.ok === false) throw new Error((d && (d.blad || d.error)) || 'odpowiedź ' + odp.status);
+    return d;
+  };
   // Zdanie o tym, co się właśnie stało (albo dlaczego się nie stało): nakładka nad dokiem, więc nie przesuwa
   // układu strony i palec nie trafia w pustkę. Dotknięcie ją zamyka; sama znika po kilku sekundach.
   function komunikat(tekst, zly = false) {
@@ -100,9 +109,12 @@
     const ja = mojeImie();
     if (!ja) return;
     const jest = rzeczOkna(r.id);
-    if (jest && jest.cechy.otwarte === otwarte) return;
+    // Okno pamięta wersję narzędzia z chwili otwarcia: po przeładowaniu strona wraca do niego sama tylko wtedy, gdy
+    // narzędzie od tego czasu się nie zmieniło. Zamknięcie zostawia wersję, którą okno już pamięta.
+    const wersjaGoscia = otwarte && Number.isInteger(r.wersja) ? r.wersja : (jest && Number.isInteger(jest.cechy.wersja_goscia) ? jest.cechy.wersja_goscia : null);
+    if (jest && jest.cechy.otwarte === otwarte && (Number.isInteger(jest.cechy.wersja_goscia) ? jest.cechy.wersja_goscia : null) === wersjaGoscia) return;
     try {
-      await fetch('/api/srodowisko/ruch', { method: 'POST', headers: naglowki({ 'content-type': 'application/json', 'x-cialo': 'strona gospodarza' }), body: JSON.stringify({ op: nowyOp(), co: 'poloz', rodzaj: 'okno/1', wersja: 'dowolna', cechy: { nazwa: r.tytul || 'okno', czyje: ja, gosc: r.id, otwarte } }) });
+      await fetch('/api/srodowisko/ruch', { method: 'POST', headers: naglowki({ 'content-type': 'application/json', 'x-cialo': 'strona gospodarza' }), body: JSON.stringify({ op: nowyOp(), co: 'poloz', rodzaj: 'okno/1', wersja: 'dowolna', cechy: { nazwa: r.tytul || 'okno', czyje: ja, gosc: r.id, otwarte, ...(wersjaGoscia !== null ? { wersja_goscia: wersjaGoscia } : {}) } }) });
     } catch { /* okno i tak jest otwarte na tej stronie; nie wróci tylko po przeładowaniu */ }
   }
   // Otwarcie narzędzia z jego rzeczy (gosc/1): z guzika "Otwórz" i przy powrocie okien po przeładowaniu strony.
@@ -114,10 +126,20 @@
     otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul, umowa: typeof c.umowa === 'string' ? c.umowa : null } });
     if (!cicho) zapamietajOkno(r, true);
   }
+  // Powrót okien po przeładowaniu: regułę trzyma public/okna.mjs (tylko okno, które sam zapisałem, i tylko do narzędzia
+  // w wersji, którą otworzyła moja ręka). Dopóki moduł nie przyszedł, nic nie otwiera się samo.
+  let modulOkien = null;
+  const powiedzianeOkna = new Set();
   function wrocOkna() {
     const ja = mojeImie();
-    if (!ja) return;
-    for (const o of rzeczy) if (o.rodzaj === 'okno/1' && !o.odlozone && o.cechy.czyje === ja && o.cechy.otwarte === true) { const g = rzeczy.find((x) => x.id === o.cechy.gosc && !x.odlozone); if (g) otworzGoscia(g, { cicho: true }); }
+    if (!ja || !modulOkien) return;
+    for (const o of rzeczy) {
+      if (o.rodzaj !== 'okno/1') continue;
+      const g = rzeczy.find((x) => x.id === o.cechy.gosc) || null;
+      const w = modulOkien.oknoWracaSamo(o, g, ja);
+      if (w.wraca) otworzGoscia(g, { cicho: true });
+      else if (w.powiedz && !powiedzianeOkna.has(o.id + ':' + o.wersja)) { powiedzianeOkna.add(o.id + ':' + o.wersja); komunikat(w.powiedz); }
+    }
   }
   function otworz({ klucz, tytul, adres, piaskownica, gosc = null }) {
     for (const [id, o] of okna) if (o.klucz === klucz) return pokaz(id, true);
@@ -182,19 +204,19 @@
           // po: tylko to, co zmieniło się po akcie o tym numerze; gość, który dostał "changed", nie musi czytać wszystkiego
           if (Number.isInteger(m.po) && m.po >= 0) p.set('po', String(m.po));
           if (m.odlozone === 'razem' || m.odlozone === 'tak') p.set('odlozone', m.odlozone);
-          const d = await czytaj('/api/srodowisko/spis?' + p);
+          const d = await czytajOknem(o, '/api/srodowisko/spis?' + p);
           dane = { rzeczy: d.rzeczy, razem: d.razem, pokazane: d.pokazane, pominiete: d.pominiete, wszystko: d.wszystko, akt: d.akt };
         } else if (m.what === 'rzecz') {
-          const d = await czytaj('/api/srodowisko/rzecz?id=' + encodeURIComponent(String(m.rzecz || '')));
+          const d = await czytajOknem(o, '/api/srodowisko/rzecz?id=' + encodeURIComponent(String(m.rzecz || '')));
           dane = { rzecz: d.rzecz, historia: d.historia, wskazuja: d.wskazuja };
         } else if (m.what === 'ksztalty') {
-          dane = { ksztalty: (await czytaj('/api/srodowisko/ksztalty')).ksztalty };
+          dane = { ksztalty: (await czytajOknem(o, '/api/srodowisko/ksztalty')).ksztalty };
         } else if (m.what === 'ja') {
           dane = { uczestnik: opis ? opis.czytasz_jako : null, gosc: o.gosc ? { rzecz: o.gosc.id, nazwa: o.gosc.nazwa, umowa: o.gosc.umowa || null, imie: 'gosc-' + o.gosc.id } : null, pisze: !!(klucz && o.gosc && o.gosc.umowa === 'okno/3') };
         } else if (m.what === 'ustawienia') {
           // Narzędzie czyta pokrętła po nazwie, także własne: liczy gospodarz, tymi samymi drzwiami co twarz.
           const nazwy = Array.isArray(m.nazwy) ? m.nazwy.filter((n) => typeof n === 'string' && /^[a-z0-9_.]{3,250}$/.test(n)).slice(0, 200) : [];
-          const d = await czytaj('/api/srodowisko/ustawienia?nazwy=' + nazwy.join(',') + (typeof m.dla === 'string' && /^[0-9a-z]{26}$/.test(m.dla) ? '&dla=' + m.dla : ''));
+          const d = await czytajOknem(o, '/api/srodowisko/ustawienia?nazwy=' + nazwy.join(',') + (typeof m.dla === 'string' && /^[0-9a-z]{26}$/.test(m.dla) ? '&dla=' + m.dla : ''));
           dane = { wartosci: d.wartosci, akt: d.akt, format: d.format };
         } else throw new Error('nie znam takiego czytania: ' + String(m.what) + '; znane: spis, rzecz, ksztalty, ja, ustawienia');
         odp({ type: 'result', id: m.id, ok: true, data: dane });
@@ -911,6 +933,7 @@
     pudlo.hidden = false;
   }
   import('/oko.mjs').then((m) => { modulOka = m; }).catch(() => { /* bez tego modułu słowo idzie bez stanu oka */ });
+  import('/okna.mjs').then((m) => { modulOkien = m; wrocOkna(); }).catch(() => { /* bez tego modułu żadne okno nie wraca samo */ });
   import('/kroje.mjs').then((m) => { modulKrojow = m; zastosujWyglad(); }).catch(() => { /* bez tego modułu kroje zostają przy rodzinach, które urządzenie już ma */ });
   import('/pokretla.mjs').then((m) => {
     modulPokretel = m;

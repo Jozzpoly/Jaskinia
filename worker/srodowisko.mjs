@@ -64,9 +64,9 @@ export const DOMYSLNE = { ile_wolno: 'proponowac', uwaga: 'znak', widzi: 'uczest
 export const ROLE = ['wlasciciel', 'agent', 'automat'];
 // Rodzaje, których kształt i rzeczy trzymają całość w ryzach: zmienia je tylko właściciel.
 // Rodzaje, które środowisko rozumie samo: kształt ich następnego pokolenia też ustala tylko właściciel.
-const RODZAJE_SRODOWISKA = ['ksztalt', 'obszar', 'uczestnik', 'propozycja', 'poswiadczenie', 'pokretlo', 'wartosc', 'zestaw'];
+const RODZAJE_SRODOWISKA = ['ksztalt', 'obszar', 'uczestnik', 'propozycja', 'poswiadczenie', 'pokretlo', 'wartosc', 'zestaw', 'plik', 'okno'];
 // poswiadczenie/1 przychodzi z drzwiami wlasciciela (PR 51): stoi tu zawczasu, zeby rozstrzygniecie konfliktu przy scalaniu nie wypisalo go z rdzenia.
-const KSZTALTY_RDZENIA = ['ksztalt/1', 'obszar/1', 'uczestnik/1', 'propozycja/1', 'poswiadczenie/1'];
+const KSZTALTY_RDZENIA = ['ksztalt/1', 'obszar/1', 'uczestnik/1', 'propozycja/1', 'poswiadczenie/1', 'plik/1', 'okno/1'];
 // Ile propozycji jednego uczestnika może czekać naraz: lista "czeka na właściciela" ma zostać listą, nie zalewem.
 export const NAJWIECEJ_CZEKAJACYCH = 20;
 // Co da się zrobić z rzeczą jednym ruchem i jak nazywa się skutek.
@@ -461,6 +461,24 @@ export class Srodowisko {
     });
   }
 
+  // Czyimi oczami czyta narzędzie w oknie: słabszymi z dwóch, swoimi (gosc-<id jego rzeczy>) i tego, kto okno otworzył.
+  // Zapis z okna liczył już prawo dla obu; czytanie szło kluczem otwierającego, więc narzędzie w oknie właściciela
+  // widziało to, co widzi tylko on (niezależny atak, 18 XI 2026). Zwraca imię, pod którym liczyć widoczność, albo null,
+  // czyli zwiedzającego: gdy gościa nie ma, jest odłożony albo otwierający go nie widzi, i wtedy, gdy żadna z dwóch par
+  // oczu nie widzi nie więcej niż druga (dziś się nie zdarza; gdy widoczność zacznie zależeć od osoby, okno ma wtedy
+  // widzieć mniej, a nie więcej).
+  czytelnikOkna(kto, gosc) {
+    if (typeof gosc !== 'string' || !ID.test(gosc)) return null;
+    const g = this.rzecz(gosc, { dla: kto ?? null });
+    if (!g || nazwaRodzaju(g.rodzaj) !== 'gosc' || g.odlozone) return null;
+    const imie = PRZEDROSTEK_GOSCIA + gosc;
+    const a = new Set(this._niewidoczneDla(kto ?? null) || []), b = new Set(this._niewidoczneDla(imie) || []);
+    const zawiera = (x, y) => [...y].every((e) => x.has(e));
+    if (zawiera(a, b)) return kto ?? null; // otwierający nie widzi więcej niż narzędzie
+    if (zawiera(b, a)) return imie;        // narzędzie nie widzi więcej niż otwierający
+    return null;
+  }
+
   _niewidoczneDla(kto) {
     const rola = this.rola(kto);
     if (rola === 'wlasciciel') return null;
@@ -796,6 +814,14 @@ export class Srodowisko {
     if (rola === 'zwiedzajacy') return { tryb: 'odmowa', status: 401, powod: this.powodBrakuPrawa(kto, 'do ruchu') };
     if (rodzaj === 'propozycja/1' || (stara && stara.rodzaj === 'propozycja/1')) return { tryb: 'odmowa', status: 403, powod: 'propozycje powstają same, gdy ruch nie ma prawa do skutku; zmienia je tylko przyjęcie albo odrzucenie (co: przyjmij, co: odrzuc)' };
     if (rola === 'wlasciciel') return { tryb: 'skutek' };
+    // Okno jest osobiste: należy do tego, czyje imię niesie cecha czyje. Kładzie je, zmienia, odkłada i cofa tylko on
+    // sam, swoim kluczem. Nie inny uczestnik: agent kładł okno z imieniem właściciela i strona właściciela sama otwierała
+    // u niego cudze narzędzie, albo zajmował z wyprzedzeniem klucz jego okna i dalej je zmieniał (niezależny atak,
+    // 18 XI 2026). I nie narzędzie w oknie: okna otwiera ręka, nie inne okno. Odmowa, nie propozycja: cudzego okna nie
+    // ma po co proponować. Właściciel Miejsca może, jak wszystko; strona i tak wraca tylko do okien, które uczestnik
+    // zapisał sam (public/okna.mjs).
+    const czyje = [nazwaRodzaju(rodzaj) === 'okno' ? cechy.czyje : undefined, stara && nazwaRodzaju(stara.rodzaj) === 'okno' ? stara.cechy.czyje : undefined].filter((x) => x !== undefined);
+    if (czyje.length && (rola === 'gosc' || czyje.some((c) => c !== kto))) return { tryb: 'odmowa', status: 403, powod: 'okno należy do tego, kto je otworzył (cecha czyje): kładzie je i zmienia tylko on sam, swoim kluczem, nie inny uczestnik i nie narzędzie w oknie' };
     let wynik = { tryb: 'skutek' };
     const miejsca = [{ rodzaj, obszar }];
     if (stara) miejsca.push({ rodzaj: stara.rodzaj, obszar: stara.obszar });

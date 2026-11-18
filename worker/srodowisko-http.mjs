@@ -28,6 +28,8 @@ export async function cialoTekstem(request) {
 }
 
 const liczba = (x) => (x !== null && /^\d{1,15}$/.test(x) ? Number(x) : null);
+// Trasy, którymi strona gospodarza czyta w imieniu narzędzia w oknie (nagłówek X-Gosc): to, co nazywa umowa okna.
+const Z_OKNA = ['/api/srodowisko/spis', '/api/srodowisko/rzecz', '/api/srodowisko/ksztalty', '/api/srodowisko/ustawienia'];
 
 // Wybór rzeczy z adresu: rodzaj, obszar, gdzie.<cecha>=<wartość>, szukaj, odlozone. Wartość cechy dostaje typ
 // z kształtu rodzaju (liczba, tak-nie), a bez kształtu jest napisem.
@@ -74,8 +76,14 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
   // więc "bez klucza" nie znaczy tam "obcy" — znaczy "nie chciało mu się go skopiować". Udawanie, że podgląd
   // czegoś pilnuje, byłoby zabezpieczeniem na niby. Dlatego na podglądzie czytający bez klucza jest uczestnikiem.
   const czytelnik = opcje.kto || (podglad ? (opcje.jako || opcje.probnyImie || CZYTELNIK_PODGLADU) : null);
-  const w = s.dla(czytelnik);
+  // Czytanie z okna: nagłówek X-Gosc dokłada strona gospodarza do pytań, które zadaje w imieniu narzędzia w ramce.
+  // Narzędzie czyta wtedy słabszymi z dwóch par oczu, swoimi i tego, kto okno otworzył, tak samo jak pisze: nie dowie
+  // się tego, co wie właściciel, tylko dlatego, że to on je otworzył (niezależny atak, 18 XI 2026). Nagłówek może
+  // tylko zawęzić to, co widać, więc nikt nie zyskuje, dokładając go sam.
+  const goscCzyta = request.method === 'GET' ? request.headers.get('x-gosc') : null;
+  const w = s.dla(goscCzyta === null ? czytelnik : s.czytelnikOkna(czytelnik, goscCzyta));
   if (request.method === 'GET') {
+    if (goscCzyta !== null && !Z_OKNA.includes(sciezka)) return json({ ok: false, status: 403, blad: 'z okna czyta się tylko spis, rzecz, kształty i ustawienia (umowa okna: /umowa-okna)' });
     if (sciezka.startsWith('/gosc/')) {
       const kod = w.kodGoscia(sciezka.slice(6));
       if (kod === null) return tekst('Nie ma takiego kodu gościa (kod wychodzi pod adresem dopiero wtedy, gdy wskazuje go rzecz rodzaju gosc).\n', 404);
