@@ -453,7 +453,9 @@ test('ziarna: zmienione w kodzie odświeżają się same, dopóki nikt poza auto
   assert.deepEqual(await s.zasiej(zmien('Nowy opis z kodu.')), [], 'to samo ziarno drugi raz nic nie robi');
   const rz = s.rzecz(id);
   await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: id, wersja: rz.wersja, rodzaj: rz.rodzaj, cechy: { ...rz.cechy, stan: 'cienko', dowod: 'ręką właściciela' } });
-  assert.deepEqual(await s.zasiej(zmien('Jeszcze inny opis z kodu.')), [], 'czyjaś zmiana wygrywa z zasiewem');
+  // 18 XI 2026: czyjaś zmiana dalej wygrywa z zasiewem, ale nowa wersja z kodu nie milknie, tylko kładzie się obok
+  // jako propozycja (rejestr poz. 199; zasiew-nie-milknie.test.mjs)
+  assert.deepEqual(await s.zasiej(zmien('Jeszcze inny opis z kodu.')), [nazwa + ' (propozycja: domyślny zmienił się po zmianie ręką)'], 'czyjaś zmiana wygrywa z zasiewem, a nowy kod czeka obok');
   assert.equal(s.rzecz(id).cechy.dowod, 'ręką właściciela');
 });
 
@@ -615,8 +617,9 @@ test('ZS1. obudzone Miejsce nie pyta bazy o każde ziarno z osobna: ten sam zasi
   const reka = await s.ruch('jozz', { op: 'zs1-reka-0001', co: 'poloz', rzecz: nowe.id, wersja: nowe.wersja, rodzaj: 'obszar/1', cechy: { ...nowe.cechy, opis: 'Opis z ręki właściciela.' } });
   assert.equal(reka.ok, true, JSON.stringify(reka));
   const jeszczeInaczej = dolozone.map((z) => (z.nazwa === 'obszar-nowe' ? { ...z, cechy: { ...z.cechy, opis: 'Trzecia wersja z kodu.' } } : z));
-  assert.deepEqual(await s.zasiej(jeszczeInaczej), []);
+  assert.deepEqual(await s.zasiej(jeszczeInaczej), ['obszar-nowe (propozycja: domyślny zmienił się po zmianie ręką)'], 'ręka wygrywa, a nowy kod czeka obok jako propozycja (18 XI)');
   assert.equal(s.rzecz(nowe.id).cechy.opis, 'Opis z ręki właściciela.');
+  assert.deepEqual(await s.zasiej(jeszczeInaczej), [], 'ta sama zmiana kodu drugi raz nie kładzie drugiej propozycji');
   // ziarno liczone funkcją odświeża się, gdy zmieni się to, z czego liczy, choć tekst funkcji zostaje ten sam
   // (tak przykładowe narzędzia biorą swój kod ze stałej): pierwsza wersja odcisku tego nie widziała
   let zrodlo = 'pierwsza wersja';
