@@ -92,6 +92,33 @@
   //   'obcy'  : adres podany przez kogoś innego niż właściciel (skrypty tak, własna pamięć i wyskakujące okna nie);
   //   'swoj'  : adres w rzeczy, którą dołożył i ostatnio zmienił właściciel (gra ma własną pamięć pod swoim adresem).
   const PIASKOWNICE = { kod: 'allow-scripts allow-pointer-lock', obcy: 'allow-scripts allow-pointer-lock', swoj: 'allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups' };
+  // Okno jest rzeczą (okno/1): które narzędzie i czy jest otwarte. Wraca po przeładowaniu strony i na drugim urządzeniu,
+  // a jako rzecz jest zasięgiem wartości pokręteł (wygląd tylko dla tego okna). Zapis jest cichy: bez komunikatu.
+  const mojeImie = () => (opis && klucz && opis.czytasz_jako ? opis.czytasz_jako.imie : null);
+  const rzeczOkna = (goscId) => { const ja = mojeImie(); return ja ? rzeczy.find((x) => x.rodzaj === 'okno/1' && x.cechy.czyje === ja && x.cechy.gosc === goscId) || null : null; };
+  async function zapamietajOkno(r, otwarte) {
+    const ja = mojeImie();
+    if (!ja) return;
+    const jest = rzeczOkna(r.id);
+    if (jest && jest.cechy.otwarte === otwarte) return;
+    try {
+      await fetch('/api/srodowisko/ruch', { method: 'POST', headers: naglowki({ 'content-type': 'application/json', 'x-cialo': 'strona gospodarza' }), body: JSON.stringify({ op: nowyOp(), co: 'poloz', rodzaj: 'okno/1', wersja: 'dowolna', cechy: { nazwa: r.tytul || 'okno', czyje: ja, gosc: r.id, otwarte } }) });
+    } catch { /* okno i tak jest otwarte na tej stronie; nie wróci tylko po przeładowaniu */ }
+  }
+  // Otwarcie narzędzia z jego rzeczy (gosc/1): z guzika "Otwórz" i przy powrocie okien po przeładowaniu strony.
+  function otworzGoscia(r, { cicho = false } = {}) {
+    const c = r.cechy;
+    const kod = typeof c.kod === 'string' && /^[0-9a-f]{64}$/.test(c.kod) ? '/gosc/' + c.kod : null;
+    const adres = !kod && typeof c.adres === 'string' && /^https:\/\//.test(c.adres) ? c.adres : null;
+    if (!kod && !adres) return;
+    otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul, umowa: typeof c.umowa === 'string' ? c.umowa : null } });
+    if (!cicho) zapamietajOkno(r, true);
+  }
+  function wrocOkna() {
+    const ja = mojeImie();
+    if (!ja) return;
+    for (const o of rzeczy) if (o.rodzaj === 'okno/1' && !o.odlozone && o.cechy.czyje === ja && o.cechy.otwarte === true) { const g = rzeczy.find((x) => x.id === o.cechy.gosc && !x.odlozone); if (g) otworzGoscia(g, { cicho: true }); }
+  }
   function otworz({ klucz, tytul, adres, piaskownica, gosc = null }) {
     for (const [id, o] of okna) if (o.klucz === klucz) return pokaz(id, true);
     const id = 'okno-' + ++nrOkna;
@@ -128,6 +155,7 @@
   function zamknij(id) {
     const o = okna.get(id);
     if (!o) return;
+    if (o.gosc) zapamietajOkno({ id: o.gosc.id, tytul: o.gosc.nazwa }, false);
     o.sekcja.remove(); o.guzik.remove(); okna.delete(id);
     powiedzPrzy();
   }
@@ -516,7 +544,7 @@
     const adres = !kod && typeof c.adres === 'string' && /^https:\/\//.test(c.adres) ? c.adres : null;
     const k = el('article', { klasa: 'karta' }, el('div', { klasa: 'nazwa', tekst: r.tytul }), el('div', { klasa: 'opis', tekst: typeof c.opis === 'string' ? c.opis : '' }));
     k.style.borderLeftColor = 'var(--akcent)';
-    k.append(el('div', { klasa: 'ruchy' }, kod || adres ? el('button', { klasa: 'glowny', tekst: 'Otwórz', klik: () => otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul, umowa: typeof c.umowa === 'string' ? c.umowa : null } }) }) : el('span', { klasa: 'ciche', tekst: 'bez kodu i adresu' })),
+    k.append(el('div', { klasa: 'ruchy' }, kod || adres ? el('button', { klasa: 'glowny', tekst: 'Otwórz', klik: () => otworzGoscia(r) }) : el('span', { klasa: 'ciche', tekst: 'bez kodu i adresu' })),
       el('div', { klasa: 'meta' }, r.wersja > widziany && widziany > 0 ? el('span', { klasa: 'nowe', tekst: 'nowe' }) : null, el('span', { tekst: `dołożył ${r.utworzyl} · ${kiedy(r.utworzono)}` }), el('a', { href: '/rzecz/' + r.id, tekst: 'szczegóły' })));
     k.append(...slowoPrzy(r).filter(Boolean));
     return k;
@@ -706,15 +734,35 @@
   const PANEL_NAJCZESCIEJ_MS = 15000;
   const bezpiecznie = new URLSearchParams(location.search).has('bezpiecznie');
   const systemCiemny = () => matchMedia('(prefers-color-scheme: dark)').matches;
-  const krojRoli = (rola) => { const k = P.kroj(rola); return { rodzina: k.rodzina, ...(k.grubosc !== undefined ? { grubosc: k.grubosc } : {}), ...(k.osie ? { osie: k.osie } : {}) }; };
+  const krojRoli = (rola, p = P) => { const k = p.kroj(rola); return { rodzina: k.rodzina, ...(k.grubosc !== undefined ? { grubosc: k.grubosc } : {}), ...(k.osie ? { osie: k.osie } : {}) }; };
   // Wygląd dla okna narzędzia: wszystkie role palety, które zna ta strona (z tablicy i z deklaracji w Miejscu), kroje
   // obu ról jako wartości typu kroj i natężenie ruchu.
-  function wygladDlaOkna() {
+  function wygladDlaOkna(p = P) {
     const kolory = {};
-    for (const rola of P.role()) { const k = P.kolor(rola, systemCiemny()); if (typeof k === 'string') kolory[rola] = k; }
-    return { jaskinia: 1, type: 'look', v: 2, ciemny: P.ciemna(systemCiemny()), kolory, kroj: { tekst: krojRoli('tekst'), imiona: krojRoli('imiona') }, ruch: Number(P.w('odczucie.ruch.natezenie')) };
+    for (const rola of p.role()) { const k = p.kolor(rola, systemCiemny()); if (typeof k === 'string') kolory[rola] = k; }
+    return { jaskinia: 1, type: 'look', v: 2, ciemny: p.ciemna(systemCiemny()), kolory, kroj: { tekst: krojRoli('tekst', p), imiona: krojRoli('imiona', p) }, ruch: Number(p.w('odczucie.ruch.natezenie')) };
   }
-  function powiedzWyglad(o) { if (P && o && o.ramka.contentWindow) o.ramka.contentWindow.postMessage(wygladDlaOkna(), '*'); }
+  // Wygląd liczony dla okna: gdy jakaś wartość ma zasięg tego okna, strona pyta drzwi o ustawienia dla niego
+  // (dla=<okno>); inaczej okno dostaje wygląd Miejsca, bez dodatkowego pytania.
+  const wygladyOkien = new Map(); // id rzeczy okna -> { odcisk, wiadomosc }
+  async function wygladOkna(o) {
+    const rz = o.gosc ? rzeczOkna(o.gosc.id) : null;
+    if (!rz || !rzeczy.some((x) => x.rodzaj === 'wartosc/1' && !x.odlozone && x.cechy.zasieg === rz.id)) return wygladDlaOkna();
+    const odcisk = odciskUst();
+    const pam = wygladyOkien.get(rz.id);
+    if (pam && pam.odcisk === odcisk) return pam.wiadomosc;
+    const u = await czytaj('/api/srodowisko/ustawienia?nazwy=' + P.nazwy() + '&dla=' + rz.id);
+    const wlasne = new modulPokretel.Pokretla({ bezpiecznie });
+    for (const d of P.typy.values()) wlasne.znaj(d);
+    wlasne.przyjmij(u);
+    const wiadomosc = wygladDlaOkna(wlasne);
+    wygladyOkien.set(rz.id, { odcisk, wiadomosc });
+    return wiadomosc;
+  }
+  function powiedzWyglad(o) {
+    if (!P || !o || !o.ramka.contentWindow) return;
+    wygladOkna(o).catch(() => wygladDlaOkna()).then((w) => { if (o.ramka.contentWindow) o.ramka.contentWindow.postMessage(w, '*'); });
+  }
   function zastosujWyglad() {
     if (!P) return;
     const st = document.documentElement.style;
@@ -892,6 +940,7 @@
     opis = o; rzeczy = wszystkie; akt = Math.min(o.miejsce.akt, Number.isInteger(s.akt) ? s.akt : o.miejsce.akt);
     if (!widziany) { widziany = akt; localStorage.setItem(PAMIEC, String(akt)); }
     rysuj();
+    wrocOkna();
     if (byl && byl !== akt) powiedzGosciom();
   }
   // Doganianie: strona czyta opis i tylko te rzeczy, które zmieniły się po jej akcie (razem z odłożonymi, żeby je
