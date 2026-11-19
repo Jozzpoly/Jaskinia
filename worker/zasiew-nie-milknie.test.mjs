@@ -110,6 +110,54 @@ test('ZN4. agent nie przyjmuje propozycji zasiewu ruchem "domyslny"; odłożona 
   assert.equal(cz2(kk.id).length, 0);
 });
 
+// Druga linia Fable, 19 XI 2026 (próba D3b w jego skrypcie druga-linia-65.mjs): propozycja stała przy starszej wersji
+// rzeczy, agent bez prawa wołał "domyslny", dostawał 403, ale automat zdążył już położyć odświeżoną propozycję.
+test('ZN5. "domyslny" bez prawa nie zapisuje niczego, także gdy propozycja stoi przy starszej wersji rzeczy', async () => {
+  const { s, ksztalt, zKodu, czekajace } = await swiat();
+  const k = ksztalt();
+  await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: k.id, wersja: k.wersja, rodzaj: 'ksztalt/1', obszar: k.obszar, cechy: { ...k.cechy, opis: 'Opis od właściciela.' } });
+  await s.zasiej(zKodu('wazne', 'cecha z nowego kodu'));
+  const k2 = ksztalt();
+  await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: k2.id, wersja: k2.wersja, rodzaj: 'ksztalt/1', obszar: k2.obszar, cechy: { ...k2.cechy, opis: 'Druga zmiana właściciela.' } });
+  const prop = czekajace(k.id)[0];
+  assert.notEqual(prop.cechy.wersja, ksztalt().wersja, 'scena: propozycja stoi przy starszej wersji');
+  const przed = s.ostatniNr();
+  const a = await s.ruch('agent-a', { op: op(), co: 'domyslny', rzecz: k.id });
+  assert.equal(a.status, 403, JSON.stringify(a));
+  assert.equal(s.ostatniNr(), przed, 'ani jednego aktu: automat nie odświeżył propozycji dla kogoś bez prawa');
+  assert.equal(czekajace(k.id)[0].wersja, prop.wersja, 'propozycja nietknięta');
+  assert.equal(ksztalt().cechy.opis, 'Druga zmiana właściciela.');
+  // kontrola: właściciel tą samą drogą wraca do domyślnego (odświeżenie i przyjęcie)
+  const d = await s.ruch('jozz', { op: op(), co: 'domyslny', rzecz: k.id });
+  assert.equal(d.ok, true, JSON.stringify(d));
+  assert.ok(ksztalt().cechy.cechy.wazne);
+});
+
+// Kontrola z drugiej strony: sprawdzenie prawa przed odświeżeniem nie może odmawiać komuś, kto prawo ma. W obszarze
+// "Nowe" agenci prowadzą, więc agent może tam wrócić do domyślnego także po zmianie ręką właściciela (zwykłym zapisem
+// i tak mógłby ją nadpisać).
+test('ZN6. w obszarze, w którym agenci prowadzą, agent wraca do domyślnego przez odświeżoną propozycję', async () => {
+  let t = Date.UTC(2026, 10, 19, 1, 0, 0);
+  const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+  const s = new Srodowisko(r);
+  const projekt = (opis) => ({ nazwa: 'projekt-w-nowych', rodzaj: 'projekt/1', obszar: 'obszar-nowe', cechy: { nazwa: 'Projekt z kodu', opis } });
+  const Z = (opis) => [...ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }), projekt(opis)];
+  await s.zasiej(Z('Wersja z kodu.'));
+  const id = r.meta('ziarno:projekt-w-nowych');
+  const p = () => s.rzecz(id);
+  assert.equal(p().obszar, r.meta('obszar_nowe'), 'scena: rzecz z ziarna leży w obszarze Nowe');
+  await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: id, wersja: p().wersja, rodzaj: 'projekt/1', obszar: p().obszar, cechy: { ...p().cechy, opis: 'Ręka właściciela.' } });
+  await s.zasiej(Z('Nowsza wersja z kodu.'));
+  const cz = s.spis({ rodzaj: 'propozycja/1', gdzie: { od: AUTOMAT, rzecz: id, stan: 'czeka' }, odlozone: 'razem', limit: 10 });
+  assert.equal(cz.length, 1);
+  assert.equal(cz[0].cechy.wymaga, undefined, 'opis projektu nie jest zmianą zastrzeżoną dla właściciela');
+  await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: id, wersja: p().wersja, rodzaj: 'projekt/1', obszar: p().obszar, cechy: { ...p().cechy, opis: 'Druga ręka właściciela.' } });
+  const a = await s.ruch('agent-a', { op: op(), co: 'domyslny', rzecz: id });
+  assert.equal(a.ok, true, JSON.stringify(a));
+  assert.equal(p().cechy.opis, 'Nowsza wersja z kodu.');
+  assert.ok(s.historia(id).some((h) => h.kto === 'jozz'), 'jego wersje zostają w historii');
+});
+
 test('ZN7. znak "przyjmuje tylko właściciel" stoi przy propozycji domyślnego, gdy nowa wersja z kodu zmienia prawo obszaru', async () => {
   let t = Date.UTC(2026, 10, 19, 2, 0, 0);
   const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });

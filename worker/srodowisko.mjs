@@ -26,6 +26,7 @@ import { sprawdzOko } from './oko.mjs';
 export const SRODOWISKO = 'srodowisko-1';
 export const CZYTELNIK_PODGLADU = 'podglad'; // imię czytającego bez klucza na podglądzie; uczestnikiem jest tylko tam
 export const AUTOMAT = 'srodowisko'; // uczestnik, którym środowisko samo zasiewa swoje rzeczy; imię zastrzeżone
+const ODMOWA_PRZYJECIA = 'propozycję przyjmuje właściciel albo uczestnik, który sam mógłby zrobić ten ruch ze skutkiem';
 // Trzeci parametr dróg zapisu to ślad ciała (napis) albo, przy ruchu z okna, {slad, przez}: ślad i imię tego, kto
 // otworzył okno, z którego pisze gość.
 const sladZ = (x) => (x && typeof x === 'object' ? x.slad : x) ?? null;
@@ -1352,8 +1353,14 @@ export class Srodowisko {
     if (!stara) return blad(404, `nie ma rzeczy ${c.rzecz}`);
     let czeka = this._propozycjaDomyslnego(stara.id);
     // Propozycja złożona przed jego późniejszą zmianą nie przeszłaby przyjęcia (rzecz zmieniła się od propozycji):
-    // automat odświeża ją do dzisiejszej wersji rzeczy, a treść domyślna zostaje ta sama.
-    if (czeka && czeka.cechy.wersja !== stara.wersja) czeka = await this._polozDomyslny(stara, czeka.cechy.rodzaj, czeka.cechy.tresc, { op: `domyslny-odswiez-${czeka.id}-${stara.wersja}` });
+    // automat odświeża ją do dzisiejszej wersji rzeczy, a treść domyślna zostaje ta sama. Najpierw jednak prawo:
+    // odświeżenie jest zapisem automatu, więc nie wywoła go ktoś, kto propozycji i tak nie przyjmie (druga linia Fable,
+    // próba D3b, 19 XI 2026: agent bez prawa dostawał 403, ale dwa akty automatu już leżały).
+    if (czeka && czeka.cechy.wersja !== stara.wersja) {
+      const { sam } = this._prawoDoSkutku(kto, czeka, this._oczy(kto));
+      if (sam.tryb !== 'skutek') return blad(403, ODMOWA_PRZYJECIA + (sam.powod ? ` (${sam.powod})` : ''));
+      czeka = await this._polozDomyslny(stara, czeka.cechy.rodzaj, czeka.cechy.tresc, { op: `domyslny-odswiez-${czeka.id}-${stara.wersja}` });
+    }
     if (czeka) return this._rozstrzygnij(kto, { op: c.op, co: 'przyjmij', propozycja: czeka.id }, slad);
     const ost = this.historia(stara.id).filter((h) => h.kto === AUTOMAT).pop();
     if (!ost) return blad(409, 'ta rzecz nie ma wersji domyślnej: nigdy nie położył jej automat');
@@ -1743,6 +1750,23 @@ export class Srodowisko {
     }
   }
 
+  // Prawo do skutku propozycji, jedno dla rozstrzygnięcia i dla ruchu "domyslny": rozstrzyga właściciel albo uczestnik,
+  // który ten sam ruch mógłby zrobić sam ze skutkiem; autor może swoją propozycję tylko wycofać (to liczy rozstrzygnięcie).
+  // Ruch "domyslny" pyta tu, ZANIM automat odświeży propozycję. Prawo liczy się od dzisiejszej rzeczy i od treści
+  // propozycji, a odświeżenie zmienia tylko wersję, przy której propozycja stoi, więc odpowiedź przed odświeżeniem i po nim
+  // jest ta sama.
+  _prawoDoSkutku(kto, pr, widzi) {
+    const t = pr.cechy.tresc && typeof pr.cechy.tresc === 'object' ? pr.cechy.tresc : {};
+    const cechy = t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {};
+    // Propozycja pamięta obszar z chwili, w której powstała. Rzecz, która z natury należy do innej, bierze go z tamtej
+    // dzisiaj: inaczej właściciel własnym przyjęciem zakładałby rzecz tam, gdzie jej rodzic już nie leży.
+    const zn = this._zNatury(pr.cechy.rodzaj, cechy);
+    const obszar = zn && !zn.brak ? zn.obszar : (t.obszar ?? null);
+    const stara = pr.cechy.rzecz ? widzi(pr.cechy.rzecz) : null;
+    const sam = this.rola(kto) === 'wlasciciel' ? { tryb: 'skutek' } : this.ocen(kto, { stara: stara || null, rodzaj: pr.cechy.rodzaj, obszar, cechy });
+    return { t, cechy, zn, obszar, stara, sam };
+  }
+
   async _rozstrzygnij(kto, c, slad) {
     if (typeof c.propozycja !== 'string' || !ID.test(c.propozycja)) return blad(400, 'propozycja: identyfikator propozycji (26 znaków)');
     if ('powod' in c && typeof c.powod !== 'string') return blad(400, 'powod: napis');
@@ -1761,18 +1785,9 @@ export class Srodowisko {
     // Przyjmujący przyjmuje dokładnie to, co zaproponowano: prawo autora propozycji do wskazania zapisu z bajtami
     // (sam je wgrał) liczy się także przy przyjęciu.
     widzi.takze = [pr.cechy.od];
-    const t = pr.cechy.tresc && typeof pr.cechy.tresc === 'object' ? pr.cechy.tresc : {};
-    const cechy = t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {};
-    // Propozycja pamięta obszar z chwili, w której powstała. Rzecz, która z natury należy do innej, bierze go z tamtej
-    // dzisiaj: inaczej właściciel własnym przyjęciem zakładałby rzecz tam, gdzie jej rodzic już nie leży.
-    const zn = this._zNatury(pr.cechy.rodzaj, cechy);
-    const obszar = zn && !zn.brak ? zn.obszar : (t.obszar ?? null);
-    const stara = pr.cechy.rzecz ? widzi(pr.cechy.rzecz) : null;
+    const { t, cechy, zn, obszar, stara, sam } = this._prawoDoSkutku(kto, pr, widzi);
     // Propozycję z okna może wycofać także ten, kto okno otworzył (i tak jak autor nie może jej sam przyjąć).
     const autor = kto === pr.cechy.od || (typeof pr.cechy.przez === 'string' && kto === pr.cechy.przez);
-    // Kto rozstrzyga: właściciel, albo uczestnik, który ten sam ruch mógłby zrobić sam ze skutkiem. Autor może swoją
-    // propozycję tylko wycofać.
-    const sam = rola === 'wlasciciel' ? { tryb: 'skutek' } : this.ocen(kto, { stara: stara || null, rodzaj: pr.cechy.rodzaj, obszar, cechy });
     const kiedy = new Date(this.r.teraz()).toISOString();
     const ksztaltProp = this.ksztaltDla('propozycja/1');
     if (c.co === 'odrzuc') {
@@ -1783,7 +1798,7 @@ export class Srodowisko {
       return this._zatwierdz(kto, [{ p, id: pr.id, rodzaj: 'propozycja/1', obszar: pr.obszar, cechy: nc, odlozone: false, ksztalt: ksztaltProp }], slad, { skutek: nc.stan, propozycja: pr.id });
     }
     if (autor && rola !== 'wlasciciel') return blad(403, 'autor nie przyjmuje własnej propozycji');
-    if (sam.tryb !== 'skutek') return blad(403, 'propozycję przyjmuje właściciel albo uczestnik, który sam mógłby zrobić ten ruch ze skutkiem' + (sam.powod ? ` (${sam.powod})` : ''));
+    if (sam.tryb !== 'skutek') return blad(403, ODMOWA_PRZYJECIA + (sam.powod ? ` (${sam.powod})` : ''));
     if (pr.cechy.rzecz && !stara) return blad(409, 'rzecz, której dotyczy propozycja, już nie istnieje pod tym identyfikatorem');
     if (stara && stara.wersja !== pr.cechy.wersja) return blad(409, 'rzecz zmieniła się od czasu propozycji; odrzuć ją albo poproś o nową', { wersja: stara.wersja });
     // Zestawy przypięte przy propozycji: gdy któryś zmienił się albo zniknął, przyjęcie odmawia i mówi który. Przyjmujący
