@@ -133,7 +133,8 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     }
     if (sciezka === '/api/srodowisko/rzecz') {
       const rz = w.rzecz(p.get('id') || '');
-      return rz ? json({ ok: true, rzecz: { ...rz, tytul: w.tytul(rz) }, historia: w.historia(rz.id), wskazuja: w.wskazujaNa(rz.id) }) : json({ ok: false, status: 404, blad: 'nie ma takiej rzeczy' });
+      // Przy kopii: skąd jest i czy jej źródło ma nowszą wersję (warianty, 19 XI 2026); źródło oczami czytającego.
+      return rz ? json({ ok: true, rzecz: { ...rz, tytul: w.tytul(rz) }, historia: w.historia(rz.id), wskazuja: w.wskazujaNa(rz.id), pochodzenie: w.pochodzenieDla(rz.id) }) : json({ ok: false, status: 404, blad: 'nie ma takiej rzeczy' });
     }
     if (sciezka === '/api/srodowisko/wersja') {
       const ws = w.wersja(p.get('id') || '', liczba(p.get('akt')));
