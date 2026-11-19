@@ -1,0 +1,132 @@
+// Drabina przedstawień jako wartość pokrętła (typ drabina, 19 XI 2026; specyfikacja Opusa czatu, Commons
+// wplywy/2026-11-19-opus-czat-orientacja-i-klocek-drabina.md, § 2). Sprawdziany pytają o to, co specyfikacja wymienia:
+// wartość domyślna przechodzi; powtórzone co, od > do, pusta miara, szczebel bez od i do i bez rozmiaru, ucinaj bez
+// rozmiaru i nieznane pole są odrzucane; nieznane co przechodzi; odwołanie {z} do pokrętła typu drabina się liczy.
+// Każda odmowa ma kontrolę: ta sama wartość bez tej jednej wady przechodzi.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { Rdzen } from './miejsce.mjs';
+import { sqlZNode } from './sql-node.mjs';
+import { Srodowisko } from './srodowisko.mjs';
+import { ziarna } from './ziarna.mjs';
+import { policzUstawienia, stronaUstawien, wadaWartosci, wadyDeklaracji, KRZYWE, TYPY_POKRETEL } from './ustawienia.mjs';
+import { wadaDrabiny, DRABINA_DOMYSLNA, KRZYWE_DRABINY, NAJWIECEJ_SZCZEBLI } from '../public/drabina.mjs';
+
+const D = { typ: 'drabina' };
+const kopia = (x) => JSON.parse(JSON.stringify(x));
+const szczebel = (o = {}) => ({ co: 'opis', miara: { szer: 1 }, od: 0, do: 0, ...o });
+const wartosc = (...s) => ({ szczeble: s.length ? s : [szczebel()] });
+const ciagly = (o = {}) => ({ co: 'imie', miara: { szer: 1 }, rozmiar: { od: 9, do: 34 }, ...o });
+
+test('DR1. wartość domyślna to dzisiejszy kod Startu w pełnej precyzji i przechodzi deklarację', () => {
+  assert.equal(wadaWartosci(D, DRABINA_DOMYSLNA), null);
+  assert.equal(wadaDrabiny(DRABINA_DOMYSLNA), null, 'zaplecze i moduł wspólny z twarzą mówią to samo');
+  assert.deepEqual(wadyDeklaracji({ nazwa: 'wyglad.karta.drabina', typ: 'drabina', opis: 'Od jakiej miary karty pojawia się który element.', domyslna: DRABINA_DOMYSLNA }), []);
+  const m = Object.fromEntries(DRABINA_DOMYSLNA.szczeble.map((s) => [s.co, s.miara]));
+  assert.ok(Object.is(m.imie.szer, 1 / 9) && Object.is(m.imie.wys, 1 / 3.4) && Object.is(m.zycie.szer, 1 / 1.5) && Object.is(m.opis.szer, 1 / 1.4), 'ułamki co do bitu: 1/9, 1/3,4, 1/1,5, 1/1,4');
+  assert.deepEqual(DRABINA_DOMYSLNA.szczeble.map((s) => s.co), ['imie', 'podpis_rodziny', 'zycie', 'opis', 'galezie']);
+  assert.deepEqual(KRZYWE_DRABINY, KRZYWE, 'krzywe drabiny to te same nazwy co w typie krzywa');
+  assert.ok(Object.isFrozen(DRABINA_DOMYSLNA.szczeble[0].miara), 'wspólnej stałej nie da się zmienić przez przypadek');
+  assert.match(TYPY_POKRETEL.drabina, /szczeble/);
+});
+
+test('DR2. odmowy ze spisu specyfikacji, każda z kontrolą: ta sama wartość bez tej jednej wady przechodzi', () => {
+  assert.equal(wadaWartosci(D, wartosc()), null, 'kontrola: najmniejszy szczebel przechodzi');
+  assert.equal(wadaWartosci(D, wartosc(ciagly())), null, 'kontrola: najmniejszy szczebel ciągły przechodzi');
+  const przypadki = [
+    ['powtórzone co', wartosc(szczebel(), szczebel()), /ma już szczebel/],
+    ['od większe niż do', wartosc(szczebel({ od: 150, do: 100 })), /od \(150\) jest większe niż do \(100\)/],
+    ['pusta miara', wartosc(szczebel({ miara: {} })), /przynajmniej jednego pola/],
+    ['miara zero', wartosc(szczebel({ miara: { szer: 0 } })), /miara\.szer ma być liczbą większą od 0/],
+    ['miara ujemna', wartosc(szczebel({ miara: { wys: -1 } })), /miara\.wys ma być liczbą większą od 0/],
+    ['miara napisem', wartosc(szczebel({ miara: { szer: '1' } })), /miara\.szer/],
+    ['miara z nieznanym polem', wartosc(szczebel({ miara: { szer: 1, glebia: 2 } })), /"glebia" nikt nie czyta/],
+    ['bez od i do, bez rozmiaru', wartosc({ co: 'opis', miara: { szer: 1 } }), /brakuje od i do/],
+    ['samo od', wartosc({ co: 'opis', miara: { szer: 1 }, od: 3 }), /od i do to liczby/],
+    ['od ujemne', wartosc(szczebel({ od: -5, do: 10 })), /nie mniejsze niż 0/],
+    ['od i do razem z rozmiarem', wartosc(szczebel({ rozmiar: { od: 9, do: 34 } })), /nie oba naraz/],
+    ['ucinaj bez rozmiaru', wartosc(szczebel({ ucinaj: { szer_od: 64, wys_od: 20, rozmiar: 9.5 } })), /tylko przy szczeblu ciągłym/],
+    ['ucinaj bez jednego pola', wartosc(ciagly({ ucinaj: { szer_od: 64, rozmiar: 9.5 } })), /wszystkie trzy pola/],
+    ['ucinaj z nieznanym polem', wartosc(ciagly({ ucinaj: { szer_od: 64, wys_od: 20, rozmiar: 9.5, kropki: 3 } })), /wszystkie trzy pola/],
+    ['rozmiar od zera', wartosc(ciagly({ rozmiar: { od: 0, do: 34 } })), /od większe od 0/],
+    ['rozmiar do mniejsze niż od', wartosc(ciagly({ rozmiar: { od: 20, do: 10 } })), /do nie mniejsze niż od/],
+    ['rozmiar z nieznanym polem', wartosc(ciagly({ rozmiar: { od: 9, do: 34, krok: 1.5 } })), /rozmiar to \{od, do\}/],
+    ['nieznane pole liczbowe w szczeblu', wartosc(szczebel({ przezroczystosc: 0.5 })), /"przezroczystosc" nikt nie czyta/],
+    ['nieznane pole w drabinie', { ...wartosc(), wersja: 2 }, /tylko pole szczeble/],
+    ['zero szczebli', { szczeble: [] }, /od 1 do 24 szczebli, a ta ma 0/],
+    ['25 szczebli', { szczeble: Array.from({ length: NAJWIECEJ_SZCZEBLI + 1 }, (_, i) => szczebel({ co: 'e' + i })) }, /a ta ma 25/],
+    ['co z wielkiej litery', wartosc(szczebel({ co: 'Opis' })), /co to nazwa elementu/],
+    ['co za długie', wartosc(szczebel({ co: 'a'.repeat(41) })), /co to nazwa elementu/],
+    ['co od cyfry', wartosc(szczebel({ co: '1opis' })), /co to nazwa elementu/],
+    ['szczebel nie obiektem', { szczeble: ['opis'] }, /szczebel 1: ma być obiektem/],
+    ['zła nazwa krzywej', wartosc(szczebel({ krzywa: 'sprezysta' })), /krzywa: jedna z nazw/],
+    ['krzywa Béziera z x poza 0..1', wartosc(szczebel({ krzywa: [1.5, 0, 0.5, 1] })), /x1 i x2 od 0 do 1/],
+    ['lista zamiast obiektu', [szczebel()], /drabina to \{szczeble/],
+    ['null', null, /drabina to \{szczeble/],
+  ];
+  for (const [nazwa, w, wzor] of przypadki) {
+    const wada = wadaWartosci(D, w);
+    assert.ok(wada, `${nazwa}: miała być odmowa`);
+    assert.match(wada, wzor, `${nazwa}: ${wada}`);
+  }
+  // kontrole drugiej strony: granice, które mają przejść
+  for (const [nazwa, w] of [
+    ['24 szczeble', { szczeble: Array.from({ length: NAJWIECEJ_SZCZEBLI }, (_, i) => szczebel({ co: 'e' + i })) }],
+    ['od = do = 0 (zawsze)', wartosc(szczebel({ od: 0, do: 0 }))],
+    ['od = do (próg)', wartosc(szczebel({ od: 120, do: 120 }))],
+    ['sama wysokość w mierze', wartosc(szczebel({ miara: { wys: 2 } }))],
+    ['co z cyfrą i podkreśleniem', wartosc(szczebel({ co: 'podpis_rodziny2' }))],
+    ['krzywa po nazwie', wartosc(szczebel({ krzywa: 'gladka' }))],
+    ['krzywa Béziera', wartosc(szczebel({ krzywa: [0.4, 0, 0.2, 1] }))],
+    ['rozmiar od = do', wartosc(ciagly({ rozmiar: { od: 9, do: 9 } }))],
+    ['ucinaj z zerami', wartosc(ciagly({ ucinaj: { szer_od: 0, wys_od: 0, rozmiar: 1 } }))],
+  ]) assert.equal(wadaWartosci(D, w), null, nazwa);
+});
+
+test('DR3. nieznane co przechodzi: nowa twarz i nowy element nie psują starych wartości', () => {
+  const w = kopia(DRABINA_DOMYSLNA);
+  w.szczeble.push(szczebel({ co: 'przyszly_element', od: 10, do: 20 }));
+  assert.equal(wadaWartosci(D, w), null);
+});
+
+test('DR4. przez środowisko: pokrętło typu drabina, wartość w zasięgu, odmowa zdaniem i odwołanie {z} do drugiej drabiny', async () => {
+  let t = Date.UTC(2026, 10, 19, 19, 0, 0);
+  const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+  const s = new Srodowisko(r);
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }));
+  const ok = (w) => { assert.equal(w.ok, true, JSON.stringify(w)); return w; };
+  ok(await s.ruch('jozz', { op: 'dr4-karta', co: 'poloz', rodzaj: 'pokretlo/1', cechy: { nazwa: 'proba.karta.drabina', typ: 'drabina', domyslna: DRABINA_DOMYSLNA, opis: 'Od jakiej miary karty pojawia się który element.' } }));
+  ok(await s.ruch('jozz', { op: 'dr4-telefon', co: 'poloz', rodzaj: 'pokretlo/1', cechy: { nazwa: 'proba.telefon.drabina', typ: 'drabina', domyslna: { z: 'proba.karta.drabina' }, opis: 'Drabina na telefonie idzie za drabiną karty.' } }));
+  const licz = () => policzUstawienia(s.dla('agent-a')).wartosci;
+  assert.deepEqual(licz()['proba.karta.drabina'].wartosc, kopia(DRABINA_DOMYSLNA));
+  // opis zawsze w pełni: od = do = 0 (falsyfikator 2 specyfikacji, tu tylko jako wartość, bez twarzy)
+  const zawsze = kopia(DRABINA_DOMYSLNA);
+  Object.assign(zawsze.szczeble.find((x) => x.co === 'opis'), { od: 0, do: 0 });
+  const w = ok(await s.ruch('jozz', { op: 'dr4-zawsze', co: 'poloz', rodzaj: 'wartosc/1', cechy: { pokretlo: 'proba.karta.drabina', wartosc: zawsze } }));
+  assert.deepEqual(licz()['proba.karta.drabina'].wartosc, zawsze);
+  assert.deepEqual(licz()['proba.telefon.drabina'].wartosc, zawsze, 'odwołanie {z} idzie za dzisiejszą wartością, nie za domyślną');
+  // zła wartość: odmowa zdaniem, które mówi, który szczebel; do twarzy nic nie dochodzi
+  const zla = kopia(zawsze);
+  Object.assign(zla.szczeble[1], { od: 500, do: 100 });
+  const odmowa = await s.ruch('jozz', { op: 'dr4-zla-wartosc', co: 'poloz', rodzaj: 'wartosc/1', rzecz: w.rzecz, wersja: w.wersja, cechy: { pokretlo: 'proba.karta.drabina', wartosc: zla } });
+  assert.equal(odmowa.status, 422, JSON.stringify(odmowa));
+  assert.match(JSON.stringify(odmowa), /szczebel 2 \(podpis_rodziny\): od \(500\) jest większe niż do \(100\)/);
+  assert.deepEqual(licz()['proba.karta.drabina'].wartosc, zawsze);
+  // kontrola: ta sama wartość z poprawionym szczeblem przechodzi
+  Object.assign(zla.szczeble[1], { od: 100, do: 500 });
+  ok(await s.ruch('jozz', { op: 'dr4-dobra', co: 'poloz', rodzaj: 'wartosc/1', rzecz: w.rzecz, wersja: w.wersja, cechy: { pokretlo: 'proba.karta.drabina', wartosc: zla } }));
+  // odwołanie do pokrętła innego typu nie przechodzi (drabina nie idzie za kolorem)
+  const obcy = await s.ruch('jozz', { op: 'dr4-obcy', co: 'poloz', rodzaj: 'pokretlo/1', cechy: { nazwa: 'proba.zla.drabina', typ: 'drabina', domyslna: { z: 'wyglad.paleta.jasna.tlo' }, opis: 'Idzie za kolorem.' } });
+  assert.equal(obcy.status, 422, JSON.stringify(obcy));
+  assert.match(obcy.blad, /typu kolor, a samo jest typu drabina/);
+});
+
+test('DR5. tekst /ustawienia mówi agentowi, czym jest typ drabina', async () => {
+  let t = Date.UTC(2026, 10, 19, 19, 30, 0);
+  const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+  const s = new Srodowisko(r);
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }));
+  const strona = stronaUstawien(s.dla('agent-a'));
+  const tekst = typeof strona === 'string' ? strona : JSON.stringify(strona);
+  assert.match(tekst, /drabina: drabina przedstawień/);
+});
