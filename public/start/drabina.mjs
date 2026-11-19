@@ -58,8 +58,26 @@ export function rozmiarStartowy(s, w, h) {
 }
 
 // Rozmiar wersji uciętej wielokropkiem, gdy imię nie mieści się nawet w rozmiar.od; null, gdy karta jest za wąska
-// albo za niska (albo szczebel nie ma `ucinaj`): wtedy zostaje sam kolor życia.
+// albo za niska (albo szczebel nie ma `ucinaj`): wtedy zostaje sam kolor życia. Nigdy większy niż wysokość karty:
+// wartość z Miejsca nie może kazać twarzy rysować pisma większego niż to, na czym ma się zmieścić.
 export function ucieta(s, w, h) {
   const u = s && s.ucinaj;
-  return u && w > u.szer_od && h > u.wys_od ? u.rozmiar : null;
+  return u && w > u.szer_od && h > u.wys_od ? Math.min(u.rozmiar, h) : null;
+}
+
+// Ciąg rozmiarów, które imię próbuje po kolei, od największego. Z wartością domyślną to dokładnie dawny ciąg Startu
+// (rozmiar startowy, potem co 1,5 px, dopóki nie mniej niż rozmiar.od; najwyżej 17 prób). Wartość z Miejsca przechodzi
+// regułę zaplecza, ale reguła nie zna kosztu rysowania; druga linia Opusa Code (20 XI 00:35, zgłoszenie 72) pokazała
+// wartość, przy której pętla robiła do 2·10^8 prób na kartę w każdej klatce i zawieszała twarz. Dlatego dwie granice
+// po stronie twarzy, niezależne od wartości:
+// - nie zaczyna od rozmiaru większego niż wysokość karty (imię wyższe niż karta i tak się nie zmieści);
+// - najwyżej NAJWIECEJ_PROB prób: krok rośnie, gdy zakres jest szeroki, ale nigdy nie jest mniejszy niż 1,5 px.
+export const NAJWIECEJ_PROB = 24;
+export function probyRozmiaru(s, w, h) {
+  const od = s.rozmiar.od;
+  const start = Math.min(rozmiarStartowy(s, w, h), Math.max(od, h));
+  const krok = Math.max(1.5, (start - od) / (NAJWIECEJ_PROB - 1));
+  const proby = [];
+  for (let r = start; r >= od && proby.length < NAJWIECEJ_PROB; r -= krok) proby.push(r);
+  return proby;
 }

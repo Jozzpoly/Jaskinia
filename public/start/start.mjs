@@ -11,7 +11,7 @@ import { stanOka } from '../oko.mjs';
 import { czasownikiTwarzy } from '../reka.mjs';
 import { NAZWY_POKRETEL, Pokretla, KOLORY, RODZAJE_USTAWIEN, krojNaCss, polaczPodglad } from '../pokretla.mjs';
 import { rodzinaKroju } from '../kroje.mjs';
-import { szczebel, alfa, rozmiarStartowy, ucieta } from './drabina.mjs';
+import { szczebel, alfa, rozmiarStartowy, ucieta, probyRozmiaru } from './drabina.mjs';
 import { zbudujSwiat, ukladStaly, poleCieklego, ukladCiekly, miedzy, lagodnie, krotkieImie, zywosc, galezieWPolu, trafienie,
   kolejnoscRysowania, naEkran, naSwiat, kameraNa, przybliz, KARTA, SKALA } from './swiat.mjs';
 
@@ -305,7 +305,8 @@ function rysujTresc(p, e, teraz) {
   let rozmiar = rozmiarStartowy(sImie, e.w, e.h);
   let nazwa = null;
   const ileLinii = (roz) => Math.max(1, Math.min(3, Math.floor((e.h - 2 * pad) / (roz * 1.18))));
-  for (; rozmiar >= sImie.rozmiar.od; rozmiar -= 1.5) {
+  for (const r of probyRozmiaru(sImie, e.w, e.h)) {
+    rozmiar = r;
     const proba = zawin(p.tytul, `${GRUBOSC_IMION} ${rozmiar}px ${KROJ_IMION}`, szer, ileLinii(rozmiar));
     if (!proba.zaSzeroka && !proba.ucieto) { nazwa = proba; break; }
   }
