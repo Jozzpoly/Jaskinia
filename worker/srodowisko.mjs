@@ -69,10 +69,14 @@ const RODZAJE_SRODOWISKA = ['ksztalt', 'obszar', 'uczestnik', 'propozycja', 'pos
 // Warianty (19 XI 2026): czego się nie kopiuje. Kopia prawa (obszar, uczestnik), tożsamości (poświadczenie), okna,
 // propozycji albo kształtu nie byłaby wariantem, tylko drugą rzeczą o tym samym znaczeniu; kopia pochodzenia nie ma sensu.
 const NIE_DO_KOPII = ['propozycja', 'poswiadczenie', 'uczestnik', 'pochodzenie', 'obszar', 'ksztalt', 'okno', 'gosc', 'kod'];
-// Jak jawny jest obszar: kto go widzi. Kopia (albo powrót kopii do źródła) do obszaru jawniejszego niż źródło jest
-// publikacją, a publikacja ma być gestem właściciela.
+// Jak jawny jest obszar: kto go widzi. Ruch pośredni (kopia, powrót kopii do źródła, powrót do punktu, cofnięcie,
+// cofnięcie gestu, powrót do układu, domyślny), po którym jakąś treść widzi więcej osób niż przedtem, jest publikacją,
+// a publikacja ma być gestem właściciela (_publikuje, _odmowaPublikacji).
 const JAWNOSC = { wlasciciel: 0, uczestnicy: 1, wszyscy: 2 };
-const PUBLIKUJ = 'publikuj: true, gdy świadomie publikujesz (rzecz trafia tam, gdzie widzi ją więcej osób niż jej źródło); w innym wypadku pomiń';
+const PUBLIKUJ = 'publikuj: true, gdy świadomie publikujesz (po ruchu coś zobaczy więcej osób niż dotąd); w innym wypadku pomiń';
+// Ile odniesień najwyżej oddaje "co na to wskazuje" (wskazujaNa): odczyt rzeczy ma kosztować tyle samo przy pięciu
+// i przy pięciuset rzeczach, które na nią wskazują (niezależny atak na warianty, 20 XI 2026: każda kopia wskazuje źródło).
+export const WSKAZUJA_NAJWIECEJ = 50;
 // Porównanie treści bez względu na kolejność kluczy (w każdej głębokości).
 const kanon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
 // poswiadczenie/1 przychodzi z drzwiami wlasciciela (PR 51): stoi tu zawczasu, zeby rozstrzygniecie konfliktu przy scalaniu nie wypisalo go z rdzenia.
@@ -497,7 +501,8 @@ export class Srodowisko {
       q: () => { throw new Error('widok czytelnika (srodowisko.dla) nie podaje surowego SQL: policz to przez spis/wszystkie/ile/rzecz albo dopisz tu jawne, filtrowane pytanie'); },
       // "co na to wskazuje" też jest treścią: odniesienie z obszaru, którego ten ktoś nie widzi, zdradzałoby,
       // że tam coś jest, i nawet czym się interesuje.
-      wskazujaNa: (id) => cel.wskazujaNa(id).filter((x) => cel.rzecz(x.od, { dla: kto }) !== null),
+      // Jednym zapytaniem i z górną granicą: widoczność liczy się z obszaru wiersza, bez pytania o każdą rzecz osobno.
+      wskazujaNa: (id) => cel.wskazujaNa(id, { dla: kto }),
       // Widok w wybranej chwili też jest czytaniem: położenia i chwila przechodzą przez te same okulary.
       widokNa: (widok, akt) => cel.widokNa(widok, akt, { dla: kto }),
       // Pochodzenie kopii (warianty, 19 XI 2026): tylko przy kopii, którą czytający widzi, a o źródle jego oczami.
@@ -728,7 +733,21 @@ export class Srodowisko {
     return { rzecz: id, akt, numer: w.numer, kto: w.kto, kiedy: w.kiedy, rodzaj: z.rodzaj, obszar: t.obszar ?? null, ...(obszarNieznany(t) ? { obszar_nieznany: true } : {}), cechy: t.cechy && typeof t.cechy === 'object' ? t.cechy : {}, odlozone: t.odlozone === true, powod: typeof t.powod === 'string' ? t.powod : null };
   }
 
-  wskazujaNa(id) { return this.q(`SELECT od, cecha FROM odniesienia WHERE cel = ? ORDER BY od`, id); }
+  // Co wskazuje na rzecz: najwyżej WSKAZUJA_NAJWIECEJ odniesień, jednym zapytaniem i bez sortowania wszystkich, a oczami
+  // czytającego, gdy go podano (`dla`). Do 20 XI szło tu pytanie o wszystkie odniesienia, a widok czytelnika pytał potem
+  // osobno o widoczność każdego, więc odczyt źródła drożał liniowo z liczbą kopii, bo każda kopia ma pochodzenie, które
+  // wskazuje źródło: 5, 55 i 205 zapytań przy 0, 50 i 200 kopiach (niezależny atak na warianty, A6b). Gdy jest ich więcej,
+  // lista ma znacznik `wiecej` (trasa rzeczy oddaje go jako wskazuja_wiecej); kolejność jak dotąd, po identyfikatorze.
+  wskazujaNa(id, { dla = undefined, limit = WSKAZUJA_NAJWIECEJ } = {}) {
+    const w = this.q(`SELECT o.od, o.cecha, r.obszar FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ? LIMIT ?`, id, limit + 1);
+    const zle = dla === undefined ? null : this._niewidoczneDla(dla);
+    const lista = w.slice(0, limit)
+      .filter((x) => !zle || !(zle.includes(x.obszar ?? null) || zle.includes(x.od)))
+      .map(({ od, cecha }) => ({ od, cecha }))
+      .sort((a, b) => (a.od < b.od ? -1 : a.od > b.od ? 1 : a.cecha < b.cecha ? -1 : a.cecha > b.cecha ? 1 : 0));
+    if (w.length > limit) Object.defineProperty(lista, 'wiecej', { value: true });
+    return lista;
+  }
 
   ksztalty() {
     const nr = this.ostatniNr();
@@ -787,20 +806,21 @@ export class Srodowisko {
   }
 
   // Ustawienie obowiązujące w obszarze: pierwsze znalezione w drodze do góry; na samej górze wartość domyślna.
-  ustawienie(obszar, klucz) {
+  // `stan` pozwala zapytać o świat po zapisie, którego jeszcze nie ma (granica publikacji, _publikuje).
+  ustawienie(obszar, klucz, stan = (id) => this.rzecz(id)) {
     let id = obszar, kroki = 0;
     while (id) {
       // Droga w górę dłuższa, niż pozwala zagnieżdżenie, oznacza pętlę albo błąd w danych: wtedy prawo zamyka się,
       // a nie otwiera.
       if (kroki++ >= 64) return { wartosc: klucz === 'ile_wolno' ? 'nic' : DOMYSLNE[klucz], skad: null, urwane: true };
-      const o = this.rzecz(id);
+      const o = stan(id);
       if (!o || o.rodzaj !== 'obszar/1') break;
       if (USTAWIENIA[klucz].includes(o.cechy[klucz])) return { wartosc: o.cechy[klucz], skad: id };
       id = o.obszar;
     }
     // Na samej górze stoi obszar główny Miejsca: jego ustawienia są domyślnymi dla wszystkiego, co nie mówi inaczej.
     const g = this.r.meta('obszar_glowny');
-    const glowny = g && g !== obszar ? this.rzecz(g) : null;
+    const glowny = g && g !== obszar ? stan(g) : null;
     if (glowny && USTAWIENIA[klucz].includes(glowny.cechy[klucz])) return { wartosc: glowny.cechy[klucz], skad: g };
     return { wartosc: DOMYSLNE[klucz], skad: null };
   }
@@ -871,10 +891,19 @@ export class Srodowisko {
 
   // Ocena zmiany: skutek, propozycja albo odmowa. `stara` to rzecz przed zmianą (albo null, gdy powstaje nowa),
   // a rodzaj, obszar i cechy to stan po zmianie. Prawo liczy się tam, skąd rzecz wychodzi, i tam, dokąd trafia.
-  ocen(kto, { stara = null, rodzaj, obszar = null, cechy = {} }) {
+  ocen(kto, { stara = null, rodzaj, obszar = null, cechy = {}, systemowe = false }) {
     const rola = this.rola(kto);
     if (rola === 'zwiedzajacy') return { tryb: 'odmowa', status: 401, powod: this.powodBrakuPrawa(kto, 'do ruchu') };
     if (rodzaj === 'propozycja/1' || (stara && stara.rodzaj === 'propozycja/1')) return { tryb: 'odmowa', status: 403, powod: 'propozycje powstają same, gdy ruch nie ma prawa do skutku; zmienia je tylko przyjęcie albo odrzucenie (co: przyjmij, co: odrzuc)' };
+    // Pochodzenie kopii kładzie tylko ruch kopiuj, a wersję źródła przestawia w nim tylko powrót kopii do źródła (oba
+    // piszą je jako `systemowe`). Ręką nikt, także właściciel i przyjęcie propozycji: pochodzenie położone ręcznie
+    // łączyło dowolną rzecz z dowolnym "źródłem", a "wróć do domyślnego" właściciela przy znaku "nowsze" przepisywało
+    // potem cudzą treść tam, gdzie widzi ją każdy (niezależny atak na warianty, 20 XI 2026, B11c). Odłożyć i przywrócić
+    // je wolno: treść zostaje ta, którą położył kopiuj.
+    if (!systemowe && (rodzaj === 'pochodzenie/1' || (stara && stara.rodzaj === 'pochodzenie/1'))) {
+      const taSama = !!stara && stara.rodzaj === 'pochodzenie/1' && rodzaj === 'pochodzenie/1' && kanon(stara.cechy) === kanon(cechy);
+      if (!taSama) return { tryb: 'odmowa', status: 403, powod: 'pochodzenie kopii kładzie tylko ruch kopiuj: ręką nie da się go położyć ani zmienić (odłożyć i przywrócić wolno)' };
+    }
     if (rola === 'wlasciciel') return { tryb: 'skutek' };
     // Poświadczenie drzwi zakłada tylko właściciel, swoim urządzeniem, przez drzwi (ceremonia WebAuthn i pieczęć Miejsca).
     // Odmowa, nie propozycja: do 19 XI agent kładł propozycję poświadczenia ze SWOIM kluczem publicznym, powód brzmiał
@@ -1090,6 +1119,7 @@ export class Srodowisko {
     if (kto && kto.startsWith(PRZEDROSTEK_GOSCIA)) return blad(403, `imiona zaczynające się od ${PRZEDROSTEK_GOSCIA} należą do gości w oknach; uczestnik z kluczem nie działa pod takim imieniem`);
     if (!cialo || typeof cialo !== 'object' || Array.isArray(cialo)) return blad(400, 'ciało żądania ma być obiektem JSON');
     if (!opKlienta(cialo.op)) return blad(400, 'op: Twój własny identyfikator tej czynności, 8 do 100 znaków z [A-Za-z0-9_-]; przy ponowieniu podaj ten sam, wtedy nic nie zrobi się dwa razy');
+    if ('publikuj' in cialo && cialo.publikuj !== true) return blad(400, PUBLIKUJ);
     // Gest: ruchy z tym samym znakiem są jedną czynnością ręki i cofają się razem (co: cofnij-gest). Znak wchodzi do
     // identyfikatora czynności jądra (g:<gest>:<op>), więc akty gestu leżą obok siebie i jądro nie musi go znać.
     if ('gest' in cialo) {
@@ -1145,7 +1175,9 @@ export class Srodowisko {
   // odświeżyć fakt także wtedy, gdy właściciel schował rzecz, a jego odpowiedzi nie wychodzą do obcych.
   // Czego to NIE zamyka: jednego bitu przy rodzajach z kluczem. Tożsamość z klucza jest jedna na całe Miejsce, więc
   // uczestnik z prawem zapisu, który zgadnie wartość klucza, dowie się z odmowy, że taka rzecz gdzieś jest. Nie dostanie
-  // identyfikatora, wersji ani obszaru, a każda próba, która nie trafi, zostawia rzecz albo propozycję, czyli ślad.
+  // identyfikatora, wersji ani obszaru. Śladu nie zostawia ani trafienie, ani pudło, gdy treść nie przejdzie sprawdzenia
+  // (położenie z błędną treścią, kopia): do 20 XI stało tu, że każde pudło zostawia rzecz albo propozycję, a dla tych
+  // dróg nie było to prawdą (niezależny atak na warianty, B14). Granica jest ta sama: jeden bit, bez identyfikatora.
   _oczy(kto, przez = null) {
     const wprost = (k) => { const r = this.rola(k); return r === 'wlasciciel' || r === 'automat'; };
     const patrzacy = [kto, ...(przez ? [przez] : [])].filter((k) => !wprost(k));
@@ -1394,7 +1426,8 @@ export class Srodowisko {
     const dom = this.wersja(stara.id, ost.akt);
     const ta = (x) => JSON.stringify([x.rodzaj, x.obszar ?? null, x.cechy]);
     if (ost.akt === stara.wersja || (dom && !stara.odlozone && ta(dom) === ta(stara))) return blad(409, 'ta rzecz jest już w wersji domyślnej');
-    return this._przestaw(kto, { op: c.op, co: 'cofnij', rzecz: stara.id, wersja: 'wersja' in c ? c.wersja : 'dowolna', do: ost.akt, ...(typeof c.powod === 'string' ? { powod: c.powod } : {}) }, slad);
+    // pod spodem cofnięcie, więc ta sama granica publikacji co przy cofnięciu (_przestaw)
+    return this._przestaw(kto, { op: c.op, co: 'cofnij', rzecz: stara.id, wersja: 'wersja' in c ? c.wersja : 'dowolna', do: ost.akt, ...(typeof c.powod === 'string' ? { powod: c.powod } : {}), ...(c.publikuj === true ? { publikuj: true } : {}) }, slad);
   }
 
   _propozycjaDomyslnego(id) {
@@ -1469,7 +1502,12 @@ export class Srodowisko {
       if (!widzi.dawna(cel)) return blad(409, 'poprzednia wersja tej rzeczy leży poza tym, do czego masz wstęp; wskaż wcześniejszą wersję znacznikiem do');
     }
     if (cel.akt === stara.wersja) return blad(409, 'to jest bieżąca wersja tej rzeczy; nie ma czego cofać');
-    return this._zmien(kto, c.op, slad, { ...wspolne, co: 'cofnij', rodzaj: cel.rodzaj, obszar: cel.obszar, cechy: cel.cechy, odlozone: cel.odlozone, powod: cel.powod, zWersji: cel.akt });
+    // Granica publikacji (cofnięcie jest ruchem pośrednim, także pod "wróć do punktu" i "domyślny"): rzecz i to, co leży
+    // przy niej, widać dziś tam, gdzie leży; dawną treść widać było tam, gdzie leżała wtedy (wersja, która tego nie wie,
+    // liczy się jako zamknięta). Po cofnięciu nic z tego nie może wyjść do szerszego grona bez publikuj: true właściciela
+    // (niezależny atak na warianty, 20 XI 2026, A2b: schowany preset wracał do jawnego razem z tym, co dołożono przy nim).
+    return this._zmien(kto, c.op, slad, { ...wspolne, co: 'cofnij', rodzaj: cel.rodzaj, obszar: cel.obszar, cechy: cel.cechy, odlozone: cel.odlozone, powod: cel.powod, zWersji: cel.akt,
+      brama: { przed: this._przedDawnej(stara, cel), publikuj: c.publikuj === true, opis: 'powrót do tej wersji pokazałby tę rzecz albo to, co leży przy niej, większemu gronu niż dotąd' } });
   }
 
   // --- gest: wiele zmian jako jedna czynność ręki ------------------------------------------------------------------
@@ -1574,11 +1612,14 @@ export class Srodowisko {
   // Od 19 XI cel może być rzeczą NOWĄ (`nowa: true`, `rz: { id }`): tak ruch kopiuj zakłada jednym gestem kopię i jej
   // pochodzenie. Rzecz założona wcześniej w tej samej czynności liczy się dla następnych jak istniejąca, także jako ta,
   // z którą rzecz z natury leży (pochodzenie leży z kopią, której przed tą czynnością jeszcze nie było).
-  async _zapiszWiele(kto, op, slad, cele, wynik) {
+  // Każdy ruch pośredni wielu rzeczy (kopiuj, domyslny na kopii, cofnij-gest, przywroc-uklad) kończy się tutaj, więc tu
+  // stoi jego granica publikacji: cel może nieść `przed` (jawność, przy której jego treść była dotąd widoczna; bez niego
+  // liczy się obszar, w którym rzecz leży dziś) i `systemowe` (pochodzenie pisane przez kopiuj, zob. ocen).
+  async _zapiszWiele(kto, op, slad, cele, wynik, { publikuj = false, opis = null } = {}) {
     const przez = przezZ(slad), widzi = this._oczy(kto, przez);
     const nowe = new Map();
     const widziW = Object.assign((id) => (nowe.has(id) ? nowe.get(id) : widzi(id)), widzi);
-    const lista = [];
+    const stany = [];
     for (const [i, c] of cele.entries()) {
       let { rodzaj, obszar, cechy, odlozone, powod } = c;
       const stara = c.nowa ? null : c.rz;
@@ -1596,14 +1637,26 @@ export class Srodowisko {
       }
       const spr = this._sprawdzTresc(rodzaj, cechy, obszar, stara, odlozone, widziW);
       if (!spr.ok) return c.nowa ? blad(422, `${ktora} nie przechodzi sprawdzenia: ${spr.blad}`) : blad(409, `rzecz ${c.rz.id} nie przechodzi dzisiejszego sprawdzenia w stanie, do którego miała wrócić: ${spr.blad}`, { rzecz: c.rz.id });
+      stany.push({ i, c, stara, rodzaj, obszar, cechy, odlozone, powod, n, spr, ktora });
+      if (c.nowa) nowe.set(c.rz.id, { id: c.rz.id, rodzaj, obszar, cechy, odlozone: false });
+    }
+    // Publikacja jest skutkiem całej czynności, więc liczy się ze wszystkich stanów po zapisie naraz, zanim padnie
+    // pytanie o prawo do każdej rzeczy z osobna.
+    if (this._publikuje(stany.map((s) => ({ id: s.c.rz.id, rodzaj: s.rodzaj, obszar: s.obszar, cechy: s.cechy, zNatury: s.n ? s.n.cecha : null,
+      przed: Number.isInteger(s.c.przed) ? s.c.przed : (s.stara ? this._jawnoscW(s.stara.obszar ?? null) : 0) })))) {
+      const odm = this._odmowaPublikacji(kto, przez, publikuj, opis);
+      if (odm) return odm;
+    }
+    const lista = [];
+    for (const s of stany) {
+      const { i, c, stara, rodzaj, obszar, cechy, odlozone, powod, n, spr, ktora } = s;
       for (const k of [kto, ...(przez ? [przez] : [])]) {
-        const o = this.ocen(k, { stara, rodzaj, obszar, cechy });
+        const o = this.ocen(k, { stara, rodzaj, obszar, cechy, systemowe: c.systemowe === true });
         if (o.tryb !== 'skutek') return blad(o.tryb === 'odmowa' ? o.status : 403, `tej czynności nie da się zrobić w całości: ${c.nowa ? ktora : 'zmiana rzeczy ' + c.rz.id} nie miałaby tu skutku${o.powod ? ' (' + o.powod + ')' : ''}`, c.nowa ? {} : { rzecz: c.rz.id });
       }
       const p = await this.r.przygotujPolozenie({ op: `${op}.${i}`, rodzaj, tresc: trescRzeczy({ obszar, cechy, odlozone, powod, zNatury: n ? n.cecha : null }), glowa: 'rzecz:' + c.rz.id, wersja: stara ? stara.wersja : null });
       if (!p.ok) return p;
       lista.push({ p, id: c.rz.id, rodzaj, obszar, cechy, odlozone, ksztalt: spr.ksztalt });
-      if (c.nowa) nowe.set(c.rz.id, { id: c.rz.id, rodzaj, obszar, cechy, odlozone: false });
     }
     if (!lista.length) return { ok: true, powtorzone: false, ...wynik, rzeczy: 0 };
     return this._zatwierdz(kto, lista, slad, { ...wynik, rzeczy: lista.length });
@@ -1633,10 +1686,11 @@ export class Srodowisko {
       if (x.przed === null) { if (!rz.odlozone) cele.push({ rz, rodzaj: rz.rodzaj, obszar: rz.obszar, cechy: rz.cechy, odlozone: true, powod: 'cofnięty gest, w którym ta rzecz powstała' }); continue; }
       const d = this._zeZapisu(x.przed);
       if (!d || !widzi.dawna(d)) { zmienione.push(x.rzecz); continue; }
-      cele.push({ rz, ...d });
+      // granica publikacji jak przy cofnięciu jednej rzeczy (_przestaw)
+      cele.push({ rz, ...d, przed: this._przedDawnej(rz, d) });
     }
     if (zmienione.length) return blad(409, `${zmienione.length === 1 ? 'jedna rzecz z tego gestu zmieniła się' : 'część rzeczy z tego gestu zmieniła się'} po nim (albo nie jest już dla Ciebie dostępna); cofnięcie całego gestu nadpisałoby późniejszą zmianę, więc nie cofam niczego`, { zmienione });
-    return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'cofniety-gest', gest: c.cofany });
+    return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'cofniety-gest', gest: c.cofany }, { publikuj: c.publikuj === true, opis: 'cofnięcie tego gestu pokazałoby coś większemu gronu niż dotąd' });
   }
 
   // Powrót do zapisanego układu (rzecz chwila/1: nazwa, widok, akt): położenia widoku wracają do stanu z tamtej chwili.
@@ -1662,9 +1716,9 @@ export class Srodowisko {
       if (d && !widzi.dawna(d)) return blad(409, 'zapisany układ sięga chwili, w której te położenia leżały poza tym, do czego masz wstęp; nie przywracam niczego');
       if (!d) { if (!rz.odlozone) cele.push({ rz, rodzaj: rz.rodzaj, obszar: rz.obszar, cechy: rz.cechy, odlozone: true, powod: 'nie było tego położenia w przywróconym układzie' }); continue; }
       if (d.rodzaj === rz.rodzaj && d.odlozone === !!rz.odlozone && JSON.stringify(d.cechy) === JSON.stringify(rz.cechy)) continue;
-      cele.push({ rz, ...d });
+      cele.push({ rz, ...d, przed: this._przedDawnej(rz, d) });
     }
-    return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'przywrocony-uklad', chwila: ch.id, akt });
+    return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'przywrocony-uklad', chwila: ch.id, akt }, { publikuj: c.publikuj === true, opis: 'powrót do tego układu pokazałby coś większemu gronu niż dotąd' });
   }
 
   // --- warianty (19 XI 2026): kopia z pochodzeniem, powrót kopii do źródła, punkt zapisu -------------------------
@@ -1674,18 +1728,70 @@ export class Srodowisko {
   // umiał tylko widok (pomiar: opus-code/narzedzia/presety-jego-scenariusz.mjs we wspólnej pamięci agentów).
 
   // Jak jawny jest obszar: 0 widzi tylko właściciel, 1 uczestnicy, 2 wszyscy (z dziedziczeniem, jak przy widoczności).
-  _jawnosc(obszar) {
+  // `mapa` (id -> {rodzaj, obszar, cechy}): świat, w którym te rzeczy mają już stan po zapisie.
+  _jawnoscW(obszar, mapa = null) {
     let w = null;
-    try { w = this.ustawienie(obszar ?? null, 'widzi').wartosc; } catch { w = null; }
+    try { w = this.ustawienie(obszar ?? null, 'widzi', mapa ? (id) => (mapa.has(id) ? mapa.get(id) : this.rzecz(id)) : undefined).wartosc; } catch { w = null; }
     return Object.hasOwn(JAWNOSC, w) ? JAWNOSC[w] : 0;
+  }
+  _jawnosc(obszar) { return this._jawnoscW(obszar); }
+
+  // Przy jakiej jawności treść dawnego stanu rzeczy `d` była dotąd widoczna, gdy wraca on na miejsce dzisiejszej `rz`:
+  // rzecz i to, co leży przy niej, widać dziś tam, gdzie leży; dawną treść widać było tam, gdzie leżała wtedy. Stan, który
+  // nie wie, gdzie leżał (rzecz z natury sprzed 18 XI 2026), liczy się jako zamknięty, jak przy czytaniu (`dla().wersja`).
+  _przedDawnej(rz, d) {
+    return Math.min(this._jawnoscW(rz.obszar ?? null), d.obszar_nieznany ? 0 : this._jawnoscW(d.obszar ?? null));
+  }
+
+  // Publikacja jest skutkiem, nie gestem (werdykt 68 po niezależnym ataku, 20 XI 2026). Ruch pośredni publikuje, gdy po
+  // zapisie jakąś treść widzi szersze grono niż przedtem: rzecz trafia jawniej, niż była dotąd widoczna jej treść (`przed`
+  // liczy wołający), albo obszar sam staje się jawniejszy (zmiana `widzi` albo rodzica), a z nim wszystko, co w nim leży.
+  // Do 20 XI granica patrzyła tylko na obszar, w którym leży rzecz, i tylko przy kopii: "wróć do domyślnego" na obszarze
+  // przepisywało jego `widzi` bez pytania (B11c), a powrót do punktu wynosił schowany preset do jawnego razem z tym, co
+  // dołożono przy nim w ukryciu (A2b). Rzeczy, które z natury leżą z przeniesioną, idą za nią w tym samym zapisie
+  // (_pociagnij), więc ich widoczność zmienia się tak samo jak jej: pytanie o nią zawiera pytanie o nie.
+  // stany: [{id, rodzaj, obszar, cechy, przed, zNatury}]
+  _publikuje(stany) {
+    const glowny = this.r.meta('obszar_glowny');
+    const mapa = new Map(stany.map((s) => [s.id, { id: s.id, rodzaj: s.rodzaj, obszar: s.obszar ?? null, cechy: s.cechy || {} }]));
+    // rzecz z natury leży tam, gdzie rzecz wskazana; gdy tamta zmienia się w tym samym zapisie, liczy się jej nowe miejsce
+    const gdzie = (s) => {
+      const d = s.zNatury && s.cechy ? mapa.get(s.cechy[s.zNatury]) : null;
+      if (!d) return s.obszar ?? null;
+      return d.rodzaj === 'obszar/1' ? (d.id === glowny ? null : d.id) : (d.obszar ?? null);
+    };
+    for (const s of stany) {
+      if (this._jawnoscW(gdzie(s), mapa) > s.przed) return true;
+      if (s.rodzaj === 'obszar/1') {
+        const byl = this.rzecz(s.id);
+        if (byl && byl.rodzaj === 'obszar/1' && this._jawnoscW(s.id, mapa) > this._jawnoscW(s.id)) return true;
+      }
+    }
+    return false;
+  }
+
+  // Publikuje tylko właściciel (także nie przez cudze okno), i tylko jawnie: publikuj: true. `opis` mówi, co ten ruch
+  // by pokazał; odmowa nie nazywa żadnej rzeczy ani obszaru, których piszący nie widzi.
+  _odmowaPublikacji(kto, przez, publikuj, opis = null, rada = '') {
+    const co = opis || 'po tym ruchu coś zobaczy więcej osób niż dotąd';
+    for (const k of [kto, ...(przez ? [przez] : [])]) if (this.rola(k) !== 'wlasciciel') return blad(403, `${co}: to jest publikacja, a publikuje tylko właściciel${rada}`);
+    if (publikuj !== true) return blad(409, `${co}: to jest publikacja; jeśli jej chcesz, powtórz ruch z "publikuj": true`, { publikacja: true, potwierdz: 'publikuj' });
+    return null;
   }
 
   // Po odniesieniu (indeks cel+cecha), nie przez spis z filtrem po cesze: o pochodzenie pyta każdy odczyt rzeczy pod
   // adresem, a spis przechodziłby wszystkie pochodzenia w Miejscu i czytał zapis każdego z nich, więc odczyt dowolnej
   // rzeczy drożałby z liczbą kopii (pomiar 19 XI: 300 kopii, 300 wierszy rzeczy i 300 zapisów na jeden odczyt).
+  // Ufamy tylko pochodzeniu, które urodziło się razem z kopią, jednym ruchem kopiuj: pierwsze akty kopii i pochodzenia
+  // ma ten sam wykonawca i ta sama czynność (op.0 i op.1, zob. _zapiszWiele). Ręką pochodzenia położyć się nie da (ocen);
+  // to drugi zamek na wypadek drogi, której dziś nie znamy (wwóz, przyszły ruch), bo znak "nowsze" i powrót kopii do
+  // źródła stoją na tej jednej danej (niezależny atak na warianty, 20 XI 2026, B11c).
   _pochodzenieKopii(id) {
     const w = this.q(`SELECT o.od FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ? AND o.cecha = 'kopia' AND r.rodzaj = 'pochodzenie/1' AND r.odlozone = 0 ORDER BY o.od LIMIT 1`, id)[0];
-    return w ? this.rzecz(w.od) : null;
+    if (!w) return null;
+    const a = this.q(`SELECT (SELECT kto || '|' || op FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr LIMIT 1) AS p, (SELECT kto || '|' || op FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr LIMIT 1) AS k`, 'rzecz:' + w.od, 'rzecz:' + id)[0];
+    const razem = a && typeof a.p === 'string' && typeof a.k === 'string' && a.p.endsWith('.1.p') && a.k.endsWith('.0.p') && a.p.slice(0, -4) === a.k.slice(0, -4);
+    return razem ? this.rzecz(w.od) : null;
   }
 
   // Skąd jest ta kopia i czy jej źródło ma nowszą wersję (krok 9 jego presetów: domyślny się zmienił), liczone przy
@@ -1709,15 +1815,26 @@ export class Srodowisko {
     if ('zmien' in c && (!c.zmien || typeof c.zmien !== 'object' || Array.isArray(c.zmien))) return blad(400, 'zmien: obiekt z cechami, które kopia ma mieć inne niż źródło');
     if (c.zmien) { const wada = wadaSurowej(c.zmien); if (wada) return blad(400, 'zmien: ' + wada); }
     if ('publikuj' in c && c.publikuj !== true) return blad(400, PUBLIKUJ);
-    const bez = this._bezPrawa(kto, przezZ(slad));
+    const przez = przezZ(slad);
+    const bez = this._bezPrawa(kto, przez);
     if (bez) return bez;
+    const widzi = this._oczy(kto, przez);
     // Ponowienie oddaje tę samą kopię, nawet gdy źródło zmieniło się od tamtej chwili: identyfikator kopii stoi
-    // w pierwszym zapisie tej czynności.
+    // w pierwszym zapisie tej czynności. Ta sama czynność to ten sam op i ta sama prośba: źródło, nazwa, obszar, zmiany
+    // i to, kto otworzył okno (gość jest wspólny dla wszystkich otwierających). Odcisk prośby wchodzi do identyfikatora
+    // kopii, więc inna prośba pod tym samym op dostaje 409, a nie cudzą kopię (uwagi A4e–A4g niezależnego ataku, 20 XI).
+    const odcisk = kanon([c.rzecz, c.nazwa ?? null, 'obszar' in c ? c.obszar : '-', c.zmien ?? null, przez ?? null]);
+    const idZOp = await idZ('kopia', kto, c.op, odcisk);
     if (this._juzZapisala(kto, c.op)) {
       const g = this.q(`SELECT glowa FROM akty WHERE kto = ? AND op = ?`, kto, c.op + '.0.p')[0];
-      return { ok: true, powtorzone: true, skutek: 'skopiowane', rzecz: g && typeof g.glowa === 'string' && g.glowa.startsWith('rzecz:') ? g.glowa.slice(6) : null };
+      const id = g && typeof g.glowa === 'string' && g.glowa.startsWith('rzecz:') ? g.glowa.slice(6) : null;
+      const kopia = id ? widzi(id) : null;
+      // rodzaj z kluczem tożsamości ma identyfikator z cech, nie z op: wtedy prośbę poznaje się po źródle w pochodzeniu
+      const kk = kopia ? this.ksztaltDla(kopia.rodzaj) : null;
+      const p0 = kopia && kk && Array.isArray(kk.klucz) ? this._pochodzenieKopii(id) : null;
+      if (!kopia || (id !== idZOp && !(p0 && p0.cechy.z === c.rzecz))) return blad(409, 'ten op należy już do innej czynności; nowa czynność potrzebuje nowego op');
+      return { ok: true, powtorzone: true, skutek: 'skopiowane', rzecz: id };
     }
-    const widzi = this._oczy(kto, przezZ(slad));
     const zr = widzi(c.rzecz);
     if (!zr) return blad(404, `nie ma rzeczy ${c.rzecz}`);
     if (NIE_DO_KOPII.includes(nazwaRodzaju(zr.rodzaj))) return blad(422, `rzeczy rodzaju ${zr.rodzaj} się nie kopiuje: kopia byłaby drugą rzeczą o tym samym znaczeniu, a nie wariantem`);
@@ -1725,12 +1842,14 @@ export class Srodowisko {
     const k = this.ksztaltDla(zr.rodzaj);
     const tytul = (k && k.tytul) || 'nazwa';
     const defT = k && k.cechy ? k.cechy[tytul] : null;
-    const tytulTekstem = defT === 'tekst' || (defT && typeof defT === 'object' && defT.typ === 'tekst');
+    // Dopisek "(kopia)" i własna nazwa trafiają tylko w tytuł, który jest nazwą. Tytułem wartości jest pokrętło, którego
+    // dotyczy, czyli tożsamość, nie podpis: dopisek psuł każdą kopię wartości (uwaga A4h niezależnego ataku, 20 XI).
+    const tytulNazwa = tytul === 'nazwa' && (defT === 'tekst' || (defT && typeof defT === 'object' && defT.typ === 'tekst'));
     const cechy = { ...zr.cechy, ...(c.zmien || {}) };
     if (typeof c.nazwa === 'string') {
-      if (!tytulTekstem) return blad(422, `tytułem rzeczy rodzaju ${zr.rodzaj} jest cecha ${tytul}, która nie jest napisem; zamiast nazwy podaj zmien`);
+      if (!tytulNazwa) return blad(422, `tytułem rzeczy rodzaju ${zr.rodzaj} jest cecha ${tytul}, a nie nazwa; jeśli kopia ma mieć inną, podaj ją w zmien`);
       cechy[tytul] = c.nazwa.trim();
-    } else if (tytulTekstem && !(c.zmien && Object.hasOwn(c.zmien, tytul)) && typeof zr.cechy[tytul] === 'string') {
+    } else if (tytulNazwa && !(c.zmien && Object.hasOwn(c.zmien, tytul)) && typeof zr.cechy[tytul] === 'string') {
       cechy[tytul] = (zr.cechy[tytul] + ' (kopia)').slice(0, 300);
     }
     const rola = this.rola(kto);
@@ -1751,47 +1870,62 @@ export class Srodowisko {
     }
     if (obszar !== null) { const o = widzi(obszar); if (!o || o.rodzaj !== 'obszar/1') return blad(404, `nie ma obszaru ${obszar}`); }
     const zKlucza = await this._idZKlucza(zr.rodzaj, k, cechy);
-    const idKopii = zKlucza || await idZ('kopia', kto, c.op);
+    const idKopii = zKlucza || idZOp;
     if (this.rzecz(idKopii)) return blad(409, zKlucza ? `rzecz rodzaju ${zr.rodzaj} bierze tożsamość z cech (${k.klucz.join(', ')}), a rzecz o takich cechach już jest; podaj w zmien inne wartości tych cech` : 'ten op założył już inną rzecz; nowa kopia potrzebuje nowego op');
-    const publikacja = this._jawnosc(obszar) > this._jawnosc(zrObszar);
-    if (publikacja && rola !== 'wlasciciel') return blad(403, 'kopia trafiłaby tam, gdzie widzi ją więcej osób niż źródło: to jest publikacja, a publikuje tylko właściciel; zrób kopię w obszarze widocznym jak źródło albo mniej');
-    if (publikacja && c.publikuj !== true) return blad(409, 'kopia trafiłaby tam, gdzie widzi ją więcej osób niż źródło: to jest publikacja; jeśli jej chcesz, powtórz ruch z "publikuj": true', { publikacja: true, potwierdz: 'publikuj' });
-    const cele = [{ nowa: true, rz: { id: idKopii }, rodzaj: zr.rodzaj, obszar, cechy, odlozone: false }];
+    // Ta sama granica co przy każdym ruchu pośrednim (_publikuje): treść źródła była widoczna tam, gdzie leży źródło.
+    const przed = this._jawnoscW(zrObszar);
+    const publikacja = this._publikuje([{ id: idKopii, rodzaj: zr.rodzaj, obszar, cechy, przed, zNatury: n ? n.cecha : null }]);
+    if (publikacja) {
+      const odm = this._odmowaPublikacji(kto, przez, c.publikuj, 'kopia trafiłaby tam, gdzie widzi ją więcej osób niż źródło', '; zrób kopię w obszarze widocznym jak źródło albo mniej');
+      if (odm) return odm;
+    }
+    const cele = [{ nowa: true, rz: { id: idKopii }, rodzaj: zr.rodzaj, obszar, cechy, odlozone: false, przed }];
     const kp = this.ksztaltDla('pochodzenie/1');
     let idPoch = null;
     if (!publikacja && kp) {
       const cp = { kopia: idKopii, z: zr.id, wersja: zr.wersja };
       idPoch = await this._idZKlucza('pochodzenie/1', kp, cp);
-      cele.push({ nowa: true, rz: { id: idPoch }, rodzaj: 'pochodzenie/1', obszar, cechy: cp, odlozone: false });
+      cele.push({ nowa: true, rz: { id: idPoch }, rodzaj: 'pochodzenie/1', obszar, cechy: cp, odlozone: false, przed, systemowe: true });
     }
-    return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'skopiowane', rzecz: idKopii, z: zr.id, wersja_zrodla: zr.wersja, pochodzenie: idPoch, ...(publikacja ? { publikacja: true } : {}) });
+    return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'skopiowane', rzecz: idKopii, z: zr.id, wersja_zrodla: zr.wersja, pochodzenie: idPoch, ...(publikacja ? { publikacja: true } : {}) },
+      { publikuj: c.publikuj === true, opis: 'kopia trafiłaby tam, gdzie widzi ją więcej osób niż źródło' });
   }
 
   // Powrót kopii do dzisiejszej treści jej źródła (jego "wrócić do domyślnego agentów"), jednym gestem: kopia dostaje
   // treść źródła z zachowanym tytułem, a pochodzenie wersję źródła. Jego wersje zostają w historii kopii.
   async _doZrodla(kto, c, slad, stara, poch) {
-    if (this._juzZapisala(kto, c.op)) return { ok: true, powtorzone: true, skutek: 'domyslny-ze-zrodla', rzecz: stara.id };
+    // Ponowienie tej samej czynności: jej pierwszy zapis zmienił tę kopię albo jej pochodzenie (nie założył niczego).
+    // Op z kopiuj albo z powrotu innej kopii to inna czynność i 409, a nie cichy sukces (uwaga A4f niezależnego ataku).
+    if (this._juzZapisala(kto, c.op)) {
+      const a = this.q(`SELECT glowa, z_zapisu FROM akty WHERE kto = ? AND op = ?`, kto, c.op + '.0.p')[0];
+      const ta = a && a.z_zapisu !== null && (a.glowa === 'rzecz:' + stara.id || a.glowa === 'rzecz:' + poch.id);
+      return ta ? { ok: true, powtorzone: true, skutek: 'domyslny-ze-zrodla', rzecz: stara.id } : blad(409, 'ten op należy już do innej czynności; nowa czynność potrzebuje nowego op');
+    }
     if ('publikuj' in c && c.publikuj !== true) return blad(400, PUBLIKUJ);
     const widzi = this._oczy(kto, przezZ(slad));
     const zr = widzi(poch.cechy.z);
     if (!zr) return blad(409, 'tej kopii nie ma do czego przywrócić: jej źródła nie ma albo leży tam, dokąd nie masz wstępu');
     if (zr.odlozone) return blad(409, 'źródło tej kopii jest odłożone; nie ma dzisiejszej treści, do której dałoby się wrócić');
     if (zr.rodzaj !== stara.rodzaj) return blad(409, `źródło jest dziś rodzaju ${zr.rodzaj}, a kopia ${stara.rodzaj}; powrót przeniósłby treść innego rodzaju`);
-    // Źródło mogło od kopii zejść głębiej (właściciel je schował), więc powrót do niego bywa publikacją, choć nikt nie
-    // wybierał obszaru: wtedy tylko właściciel i tylko jawnie.
-    const publikacja = this._jawnosc(stara.obszar ?? null) > this._jawnosc(zr.obszar ?? null);
-    if (publikacja && this.rola(kto) !== 'wlasciciel') return blad(403, 'kopia leży jawniej niż jej źródło: przeniesienie do niej dzisiejszej treści źródła byłoby publikacją, a publikuje tylko właściciel');
-    if (publikacja && c.publikuj !== true) return blad(409, 'kopia leży jawniej niż jej źródło: wzięcie dzisiejszej treści źródła byłoby publikacją; jeśli jej chcesz, powtórz ruch z "publikuj": true', { publikacja: true, potwierdz: 'publikuj' });
     const k = this.ksztaltDla(stara.rodzaj);
     const tytul = (k && k.tytul) || 'nazwa';
     const cechy = { ...zr.cechy };
     if (Object.hasOwn(stara.cechy, tytul)) cechy[tytul] = stara.cechy[tytul];
+    // Źródło mogło od kopii zejść głębiej (właściciel je schował), więc powrót do niego bywa publikacją, choć nikt nie
+    // wybierał obszaru. Ta sama granica co przy każdym ruchu pośrednim (_publikuje): treść źródła była widoczna tam,
+    // gdzie leży źródło, a kopia zostaje, gdzie leży.
+    const przed = Math.min(this._jawnoscW(stara.obszar ?? null), this._jawnoscW(zr.obszar ?? null));
+    const opis = 'kopia leży jawniej niż jej źródło, więc wzięcie dzisiejszej treści źródła pokazałoby ją większemu gronu';
+    if (this._publikuje([{ id: stara.id, rodzaj: stara.rodzaj, obszar: stara.obszar ?? null, cechy, przed }])) {
+      const odm = this._odmowaPublikacji(kto, przezZ(slad), c.publikuj, opis);
+      if (odm) return odm;
+    }
     const juzTresc = kanon(cechy) === kanon(stara.cechy) && !stara.odlozone;
     if (juzTresc && poch.cechy.wersja === zr.wersja) return blad(409, 'ta kopia jest już w wersji domyślnej: ma dzisiejszą treść swojego źródła');
     const cele = [];
-    if (!juzTresc) cele.push({ rz: stara, rodzaj: stara.rodzaj, obszar: stara.obszar ?? null, cechy, odlozone: false });
-    if (poch.cechy.wersja !== zr.wersja) cele.push({ rz: poch, rodzaj: poch.rodzaj, obszar: poch.obszar ?? null, cechy: { ...poch.cechy, wersja: zr.wersja } });
-    return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'domyslny-ze-zrodla', rzecz: stara.id, z: zr.id, wersja_zrodla: zr.wersja });
+    if (!juzTresc) cele.push({ rz: stara, rodzaj: stara.rodzaj, obszar: stara.obszar ?? null, cechy, odlozone: false, przed });
+    if (poch.cechy.wersja !== zr.wersja) cele.push({ rz: poch, rodzaj: poch.rodzaj, obszar: poch.obszar ?? null, cechy: { ...poch.cechy, wersja: zr.wersja }, przed, systemowe: true });
+    return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'domyslny-ze-zrodla', rzecz: stara.id, z: zr.id, wersja_zrodla: zr.wersja }, { publikuj: c.publikuj === true, opis });
   }
 
   // Powrót rzeczy do wersji zapamiętanej w punkcie zapisu (jego "wrócić do swojego zapisu"), jednym ruchem: pod spodem
@@ -1804,11 +1938,13 @@ export class Srodowisko {
     if (!p || nazwaRodzaju(p.rodzaj) !== 'punkt' || p.odlozone) return blad(404, `nie ma punktu zapisu ${c.punkt}`);
     const { czego, wersja } = p.cechy;
     if (!Number.isInteger(wersja)) return blad(422, 'ten punkt zapisu nie ma liczby w polu wersja');
-    return this._przestaw(kto, { op: c.op, co: 'cofnij', rzecz: czego, wersja: 'dowolna', do: wersja, powod: `powrót do punktu zapisu: ${String(p.cechy.nazwa || '').slice(0, 200)}` }, slad);
+    // pod spodem cofnięcie, więc ta sama granica publikacji (_przestaw): publikuj: true przechodzi dalej
+    return this._przestaw(kto, { op: c.op, co: 'cofnij', rzecz: czego, wersja: 'dowolna', do: wersja, powod: `powrót do punktu zapisu: ${String(p.cechy.nazwa || '').slice(0, 200)}`, ...(c.publikuj === true ? { publikuj: true } : {}) }, slad);
   }
 
   // Wspólny koniec każdej zmiany rzeczy: sprawdzenie treści, ocena prawa, potem zapis albo propozycja.
-  async _zmien(kto, op, slad, { co, stara, id, rodzaj, obszar, cechy, odlozone, powod, wersja, zWersji = null }) {
+  // `brama` ({przed, publikuj, opis}) niesie ruch pośredni: wtedy przed oceną prawa pada pytanie o publikację (_publikuje).
+  async _zmien(kto, op, slad, { co, stara, id, rodzaj, obszar, cechy, odlozone, powod, wersja, zWersji = null, brama = null }) {
     // Jedno miejsce dla wszystkich dróg zmiany (połóż, odłóż, przywróć, cofnij): rzecz, która z natury należy do innej,
     // leży tam, gdzie tamta leży dziś, a nie tam, gdzie leżała, gdy powstawała wersja, do której wracamy.
     const n = this._zNatury(rodzaj, cechy);
@@ -1820,6 +1956,10 @@ export class Srodowisko {
     }
     const spr = this._sprawdzTresc(rodzaj, cechy, obszar, stara, odlozone, this._oczy(kto, przezZ(slad)));
     if (!spr.ok) return co === 'cofnij' ? blad(409, 'dawna wersja nie przechodzi dzisiejszego sprawdzenia: ' + spr.blad, { bledy: spr.bledy }) : spr;
+    if (brama && this._publikuje([{ id, rodzaj, obszar, cechy, przed: brama.przed, zNatury }])) {
+      const odm = this._odmowaPublikacji(kto, przezZ(slad), brama.publikuj, brama.opis);
+      if (odm) return odm;
+    }
     let ocena = this.ocen(kto, { stara, rodzaj, obszar, cechy });
     // Okno nie ma więcej prawa niż ten, kto je otworzył: z dwóch ocen (gościa i otwierającego) wygrywa słabsza.
     const przez = przezZ(slad);

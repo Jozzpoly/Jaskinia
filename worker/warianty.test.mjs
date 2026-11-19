@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Rdzen } from './miejsce.mjs';
 import { sqlZNode } from './sql-node.mjs';
-import { Srodowisko } from './srodowisko.mjs';
+import { Srodowisko, WSKAZUJA_NAJWIECEJ } from './srodowisko.mjs';
 import { ziarna } from './ziarna.mjs';
 import { obsluzSrodowisko } from './srodowisko-http.mjs';
 import { DatabaseSync } from 'node:sqlite';
@@ -244,17 +244,222 @@ test('WA9. o pochodzenie pyta każdy odczyt rzeczy pod adresem, więc idzie po o
     const q = s.q;
     s.q = (z, ...p) => { slad.push([z, p]); return q.call(s, z, ...p); };
     try { fn(); } finally { delete s.q; }
-    return slad.filter(([z, p]) => /pochodzenie|odniesienia/.test(z + JSON.stringify(p)));
+    // od 20 XI także pytanie o akty, którym pochodzenie urodziło się razem z kopią (drugi zamek, _pochodzenieKopii)
+    return slad.filter(([z, p]) => /pochodzenie|odniesienia|akty/.test(z + JSON.stringify(p)));
   };
   for (const [nazwa, id] of [['zwykła rzecz', ids[3]], ['kopia', kopie[7]]]) {
     const slad = zapytania(() => s.pochodzenieDla(id, 'agent-a'));
     assert.ok(slad.length >= 1, nazwa + ': pytanie o pochodzenie w ogóle poszło');
+    if (nazwa === 'kopia') assert.ok(slad.some(([z]) => /akty/.test(z)), 'kopia: pytanie o akty urodzenia poszło i też jest mierzone');
     for (const [z, p] of slad) {
       const kroki = db.prepare('EXPLAIN QUERY PLAN ' + z).all(...p).map((k) => String(k.detail));
-      assert.ok(!kroki.some((k) => k.startsWith('SCAN')), `${nazwa}: skan całej tabeli: ${z} | ${kroki.join(' | ')}`);
+      // "SCAN CONSTANT ROW" to SELECT bez FROM (dwa podzapytania obok siebie), nie przegląd tabeli
+      assert.ok(!kroki.some((k) => k.startsWith('SCAN') && k !== 'SCAN CONSTANT ROW'), `${nazwa}: skan całej tabeli: ${z} | ${kroki.join(' | ')}`);
       assert.ok(!kroki.some((k) => /rzeczy_rodzaj/.test(k)), `${nazwa}: przegląd wszystkich rzeczy jednego rodzaju: ${z} | ${kroki.join(' | ')}`);
     }
   }
   assert.equal(s.pochodzenieDla(kopie[7], 'agent-a').z, ids[7], 'kontrola: ta sama odpowiedź co przed zmianą drogi');
   assert.equal(s.pochodzenieDla(ids[3], 'agent-a'), null);
+});
+
+// --- po niezależnym ataku (20 XI 2026, Commons narzedzia/atak-niezalezny-2026-11-20-warianty): 3 dziury i 3 uwagi -------
+
+test('WA10. pochodzenie kładzie tylko kopiuj: ręką nikt go nie położy ani nie przepnie, także właściciel, więc "wróć do domyślnego" nie przeniesie cudzej treści na obszar (B11c)', async () => {
+  const { s, nowe, D, obszar } = await swiat();
+  const P = await obszar('Publiczny', 'wszyscy', 'prowadzic');
+  const moja = ok(await s.ruch('agent-a', { op: op('m'), co: 'poloz', rodzaj: 'zestaw/1', obszar: nowe, cechy: { nazwa: 'robocze agenta', wartosci: {} } })).rzecz;
+  assert.equal(s.dla(null).rzecz(moja), null, 'kontrola: zwiedzający nie widzi rzeczy agenta');
+  for (const [kto, cechy] of [['agent-a', { kopia: nowe, z: P, wersja: 1 }], ['jozz', { kopia: nowe, z: P, wersja: 1 }], ['agent-a', { kopia: moja, z: D, wersja: 1 }]]) {
+    const w = await s.ruch(kto, { op: op('pod'), co: 'poloz', rodzaj: 'pochodzenie/1', cechy });
+    assert.equal(w.status, 403, `${kto}: ${JSON.stringify(w)}`);
+  }
+  assert.equal(ile(s, 'pochodzenie/1'), 0, 'nic nie powstało');
+  assert.equal(s.dla('jozz').pochodzenieDla(nowe), null, 'bez znaku "nowsze" na obszarze');
+  const jego = await s.ruch('jozz', { op: op('d'), co: 'domyslny', rzecz: nowe });
+  assert.notEqual(jego.skutek, 'domyslny-ze-zrodla', JSON.stringify(jego));
+  assert.equal(s.ustawienie(nowe, 'widzi').wartosc, 'uczestnicy', 'ustawienia Nowych bez zmian');
+  assert.equal(s.dla(null).rzecz(moja), null, 'zwiedzający dalej nie widzi rzeczy agenta');
+  // pochodzenia z kopiuj nie da się przepiąć na inne źródło; odłożyć i przywrócić wolno
+  const k = ok(await s.ruch('agent-a', { op: op('k'), co: 'kopiuj', rzecz: D }));
+  const p = s.rzecz(k.pochodzenie);
+  const przepnij = await s.ruch('agent-a', { op: op('pp'), co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'pochodzenie/1', cechy: { ...p.cechy, z: moja } });
+  assert.equal(przepnij.status, 403, JSON.stringify(przepnij));
+  ok(await s.ruch('agent-a', { op: op('od'), co: 'odloz', rzecz: p.id, wersja: 'dowolna' }));
+  assert.equal(s.pochodzenieDla(k.rzecz, 'agent-a'), null, 'odłożone pochodzenie nic nie mówi');
+  ok(await s.ruch('agent-a', { op: op('pr'), co: 'przywroc', rzecz: p.id, wersja: 'dowolna' }));
+  assert.equal(s.pochodzenieDla(k.rzecz, 'agent-a').z, D, 'kontrola: prawdziwe pochodzenie działa dalej');
+});
+
+test('WA11. drugi zamek: pochodzenie, które nie urodziło się razem z kopią jednym ruchem kopiuj, nie daje znaku "nowsze" ani powrotu do źródła', async () => {
+  const { s, nowe, D } = await swiat();
+  const X = ok(await s.ruch('agent-a', { op: op('x'), co: 'poloz', rodzaj: 'zestaw/1', obszar: nowe, cechy: { nazwa: 'X', wartosci: {} } })).rzecz;
+  // droga obok ruchów (przyszły wwóz albo błąd w innym ruchu): pochodzenie zapisane systemowo, ale osobną czynnością
+  const cp = { kopia: X, z: D, wersja: 1 };
+  const idP = await s._idZKlucza('pochodzenie/1', s.ksztaltDla('pochodzenie/1'), cp);
+  ok(await s._zapiszWiele('agent-a', op('obok'), null, [{ nowa: true, rz: { id: idP }, rodzaj: 'pochodzenie/1', obszar: nowe, cechy: cp, odlozone: false, przed: 1, systemowe: true }], { skutek: 'proba' }));
+  assert.ok(s.rzecz(idP), 'kontrola: pochodzenie leży');
+  assert.equal(s.pochodzenieDla(X, 'jozz'), null, 'bez znaku "nowsze"');
+  const d = await s.ruch('jozz', { op: op('d'), co: 'domyslny', rzecz: X });
+  assert.notEqual(d.skutek, 'domyslny-ze-zrodla', JSON.stringify(d));
+  assert.equal(s.rzecz(X).cechy.nazwa, 'X');
+  // kontrola: kopia zrobiona ruchem kopiuj ma pochodzenie i znak
+  const k = ok(await s.ruch('agent-a', { op: op('k'), co: 'kopiuj', rzecz: D }));
+  assert.equal(s.pochodzenieDla(k.rzecz, 'jozz').z, D);
+});
+
+test('WA12. publikacja jest skutkiem, nie gestem: powrót do punktu, cofnięcie i cofnięcie gestu, po których coś zobaczy więcej osób, pytają właściciela o publikuj, a agentowi odmawiają (A2b)', async () => {
+  const { s, obszar } = await swiat();
+  const P = await obszar('Publiczny', 'wszyscy', 'prowadzic');
+  const T = await obszar('Tajny', 'wlasciciel', 'prowadzic');
+  const U = await obszar('Uczestników', 'uczestnicy', 'prowadzic');
+  // jego preset był publiczny; zapisał punkt, schował preset do T, zmienił go tam i dołożył przy nim tajny punkt
+  const X = ok(await s.ruch('jozz', { op: op('x'), co: 'poloz', rodzaj: 'zestaw/1', obszar: P, cechy: { nazwa: 'Jego', wartosci: { 'odczucie.ruch.natezenie': 1 } } })).rzecz;
+  const p1 = ok(await s.ruch('jozz', { op: op('p'), co: 'poloz', rodzaj: 'punkt/1', cechy: { nazwa: 'ładny', czego: X, wersja: s.rzecz(X).wersja } })).rzecz;
+  const x = s.rzecz(X);
+  ok(await s.ruch('jozz', { op: op('chowa'), co: 'poloz', rzecz: X, wersja: x.wersja, rodzaj: x.rodzaj, obszar: T, cechy: { ...x.cechy, wartosci: { 'odczucie.ruch.natezenie': 9 } } }));
+  const tajny = ok(await s.ruch('jozz', { op: op('p'), co: 'poloz', rodzaj: 'punkt/1', cechy: { nazwa: 'TAJNY-PLAN', czego: X, wersja: s.rzecz(X).wersja } })).rzecz;
+  const widac = () => [s.dla(null).rzecz(X) !== null, s.dla(null).rzecz(tajny) !== null, s.dla('agent-a').rzecz(tajny) !== null];
+  assert.deepEqual(widac(), [false, false, false], 'kontrola przed');
+  for (const ruch of [{ co: 'wroc-do-punktu', punkt: p1 }, { co: 'cofnij', rzecz: X, wersja: 'dowolna' }]) {
+    const w = await s.ruch('jozz', { op: op('w'), ...ruch });
+    assert.deepEqual([w.status, w.potwierdz], [409, 'publikuj'], JSON.stringify(w));
+    assert.deepEqual(widac(), [false, false, false], `${ruch.co}: bez zgody nic nie wyszło`);
+  }
+  ok(await s.ruch('jozz', { op: op('w'), co: 'wroc-do-punktu', punkt: p1, publikuj: true }));
+  assert.deepEqual(widac(), [true, true, true], 'z publikuj: true wychodzi świadomie, razem z tym, co leży przy nim');
+  // kontrola: cofnięcie bez zmiany grona przechodzi bez pytania
+  const Y = ok(await s.ruch('jozz', { op: op('y'), co: 'poloz', rodzaj: 'zestaw/1', obszar: U, cechy: { nazwa: 'Y', wartosci: {} } })).rzecz;
+  const y = s.rzecz(Y);
+  ok(await s.ruch('jozz', { op: op('y'), co: 'poloz', rzecz: Y, wersja: y.wersja, rodzaj: y.rodzaj, cechy: { ...y.cechy, nazwa: 'Y2' } }));
+  ok(await s.ruch('jozz', { op: op('y'), co: 'cofnij', rzecz: Y, wersja: 'dowolna' }));
+  assert.equal(s.rzecz(Y).cechy.nazwa, 'Y');
+  // agent: ruch, po którym coś wyszłoby szerzej, dostaje odmowę, nie pytanie, także z publikuj: true
+  const Z = ok(await s.ruch('agent-a', { op: op('z'), co: 'poloz', rodzaj: 'zestaw/1', obszar: P, cechy: { nazwa: 'Z agenta', wartosci: {} } })).rzecz;
+  const z = s.rzecz(Z);
+  ok(await s.ruch('agent-a', { op: op('z'), co: 'poloz', rzecz: Z, wersja: z.wersja, rodzaj: z.rodzaj, obszar: U, cechy: z.cechy }));
+  const ag = await s.ruch('agent-a', { op: op('z'), co: 'cofnij', rzecz: Z, wersja: 'dowolna', publikuj: true });
+  assert.equal(ag.status, 403, JSON.stringify(ag));
+  assert.equal(s.dla(null).rzecz(Z), null, 'zwiedzający dalej nie widzi');
+  // cofnięcie gestu, które wyniosłoby rzecz szerzej, też pyta
+  const G = ok(await s.ruch('jozz', { op: op('g'), co: 'poloz', rodzaj: 'zestaw/1', obszar: P, cechy: { nazwa: 'G', wartosci: {} } })).rzecz;
+  const g = s.rzecz(G);
+  ok(await s.ruch('jozz', { op: op('g'), gest: 'wa12-gest-chowa', co: 'poloz', rzecz: G, wersja: g.wersja, rodzaj: g.rodzaj, obszar: T, cechy: g.cechy }));
+  const cg = await s.ruch('jozz', { op: op('cg'), co: 'cofnij-gest', cofany: 'wa12-gest-chowa' });
+  assert.deepEqual([cg.status, cg.potwierdz], [409, 'publikuj'], JSON.stringify(cg));
+  assert.equal(s.dla(null).rzecz(G), null);
+  ok(await s.ruch('jozz', { op: op('cg'), co: 'cofnij-gest', cofany: 'wa12-gest-chowa', publikuj: true }));
+  assert.ok(s.dla(null).rzecz(G), 'po świadomym cofnięciu gestu znowu jawne');
+  // obszar: cofnięcie zmiany jego widzi, po którym widzi go więcej osób (a z nim wszystko, co w nim leży), też pyta
+  const O = await obszar('Otwarty', 'wszyscy', 'prowadzic');
+  const o1 = s.rzecz(O);
+  ok(await s.ruch('jozz', { op: op('o'), co: 'poloz', rzecz: O, wersja: o1.wersja, rodzaj: 'obszar/1', cechy: { ...o1.cechy, widzi: 'uczestnicy' } }));
+  const oc = await s.ruch('jozz', { op: op('oc'), co: 'cofnij', rzecz: O, wersja: 'dowolna' });
+  assert.deepEqual([oc.status, oc.potwierdz], [409, 'publikuj'], JSON.stringify(oc));
+  assert.equal(s.ustawienie(O, 'widzi').wartosc, 'uczestnicy');
+  // zła wartość publikuj nie przechodzi żadnym ruchem
+  assert.equal((await s.ruch('jozz', { op: op('b'), co: 'cofnij', rzecz: Y, wersja: 'dowolna', publikuj: 'tak' })).status, 400);
+});
+
+test('WA13. odczyt źródła pod adresem kosztuje tyle samo przy 60 i 200 jego kopiach: "co na to wskazuje" ma górną granicę i nie pyta o każde odniesienie osobno (A6b)', async () => {
+  let t = Date.UTC(2026, 10, 20, 1, 0, 0);
+  const sql = sqlZNode();
+  const miara = { zapytan: 0, wierszy: 0 };
+  const licz = { exec: (q, ...p) => { miara.zapytan++; const a = sql.exec(q, ...p).toArray(); miara.wierszy += a.length; return { toArray: () => a }; } };
+  const r = new Rdzen(licz, { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+  const s = new Srodowisko(r);
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }));
+  const nowe = r.meta('obszar_nowe');
+  const D = ok(await s.ruch('agent-a', { op: op('d'), co: 'poloz', rodzaj: 'zestaw/1', obszar: nowe, cechy: { nazwa: 'Domyślny', wartosci: {} } })).rzecz;
+  const pytaj = async () => (await obsluzSrodowisko(s, new Request('https://proba.example/api/srodowisko/rzecz?id=' + D, { headers: { 'x-kto': 'agent-a' } }))).json();
+  const zmierz = async () => { await pytaj(); const q0 = miara.zapytan, w0 = miara.wierszy; const o = await pytaj(); return { o, koszt: [miara.zapytan - q0, miara.wierszy - w0] }; };
+  const kopie = [];
+  const dokopiuj = async (do_) => { while (kopie.length < do_) kopie.push(ok(await s.ruch('agent-a', { op: op('k'), co: 'kopiuj', rzecz: D })).rzecz); };
+  const zero = await zmierz();
+  await dokopiuj(3);
+  const trzy = await zmierz();
+  // kontrola: przy kilku odniesieniach lista jest pełna i w tej samej kolejności co dotąd (po identyfikatorze)
+  const pelna = s.q(`SELECT od, cecha FROM odniesienia WHERE cel = ? ORDER BY od`, D).map(({ od, cecha }) => ({ od, cecha }));
+  assert.deepEqual(trzy.o.wskazuja, pelna);
+  assert.equal(trzy.o.wskazuja_wiecej, undefined);
+  await dokopiuj(60);
+  const szescdziesiat = await zmierz();
+  await dokopiuj(200);
+  const dwiescie = await zmierz();
+  assert.equal(dwiescie.o.wskazuja.length, WSKAZUJA_NAJWIECEJ);
+  assert.equal(dwiescie.o.wskazuja_wiecej, true);
+  assert.deepEqual(dwiescie.koszt, szescdziesiat.koszt, `koszt [zapytań, wierszy] przy 60 i 200 kopiach: ${JSON.stringify([szescdziesiat.koszt, dwiescie.koszt])}`);
+  assert.equal(dwiescie.koszt[0], zero.koszt[0], `liczba zapytań nie rośnie z kopiami: ${JSON.stringify([zero.koszt, dwiescie.koszt])}`);
+  assert.ok(dwiescie.koszt[1] <= zero.koszt[1] + 2 * (WSKAZUJA_NAJWIECEJ + 1), 'wierszy najwyżej tyle, ile granica');
+  // oczami zwiedzającego: odniesienia z obszaru, którego nie widzi, nie wychodzą (Nowe widzą tylko uczestnicy)
+  assert.deepEqual(s.dla(null).wskazujaNa(D), []);
+});
+
+test('WA14. ponowienie to ten sam op i ta sama prośba: inne źródło, op z innego ruchu albo inny otwierający okno dają 409, nie cudzą kopię (uwagi A4e–A4g)', async () => {
+  const { s, nowe, D } = await swiat();
+  const E = ok(await s.ruch('agent-a', { op: op('e'), co: 'poloz', rodzaj: 'zestaw/1', obszar: nowe, cechy: { nazwa: 'E', wartosci: {} } })).rzecz;
+  const o = op('k');
+  const k1 = ok(await s.ruch('agent-a', { op: o, co: 'kopiuj', rzecz: D }));
+  const znowu = ok(await s.ruch('agent-a', { op: o, co: 'kopiuj', rzecz: D }));
+  assert.deepEqual([znowu.powtorzone, znowu.rzecz], [true, k1.rzecz], 'kontrola: ta sama prośba oddaje tę samą kopię');
+  const inne = await s.ruch('agent-a', { op: o, co: 'kopiuj', rzecz: E });
+  assert.equal(inne.status, 409, JSON.stringify(inne));
+  const kE = ok(await s.ruch('agent-a', { op: op('k'), co: 'kopiuj', rzecz: E }));
+  const e = s.rzecz(E);
+  ok(await s.ruch('agent-a', { op: op('ez'), co: 'poloz', rzecz: E, wersja: e.wersja, rodzaj: e.rodzaj, cechy: { ...e.cechy, wartosci: { 'odczucie.ruch.natezenie': 5 } } }));
+  const zlyOp = await s.ruch('agent-a', { op: o, co: 'domyslny', rzecz: kE.rzecz });
+  assert.equal(zlyOp.status, 409, 'op zużyty przez kopiuj to inna czynność: ' + JSON.stringify(zlyOp));
+  const od = op('dd');
+  assert.equal(ok(await s.ruch('agent-a', { op: od, co: 'domyslny', rzecz: kE.rzecz })).skutek, 'domyslny-ze-zrodla');
+  assert.equal(ok(await s.ruch('agent-a', { op: od, co: 'domyslny', rzecz: kE.rzecz })).powtorzone, true, 'kontrola: ponowienie tego samego powrotu');
+  // okno: gość jest wspólny dla wszystkich otwierających, więc ten sam op drugiego otwierającego to inna prośba
+  let t = Date.UTC(2026, 10, 20, 2, 0, 0);
+  const r2 = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+  const s2 = new Srodowisko(r2);
+  await s2.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a', 'agent-b'] }));
+  const gosc = s2.spis({ rodzaj: 'gosc/1', limit: 50 }).find((g) => g.cechy.umowa === 'okno/3').id;
+  const nowe2 = r2.meta('obszar_nowe');
+  const A = ok(await s2.ruch('agent-a', { op: op('a'), co: 'poloz', rodzaj: 'zestaw/1', obszar: nowe2, cechy: { nazwa: 'A', wartosci: {} } })).rzecz;
+  const B = ok(await s2.ruch('agent-b', { op: op('b'), co: 'poloz', rodzaj: 'zestaw/1', obszar: nowe2, cechy: { nazwa: 'B', wartosci: {} } })).rzecz;
+  const wspolny = op('okno');
+  const ka = ok(await s2.ruch('agent-a', { op: wspolny, co: 'kopiuj', rzecz: A }, { gosc }));
+  const kb = await s2.ruch('agent-b', { op: wspolny, co: 'kopiuj', rzecz: B }, { gosc });
+  assert.equal(kb.status, 409, JSON.stringify(kb));
+  assert.notEqual(kb.rzecz, ka.rzecz, 'nie dostaje cudzej kopii');
+  assert.equal(ok(await s2.ruch('agent-a', { op: wspolny, co: 'kopiuj', rzecz: A }, { gosc })).rzecz, ka.rzecz, 'kontrola: ten sam otwierający, ta sama prośba');
+});
+
+test('WA15. kopia wartości pokrętła nie psuje jego nazwy: dopisek "(kopia)" i własna nazwa trafiają tylko w tytuł, który jest nazwą (uwaga A4h)', async () => {
+  const { s, nowe, D, obszar } = await swiat();
+  const Z1 = await obszar('Szkic 1', 'uczestnicy', 'prowadzic');
+  const Z2 = await obszar('Szkic 2', 'uczestnicy', 'prowadzic');
+  const v = ok(await s.ruch('agent-a', { op: op('v'), co: 'poloz', rodzaj: 'wartosc/1', cechy: { pokretlo: 'odczucie.ruch.natezenie', zasieg: Z1, wartosc: 1 } })).rzecz;
+  const k = ok(await s.ruch('agent-a', { op: op('k'), co: 'kopiuj', rzecz: v, zmien: { zasieg: Z2 } }));
+  assert.equal(s.rzecz(k.rzecz).cechy.pokretlo, 'odczucie.ruch.natezenie', 'nazwa pokrętła bez dopisku');
+  assert.equal(s.rzecz(k.rzecz).obszar, Z2, 'kopia wartości leży w swoim zasięgu');
+  const zNazwa = await s.ruch('agent-a', { op: op('k'), co: 'kopiuj', rzecz: v, nazwa: 'moja', zmien: { zasieg: nowe } });
+  assert.equal(zNazwa.status, 422, JSON.stringify(zNazwa));
+  // kontrola: zestaw (tytułem jest nazwa) dalej dostaje dopisek
+  assert.equal(s.rzecz(ok(await s.ruch('agent-a', { op: op('k'), co: 'kopiuj', rzecz: D })).rzecz).cechy.nazwa, 'Domyślny (kopia)');
+});
+
+test('WA16. warianty, których niezależny atak nie uruchomił: pochodzenia nie podrzuci się kształtowi ani cudzemu oknu, a okna i poświadczenia się nie kopiuje', async () => {
+  const { s, r, D } = await swiat();
+  const gosc = s.spis({ rodzaj: 'gosc/1', limit: 50 })[0];
+  const okno = ok(await s.ruch('jozz', { op: op('ok'), co: 'poloz', rodzaj: 'okno/1', wersja: 'dowolna', cechy: { nazwa: 'Jego okno', czyje: 'jozz', gosc: gosc.id, otwarte: true } })).rzecz;
+  const ksztalt = s.ksztaltDla('zestaw/1').id;
+  const posw = ok(await s.ruch('jozz', { op: op('pw'), co: 'poloz', rodzaj: 'poswiadczenie/1', obszar: r.meta('obszar_drzwi'),
+    cechy: { nazwa: 'telefon', imie: 'jozz', poswiadczenie: 'AAAAAAAAAAAAAAAAAAAAAA', klucz_publiczny: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', nazwa_strony: 'proba.example' } })).rzecz;
+  // pochodzenie, które uzbroiłoby "wróć do domyślnego" na zastrzeżonych cechach kształtu albo na cudzym oknie
+  for (const kto of ['agent-a', 'jozz']) for (const kopia of [ksztalt, okno]) {
+    const w = await s.ruch(kto, { op: op('pod'), co: 'poloz', rodzaj: 'pochodzenie/1', cechy: { kopia, z: D, wersja: 1 } });
+    assert.equal(w.ok, false, `${kto} -> ${kopia}: ${JSON.stringify(w)}`);
+  }
+  assert.equal(ile(s, 'pochodzenie/1'), 0);
+  // okna i poświadczenia się nie kopiuje, niczyją ręką
+  const okien = ile(s, 'okno/1'), poswiadczen = ile(s, 'poswiadczenie/1');
+  for (const kto of ['agent-a', 'jozz']) for (const rzecz of [okno, posw]) {
+    const w = await s.ruch(kto, { op: op('k'), co: 'kopiuj', rzecz });
+    assert.equal(w.ok, false, `${kto} kopiuje ${rzecz}: ${JSON.stringify(w)}`);
+  }
+  assert.deepEqual([ile(s, 'okno/1'), ile(s, 'poswiadczenie/1')], [okien, poswiadczen], 'nic nie powstało');
 });
