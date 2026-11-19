@@ -10,8 +10,8 @@ import { sqlZNode } from './sql-node.mjs';
 import { Srodowisko } from './srodowisko.mjs';
 import { ziarna } from './ziarna.mjs';
 import { existsSync } from 'node:fs';
-import { policzUstawienia, stronaUstawien, wadaWartosci, wadyDeklaracji, KRZYWE, TYPY_POKRETEL } from './ustawienia.mjs';
-import { wadaDrabiny, KRZYWE_DRABINY, NAJWIECEJ_SZCZEBLI } from '../public/drabina.mjs';
+import { policzUstawienia, stronaUstawien, wadaWartosci, wadyDeklaracji, TYPY_POKRETEL } from './ustawienia.mjs';
+import { wadaDrabiny, NAJWIECEJ_SZCZEBLI } from '../public/drabina.mjs';
 
 const D = { typ: 'drabina' };
 const kopia = (x) => JSON.parse(JSON.stringify(x));
@@ -35,7 +35,6 @@ test('DR1. wartość domyślna ze specyfikacji przechodzi regułę i deklarację
   assert.equal(wadaWartosci(D, ZE_SPECYFIKACJI), null);
   assert.equal(wadaDrabiny(ZE_SPECYFIKACJI), null, 'zaplecze i moduł wspólny z twarzą mówią to samo');
   assert.deepEqual(wadyDeklaracji({ nazwa: 'wyglad.karta.drabina', typ: 'drabina', opis: 'Od jakiej miary karty pojawia się który element.', domyslna: ZE_SPECYFIKACJI }), []);
-  assert.deepEqual(KRZYWE_DRABINY, KRZYWE, 'krzywe drabiny to te same nazwy co w typie krzywa');
   assert.match(TYPY_POKRETEL.drabina, /szczeble/);
 });
 
@@ -79,8 +78,9 @@ test('DR2. odmowy ze spisu specyfikacji, każda z kontrolą: ta sama wartość b
     ['co za długie', wartosc(szczebel({ co: 'a'.repeat(41) })), /co to nazwa elementu/],
     ['co od cyfry', wartosc(szczebel({ co: '1opis' })), /co to nazwa elementu/],
     ['szczebel nie obiektem', { szczeble: ['opis'] }, /szczebel 1: ma być obiektem/],
-    ['zła nazwa krzywej', wartosc(szczebel({ krzywa: 'sprezysta' })), /krzywa: jedna z nazw/],
-    ['krzywa Béziera z x poza 0..1', wartosc(szczebel({ krzywa: [1.5, 0, 0.5, 1] })), /x1 i x2 od 0 do 1/],
+    // krzywa przenikania stoi w specyfikacji, ale twarz jej nie czyta: na razie odrzucana jak każde pole bez czytelnika
+    ['krzywa po nazwie', wartosc(szczebel({ krzywa: 'gladka' })), /"krzywa" nikt nie czyta/],
+    ['krzywa Béziera', wartosc(szczebel({ krzywa: [0.4, 0, 0.2, 1] })), /"krzywa" nikt nie czyta/],
     ['lista zamiast obiektu', [szczebel()], /drabina to \{szczeble/],
     ['null', null, /drabina to \{szczeble/],
   ];
@@ -96,8 +96,6 @@ test('DR2. odmowy ze spisu specyfikacji, każda z kontrolą: ta sama wartość b
     ['od = do (próg)', wartosc(szczebel({ od: 120, do: 120 }))],
     ['sama wysokość w mierze', wartosc(szczebel({ miara: { wys: 2 } }))],
     ['co z cyfrą i podkreśleniem', wartosc(szczebel({ co: 'podpis_rodziny2' }))],
-    ['krzywa po nazwie', wartosc(szczebel({ krzywa: 'gladka' }))],
-    ['krzywa Béziera', wartosc(szczebel({ krzywa: [0.4, 0, 0.2, 1] }))],
     ['rozmiar od = do', wartosc(ciagly({ rozmiar: { od: 9, do: 9 } }))],
     ['ucinaj z zerami', wartosc(ciagly({ ucinaj: { szer_od: 0, wys_od: 0, rozmiar: 1 } }))],
   ]) assert.equal(wadaWartosci(D, w), null, nazwa);

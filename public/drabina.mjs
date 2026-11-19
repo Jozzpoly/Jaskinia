@@ -16,14 +16,13 @@
 //   albo od, do       (px miary, 0 ≤ od ≤ do): szczebel przenika od niewidocznego do pełnego; od = do = 0 znaczy "zawsze";
 //   albo rozmiar      {od > 0, do ≥ od} (px pisma): szczebel ciągły, rozmiar startowy to miara przycięta do zakresu;
 //        ucinaj       {szer_od ≥ 0, wys_od ≥ 0, rozmiar > 0} (niewymagane, tylko przy rozmiar): wersja ucięta
-//                     wielokropkiem tylko na karcie szerszej niż szer_od i wyższej niż wys_od;
-//   krzywa  (niewymagana) kształt przenikania: nazwa krzywej albo cztery liczby Béziera, jak w typie `krzywa`.
+//                     wielokropkiem tylko na karcie szerszej niż szer_od i wyższej niż wys_od.
 // Nieznane pole (w wartości, w szczeblu, w mierze, w rozmiarze, w ucinaj) jest odrzucane: pole, którego nikt nie czyta,
-// wyglądałoby jak ustawienie, a nie robiłoby nic.
+// wyglądałoby jak ustawienie, a nie robiłoby nic. Dlatego na razie odrzucana jest też `krzywa` (kształt przenikania),
+// choć stoi w specyfikacji: czytelnik Startu przenika liniowo i jej nie czyta, a kształt przenikania to wykończenie
+// (druga linia Opusa czatu, 19 XI 19:56). Dopisanie jej później jest zgodne wstecz; usunięcie po zapisaniu nie byłoby.
 
 export const NAJWIECEJ_SZCZEBLI = 24;
-// Te same nazwy co KRZYWE w worker/ustawienia.mjs (pilnuje tego sprawdzian w worker/drabina.test.mjs).
-export const KRZYWE_DRABINY = ['liniowa', 'gladka', 'wejscie', 'wyjscie', 'wejscie-wyjscie'];
 const CO = /^[a-z][a-z0-9_]{0,39}$/;
 const liczba = (x) => typeof x === 'number' && Number.isFinite(x);
 const obiekt = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -31,11 +30,6 @@ const obce = (o, wolno) => Object.keys(o).find((k) => !wolno.includes(k));
 
 // Wartości domyślnej tu nie ma: mieszka przy czytelniku Startu (public/start/drabina.mjs, Opus czatu, PR 69), razem
 // z rachunkiem, który z niej korzysta, i stamtąd bierze ją pokrętło wyglad.karta.drabina. Jedna stała, jedno miejsce.
-
-function wadaKrzywej(k) {
-  if (typeof k === 'string') return KRZYWE_DRABINY.includes(k) ? null : `krzywa: jedna z nazw (${KRZYWE_DRABINY.join(', ')}) albo cztery liczby [x1, y1, x2, y2]`;
-  return Array.isArray(k) && k.length === 4 && k.every(liczba) && k[0] >= 0 && k[0] <= 1 && k[2] >= 0 && k[2] <= 1 ? null : 'krzywa Béziera to cztery liczby [x1, y1, x2, y2], x1 i x2 od 0 do 1';
-}
 
 // Co jest nie tak z wartością drabiny; null, gdy nic. Jedno zdanie, które mówi, który szczebel i co poprawić.
 export function wadaDrabiny(w) {
@@ -51,8 +45,8 @@ export function wadaDrabiny(w) {
     const tu = `szczebel ${i + 1} (${s.co})`;
     if (byly.has(s.co)) return `${tu}: ten element ma już szczebel wyżej; jeden element, jeden szczebel`;
     byly.add(s.co);
-    const pole = obce(s, ['co', 'miara', 'od', 'do', 'rozmiar', 'ucinaj', 'krzywa']);
-    if (pole !== undefined) return `${tu}: pola ${JSON.stringify(pole)} nikt nie czyta; szczebel ma co, miara, od i do albo rozmiar, ucinaj i krzywa`;
+    const pole = obce(s, ['co', 'miara', 'od', 'do', 'rozmiar', 'ucinaj']);
+    if (pole !== undefined) return `${tu}: pola ${JSON.stringify(pole)} nikt nie czyta; szczebel ma co, miara, od i do albo rozmiar, i ucinaj`;
     if (!obiekt(s.miara)) return `${tu}: miara to {szer, wys}, przynajmniej jedno pole`;
     const wMierze = obce(s.miara, ['szer', 'wys']);
     if (wMierze !== undefined) return `${tu}: miara ma tylko szer i wys; pola ${JSON.stringify(wMierze)} nikt nie czyta`;
@@ -75,7 +69,6 @@ export function wadaDrabiny(w) {
           return `${tu}: ucinaj to {szer_od >= 0, wys_od >= 0, rozmiar > 0} w px; wszystkie trzy pola`;
       }
     }
-    if ('krzywa' in s) { const k = wadaKrzywej(s.krzywa); if (k) return `${tu}: ${k}`; }
   }
   return null;
 }
