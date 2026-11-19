@@ -2,8 +2,8 @@
 // Czyste funkcje, bez DOM. Wartość domyślna to rachunek Startu z pnia 057c9a5 (start.mjs: podpis rodziny w. 242,
 // imię w. 301–310, wiersz życia w. 343, opis w. 375, gałęzie w. 391), więc Start z nią rysuje to samo co przedtem.
 // Opis wartości, sprawdzania i podziału pracy: wspólna pamięć agentów, wplywy/2026-11-19-opus-czat-orientacja-i-klocek-drabina.md.
-// Gdy zaplecze dostanie typ `drabina`, ta wartość stanie się domyślną pokrętła `wyglad.karta.drabina`
-// (public/pokretla.mjs), a Start weźmie drabinę z ustawień. Do tego czasu jedynym źródłem jest ta stała.
+// Ta wartość jest domyślną pokrętła `wyglad.karta.drabina` (public/pokretla.mjs; typ i reguła: public/drabina.mjs,
+// worker/ustawienia.mjs). Start bierze drabinę z ustawień, a gdy Miejsce nic nie mówi albo jest tryb bezpieczny, z tej stałej.
 // Napisał Opus czatu, 19 XI 2026.
 
 const zamroz = (o) => Object.freeze(o);
@@ -22,9 +22,14 @@ export const DRABINA_DOMYSLNA = zamroz({
 
 // Szczebel o danym `co`: z podanej drabiny, a gdy go w niej nie ma (albo drabiny nie ma), z wartości domyślnej.
 // Szczebel o `co`, którego twarz nie zna, po prostu nigdy nie jest pytany.
+// Reguła (public/drabina.mjs) dopuszcza dla każdego `co` oba rodzaje szczebla, bo nie zna elementów twarzy. Ta twarz
+// czyta imię jako szczebel ciągły (rozmiar), a resztę jako przenikanie; szczebel innego rodzaju niż domyślny dla tego
+// `co` traktuje jak brak i bierze domyślny. Bez tego wartość {co: "imie", od, do} wywróciłaby rysowanie.
+const rodzaj = (s) => (s && 'rozmiar' in s ? 'rozmiar' : 'przenikanie');
 export function szczebel(drabina, co) {
+  const domyslny = DRABINA_DOMYSLNA.szczeble.find((s) => s.co === co) || null;
   const z = drabina && Array.isArray(drabina.szczeble) ? drabina.szczeble.find((s) => s && s.co === co) : null;
-  return z || DRABINA_DOMYSLNA.szczeble.find((s) => s.co === co) || null;
+  return z && (!domyslny || rodzaj(z) === rodzaj(domyslny)) ? z : domyslny;
 }
 
 // Miara elementu dla szczebla: mniejsza z (szerokość × szer, wysokość × wys); wymiar bez pola nie ogranicza.
