@@ -40,7 +40,7 @@ test('ZN1. jego zmiana wygrywa, a nowa wersja z kodu kładzie się obok jako jed
   assert.equal(po.cechy.cechy.wazne, undefined, 'nic nie przyszło po cichu');
   const cz = czekajace(k.id);
   assert.equal(cz.length, 1, 'jedna propozycja');
-  assert.equal(cz[0].cechy.wymaga, 'wlasciciel');
+  assert.equal(cz[0].cechy.wymaga, undefined, 'nowa cecha w kształcie projektu nie zmienia praw ani uczestników: o przyjęciu mówi prawo obszaru, nie znak "tylko właściciel"');
   assert.equal(cz[0].cechy.wersja, po.wersja);
   assert.ok(cz[0].cechy.tresc.cechy.cechy.wazne, 'propozycja niesie nową wersję z kodu');
   assert.equal(cz[0].obszar ?? null, po.obszar ?? null, 'propozycja leży tam, gdzie rzecz');
@@ -108,4 +108,22 @@ test('ZN4. agent nie przyjmuje propozycji zasiewu ruchem "domyslny"; odłożona 
   assert.equal(odl.ok, true, JSON.stringify(odl));
   await s2.zasiej(z2('wazne', 'cecha z nowego kodu'));
   assert.equal(cz2(kk.id).length, 0);
+});
+
+test('ZN7. znak "przyjmuje tylko właściciel" stoi przy propozycji domyślnego, gdy nowa wersja z kodu zmienia prawo obszaru', async () => {
+  let t = Date.UTC(2026, 10, 19, 2, 0, 0);
+  const r = new Rdzen(sqlZNode(), { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+  const s = new Srodowisko(r);
+  const Z = (zmien) => ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }).map((z) => (z.nazwa === 'obszar-nowe' ? { ...z, cechy: { ...z.cechy, ...zmien } } : z));
+  await s.zasiej(Z({}));
+  const id = r.meta('obszar_nowe');
+  const o = () => s.rzecz(id);
+  await s.ruch('jozz', { op: op(), co: 'poloz', rzecz: id, wersja: o().wersja, rodzaj: 'obszar/1', cechy: { ...o().cechy, opis: 'Opis od właściciela.' } });
+  const cz = () => s.spis({ rodzaj: 'propozycja/1', gdzie: { od: AUTOMAT, rzecz: id, stan: 'czeka' }, odlozone: 'razem', limit: 10 });
+  await s.zasiej(Z({ opis: 'Nowy opis z kodu.' }));
+  assert.equal(cz().length, 1);
+  assert.equal(cz()[0].cechy.wymaga, undefined, 'nowy opis obszaru nie zmienia jego ustawień');
+  await s.zasiej(Z({ opis: 'Nowy opis z kodu.', ile_wolno: 'proponowac' }));
+  assert.equal(cz().length, 1, 'ta sama propozycja, nowsza treść');
+  assert.equal(cz()[0].cechy.wymaga, 'wlasciciel', 'zmiana ile_wolno należy do właściciela');
 });

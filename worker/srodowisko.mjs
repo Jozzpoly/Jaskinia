@@ -1370,11 +1370,15 @@ export class Srodowisko {
 
   // Propozycja zasiewu "domyślny zmienił się po zmianie ręką": jedna czekająca na rzecz. Nowsza treść z kodu albo nowsza
   // wersja rzeczy odświeża tę samą propozycję, zamiast kłaść drugą. Leży tam, gdzie rzecz (jak każda propozycja), a
-  // przyjąć ją może tylko właściciel.
+  // przyjmuje ją ten, kto ten sam ruch mógłby zrobić sam ze skutkiem: właściciel, a w obszarze, w którym agenci prowadzą,
+  // także agent. Znak "przyjmuje tylko właściciel" (wymaga) stoi tylko przy zmianie zastrzeżonej dla niego, jak przy każdej
+  // innej propozycji. Do 19 XI stał tu zawsze, więc "co czeka" mówiło "zmienia prawa albo uczestników" o każdej nowej
+  // wersji opisu, a niczego to nie pilnowało: prawo i tak liczy się przy przyjęciu.
   async _polozDomyslny(rz, rodzaj, tresc, { nazwa = null, op }) {
     const stara = this._propozycjaDomyslnego(rz.id);
     if (stara && stara.cechy.wersja === rz.wersja && JSON.stringify(stara.cechy.tresc) === JSON.stringify(tresc)) return stara;
-    const cp = { od: AUTOMAT, co: 'poloz', rodzaj, tresc, rzecz: rz.id, wersja: rz.wersja, stan: 'czeka', wymaga: 'wlasciciel',
+    const nowe = tresc && tresc.cechy && typeof tresc.cechy === 'object' && !Array.isArray(tresc.cechy) ? tresc.cechy : {};
+    const cp = { od: AUTOMAT, co: 'poloz', rodzaj, tresc, rzecz: rz.id, wersja: rz.wersja, stan: 'czeka', ...(this._zastrzezone(rodzaj, nowe, rz) ? { wymaga: 'wlasciciel' } : {}),
       powod: `Domyślna wersja tej rzeczy${nazwa ? ` (ziarno ${nazwa})` : ''} zmieniła się w kodzie po zmianie ręką. Przyjmij (albo zrób ruch "domyslny"), żeby wrócić do domyślnego w nowej wersji; odrzuć, żeby zostać przy swojej. Twoja wersja zostaje w historii w obu przypadkach.` };
     const k = this.ksztaltDla('propozycja/1');
     const s = sprawdzCechy(k, cp, this._maRzecz, this._maZapis);
