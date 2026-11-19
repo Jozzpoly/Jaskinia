@@ -29,18 +29,8 @@ const liczba = (x) => typeof x === 'number' && Number.isFinite(x);
 const obiekt = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
 const obce = (o, wolno) => Object.keys(o).find((k) => !wolno.includes(k));
 
-// Wartość domyślna = dzisiejszy kod Startu (pień 057c9a5, public/start/start.mjs w. 242, 301, 310, 343, 375, 391), więc
-// po przejściu Startu na drabinę rysuje on dokładnie to samo. Ułamki w pełnej precyzji JavaScriptu (1/9, 1/3,4, 1/1,5,
-// 1/1,4): przy czterech cyfrach rozmiar imienia różniłby się o ok. 0,01 px na 1000 px szerokości (pomiar Opusa czatu).
-export const DRABINA_DOMYSLNA = Object.freeze({
-  szczeble: Object.freeze([
-    Object.freeze({ co: 'imie', miara: Object.freeze({ szer: 0.1111111111111111, wys: 0.29411764705882354 }), rozmiar: Object.freeze({ od: 9, do: 34 }), ucinaj: Object.freeze({ szer_od: 64, wys_od: 20, rozmiar: 9.5 }) }),
-    Object.freeze({ co: 'podpis_rodziny', miara: Object.freeze({ szer: 1 }), od: 60, do: 160 }),
-    Object.freeze({ co: 'zycie', miara: Object.freeze({ szer: 0.6666666666666666, wys: 1 }), od: 62, do: 96 }),
-    Object.freeze({ co: 'opis', miara: Object.freeze({ szer: 0.7142857142857143, wys: 1 }), od: 100, do: 150 }),
-    Object.freeze({ co: 'galezie', miara: Object.freeze({ szer: 1, wys: 1.3 }), od: 300, do: 460 }),
-  ]),
-});
+// Wartości domyślnej tu nie ma: mieszka przy czytelniku Startu (public/start/drabina.mjs, Opus czatu, PR 69), razem
+// z rachunkiem, który z niej korzysta, i stamtąd bierze ją pokrętło wyglad.karta.drabina. Jedna stała, jedno miejsce.
 
 function wadaKrzywej(k) {
   if (typeof k === 'string') return KRZYWE_DRABINY.includes(k) ? null : `krzywa: jedna z nazw (${KRZYWE_DRABINY.join(', ')}) albo cztery liczby [x1, y1, x2, y2]`;

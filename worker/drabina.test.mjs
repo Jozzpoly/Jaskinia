@@ -9,25 +9,45 @@ import { Rdzen } from './miejsce.mjs';
 import { sqlZNode } from './sql-node.mjs';
 import { Srodowisko } from './srodowisko.mjs';
 import { ziarna } from './ziarna.mjs';
+import { existsSync } from 'node:fs';
 import { policzUstawienia, stronaUstawien, wadaWartosci, wadyDeklaracji, KRZYWE, TYPY_POKRETEL } from './ustawienia.mjs';
-import { wadaDrabiny, DRABINA_DOMYSLNA, KRZYWE_DRABINY, NAJWIECEJ_SZCZEBLI } from '../public/drabina.mjs';
+import { wadaDrabiny, KRZYWE_DRABINY, NAJWIECEJ_SZCZEBLI } from '../public/drabina.mjs';
 
 const D = { typ: 'drabina' };
 const kopia = (x) => JSON.parse(JSON.stringify(x));
 const szczebel = (o = {}) => ({ co: 'opis', miara: { szer: 1 }, od: 0, do: 0, ...o });
 const wartosc = (...s) => ({ szczeble: s.length ? s : [szczebel()] });
 const ciagly = (o = {}) => ({ co: 'imie', miara: { szer: 1 }, rozmiar: { od: 9, do: 34 }, ...o });
+// Dane sprawdzianu, nie źródło prawdy: wartość domyślna przepisana ze specyfikacji (§ 2). Stała, z której korzysta
+// twarz, mieszka przy czytelniku Startu (public/start/drabina.mjs); DR6 porównuje ją z tą, gdy jest w drzewie.
+const ZE_SPECYFIKACJI = {
+  szczeble: [
+    { co: 'imie', miara: { szer: 0.1111111111111111, wys: 0.29411764705882354 }, rozmiar: { od: 9, do: 34 }, ucinaj: { szer_od: 64, wys_od: 20, rozmiar: 9.5 } },
+    { co: 'podpis_rodziny', miara: { szer: 1 }, od: 60, do: 160 },
+    { co: 'zycie', miara: { szer: 0.6666666666666666, wys: 1 }, od: 62, do: 96 },
+    { co: 'opis', miara: { szer: 0.7142857142857143, wys: 1 }, od: 100, do: 150 },
+    { co: 'galezie', miara: { szer: 1, wys: 1.3 }, od: 300, do: 460 },
+  ],
+};
+const CZYTELNIK_STARTU = new URL('../public/start/drabina.mjs', import.meta.url);
 
-test('DR1. wartość domyślna to dzisiejszy kod Startu w pełnej precyzji i przechodzi deklarację', () => {
-  assert.equal(wadaWartosci(D, DRABINA_DOMYSLNA), null);
-  assert.equal(wadaDrabiny(DRABINA_DOMYSLNA), null, 'zaplecze i moduł wspólny z twarzą mówią to samo');
-  assert.deepEqual(wadyDeklaracji({ nazwa: 'wyglad.karta.drabina', typ: 'drabina', opis: 'Od jakiej miary karty pojawia się który element.', domyslna: DRABINA_DOMYSLNA }), []);
-  const m = Object.fromEntries(DRABINA_DOMYSLNA.szczeble.map((s) => [s.co, s.miara]));
-  assert.ok(Object.is(m.imie.szer, 1 / 9) && Object.is(m.imie.wys, 1 / 3.4) && Object.is(m.zycie.szer, 1 / 1.5) && Object.is(m.opis.szer, 1 / 1.4), 'ułamki co do bitu: 1/9, 1/3,4, 1/1,5, 1/1,4');
-  assert.deepEqual(DRABINA_DOMYSLNA.szczeble.map((s) => s.co), ['imie', 'podpis_rodziny', 'zycie', 'opis', 'galezie']);
+test('DR1. wartość domyślna ze specyfikacji przechodzi regułę i deklarację pokrętła', () => {
+  assert.equal(wadaWartosci(D, ZE_SPECYFIKACJI), null);
+  assert.equal(wadaDrabiny(ZE_SPECYFIKACJI), null, 'zaplecze i moduł wspólny z twarzą mówią to samo');
+  assert.deepEqual(wadyDeklaracji({ nazwa: 'wyglad.karta.drabina', typ: 'drabina', opis: 'Od jakiej miary karty pojawia się który element.', domyslna: ZE_SPECYFIKACJI }), []);
   assert.deepEqual(KRZYWE_DRABINY, KRZYWE, 'krzywe drabiny to te same nazwy co w typie krzywa');
-  assert.ok(Object.isFrozen(DRABINA_DOMYSLNA.szczeble[0].miara), 'wspólnej stałej nie da się zmienić przez przypadek');
   assert.match(TYPY_POKRETEL.drabina, /szczeble/);
+});
+
+// Gdy czytelnik Startu jest w drzewie (PR 69), jego stała ma przechodzić tę samą regułę: inaczej zaplecze odrzuciłoby
+// deklarację pokrętła wyglad.karta.drabina z tablicy pokręteł przy zasiewie. Do tamtej chwili sprawdzian stoi jako
+// pominięty, widocznie, a nie jako zielony.
+test('DR6. stała czytelnika Startu przechodzi regułę i jest wartością ze specyfikacji', { skip: !existsSync(CZYTELNIK_STARTU) && 'public/start/drabina.mjs jeszcze nie w drzewie (PR 69)' }, async () => {
+  const { DRABINA_DOMYSLNA } = await import(CZYTELNIK_STARTU.href);
+  assert.equal(wadaDrabiny(DRABINA_DOMYSLNA), null);
+  assert.deepEqual(kopia(DRABINA_DOMYSLNA), ZE_SPECYFIKACJI);
+  const m = Object.fromEntries(DRABINA_DOMYSLNA.szczeble.map((s) => [s.co, s.miara]));
+  assert.ok(Object.is(m.imie.szer, 1 / 9) && Object.is(m.imie.wys, 1 / 3.4) && Object.is(m.zycie.szer, 1 / 1.5) && Object.is(m.opis.szer, 1 / 1.4), 'ułamki co do bitu');
 });
 
 test('DR2. odmowy ze spisu specyfikacji, każda z kontrolą: ta sama wartość bez tej jednej wady przechodzi', () => {
@@ -84,7 +104,7 @@ test('DR2. odmowy ze spisu specyfikacji, każda z kontrolą: ta sama wartość b
 });
 
 test('DR3. nieznane co przechodzi: nowa twarz i nowy element nie psują starych wartości', () => {
-  const w = kopia(DRABINA_DOMYSLNA);
+  const w = kopia(ZE_SPECYFIKACJI);
   w.szczeble.push(szczebel({ co: 'przyszly_element', od: 10, do: 20 }));
   assert.equal(wadaWartosci(D, w), null);
 });
@@ -95,12 +115,12 @@ test('DR4. przez środowisko: pokrętło typu drabina, wartość w zasięgu, odm
   const s = new Srodowisko(r);
   await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }));
   const ok = (w) => { assert.equal(w.ok, true, JSON.stringify(w)); return w; };
-  ok(await s.ruch('jozz', { op: 'dr4-karta', co: 'poloz', rodzaj: 'pokretlo/1', cechy: { nazwa: 'proba.karta.drabina', typ: 'drabina', domyslna: DRABINA_DOMYSLNA, opis: 'Od jakiej miary karty pojawia się który element.' } }));
+  ok(await s.ruch('jozz', { op: 'dr4-karta', co: 'poloz', rodzaj: 'pokretlo/1', cechy: { nazwa: 'proba.karta.drabina', typ: 'drabina', domyslna: ZE_SPECYFIKACJI, opis: 'Od jakiej miary karty pojawia się który element.' } }));
   ok(await s.ruch('jozz', { op: 'dr4-telefon', co: 'poloz', rodzaj: 'pokretlo/1', cechy: { nazwa: 'proba.telefon.drabina', typ: 'drabina', domyslna: { z: 'proba.karta.drabina' }, opis: 'Drabina na telefonie idzie za drabiną karty.' } }));
   const licz = () => policzUstawienia(s.dla('agent-a')).wartosci;
-  assert.deepEqual(licz()['proba.karta.drabina'].wartosc, kopia(DRABINA_DOMYSLNA));
+  assert.deepEqual(licz()['proba.karta.drabina'].wartosc, kopia(ZE_SPECYFIKACJI));
   // opis zawsze w pełni: od = do = 0 (falsyfikator 2 specyfikacji, tu tylko jako wartość, bez twarzy)
-  const zawsze = kopia(DRABINA_DOMYSLNA);
+  const zawsze = kopia(ZE_SPECYFIKACJI);
   Object.assign(zawsze.szczeble.find((x) => x.co === 'opis'), { od: 0, do: 0 });
   const w = ok(await s.ruch('jozz', { op: 'dr4-zawsze', co: 'poloz', rodzaj: 'wartosc/1', cechy: { pokretlo: 'proba.karta.drabina', wartosc: zawsze } }));
   assert.deepEqual(licz()['proba.karta.drabina'].wartosc, zawsze);
