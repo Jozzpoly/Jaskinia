@@ -517,8 +517,11 @@ export class Srodowisko {
     const imie = PRZEDROSTEK_GOSCIA + gosc;
     const a = new Set(this._niewidoczneDla(kto ?? null) || []), b = new Set(this._niewidoczneDla(imie) || []);
     const zawiera = (x, y) => [...y].every((e) => x.has(e));
-    if (zawiera(a, b)) return kto ?? null; // otwierający nie widzi więcej niż narzędzie
-    if (zawiera(b, a)) return imie;        // narzędzie nie widzi więcej niż otwierający
+    // Przy remisie (obie pary oczu widzą to samo) okno czyta jako narzędzie, nie jako otwierający: dziś to ta sama
+    // widoczność, a gdy widoczność zacznie zależeć od osoby, okno ma widzieć mniej, a nie więcej (uwaga drugiej
+    // linii, 19 XI 2026). Otwierający wygrywa tylko wtedy, gdy sam widzi mniej (zwiedzający).
+    if (zawiera(b, a)) return imie;        // narzędzie nie widzi więcej niż otwierający, także przy remisie
+    if (zawiera(a, b)) return kto ?? null; // otwierający widzi mniej niż narzędzie
     return null;
   }
 
@@ -1092,7 +1095,7 @@ export class Srodowisko {
       if (!g || nazwaRodzaju(g.rodzaj) !== 'gosc') return blad(404, `nie ma gościa ${gosc}`);
       if (g.odlozone) return blad(409, 'ten gość jest odłożony; odłożone narzędzie nie pisze');
       if (g.cechy.umowa !== 'okno/3') return blad(409, 'ten gość mówi umową okna, która nie zna ruchów; żeby pisał, zgłoś go z "umowa":"okno/3"');
-      if (co === 'przyjmij' || co === 'odrzuc') return blad(403, 'propozycji nie rozstrzyga się z okna: przyjmuje i odrzuca uczestnik, własną ręką');
+      if (co === 'przyjmij' || co === 'odrzuc' || co === 'domyslny') return blad(403, 'propozycji nie rozstrzyga się z okna i z okna nie wraca się do domyślnego: robi to uczestnik, własną ręką');
       aktor = PRZEDROSTEK_GOSCIA + gosc;
       // ślad ciała zostaje tylko wtedy, gdy mieści się w tym, co jądro przyjmuje (drukowalne znaki ASCII); to, w czyim
       // oknie pisał gość, zostaje przy akcie zawsze
@@ -1104,7 +1107,8 @@ export class Srodowisko {
     if (co === 'przyjmij' || co === 'odrzuc') return this._wKolejce(() => this._rozstrzygnij(aktor, cialo, ctx));
     if (co === 'cofnij-gest') return this._wKolejce(() => this._cofnijGest(aktor, cialo, ctx));
     if (co === 'przywroc-uklad') return this._wKolejce(() => this._przywrocUklad(aktor, cialo, ctx));
-    return blad(400, 'co: poloz (dołóż albo zmień rzecz), odloz, przywroc, cofnij (rzecz do wcześniejszej wersji), przyjmij albo odrzuc (rozstrzygnij propozycję), cofnij-gest (cały gest jednym krokiem), przywroc-uklad (powrót do zapisanego układu)');
+    if (co === 'domyslny') return this._wKolejce(() => this._doDomyslnego(aktor, cialo, ctx));
+    return blad(400, 'co: poloz (dołóż albo zmień rzecz), odloz, przywroc, cofnij (rzecz do wcześniejszej wersji), przyjmij albo odrzuc (rozstrzygnij propozycję), cofnij-gest (cały gest jednym krokiem), przywroc-uklad (powrót do zapisanego układu), domyslny (rzecz wraca do wersji domyślnej: najnowszej z kodu, gdy czeka propozycja zasiewu, albo do ostatniej wersji automatu)');
   }
 
   _maRzecz = (id) => this.rzecz(id);
@@ -1338,6 +1342,56 @@ export class Srodowisko {
     if (c.co === 'przywroc' && t.odlozone === true) return konflikt;
     if (!Object.hasOwn(SKUTKI, c.co)) return konflikt;
     return { ...wspolne, skutek: SKUTKI[c.co], rzecz: id, adres: '/rzecz/' + id };
+  }
+
+  // Powrót do domyślnego jednym ruchem (18 XI 2026; jego słowa w rejestrze poz. 193 i 199: kopia, która po zmianie
+  // ręką zamarza i milczy, nie spełnia jego potrzeb). Domyślne jest to, co ostatnio położył automat: czekająca propozycja
+  // zasiewu z nowszą wersją z kodu albo, gdy jej nie ma, ostatnia wersja automatu w historii tej rzeczy. Ruch nie ma
+  // własnego skutku: przyjmuje tamtą propozycję albo cofa rzecz do tamtej wersji, więc prawa, ślad i cofnięcie są te
+  // same co przy przyjęciu i cofnięciu, a jego własna wersja zostaje w historii.
+  async _doDomyslnego(kto, c, slad) {
+    if (typeof c.rzecz !== 'string' || !ID.test(c.rzecz)) return blad(400, 'rzecz: identyfikator rzeczy (26 znaków)');
+    const bez = this._bezPrawa(kto, przezZ(slad));
+    if (bez) return bez;
+    const stara = this._oczy(kto, przezZ(slad))(c.rzecz);
+    if (!stara) return blad(404, `nie ma rzeczy ${c.rzecz}`);
+    let czeka = this._propozycjaDomyslnego(stara.id);
+    // Propozycja złożona przed jego późniejszą zmianą nie przeszłaby przyjęcia (rzecz zmieniła się od propozycji):
+    // automat odświeża ją do dzisiejszej wersji rzeczy, a treść domyślna zostaje ta sama.
+    if (czeka && czeka.cechy.wersja !== stara.wersja) czeka = await this._polozDomyslny(stara, czeka.cechy.rodzaj, czeka.cechy.tresc, { op: `domyslny-odswiez-${czeka.id}-${stara.wersja}` });
+    if (czeka) return this._rozstrzygnij(kto, { op: c.op, co: 'przyjmij', propozycja: czeka.id }, slad);
+    const ost = this.historia(stara.id).filter((h) => h.kto === AUTOMAT).pop();
+    if (!ost) return blad(409, 'ta rzecz nie ma wersji domyślnej: nigdy nie położył jej automat');
+    // Już domyślna to ta sama treść, nie ten sam numer: po cofnięciu bieżąca wersja ma autora ręki, a treść automatu.
+    const dom = this.wersja(stara.id, ost.akt);
+    const ta = (x) => JSON.stringify([x.rodzaj, x.obszar ?? null, x.cechy]);
+    if (ost.akt === stara.wersja || (dom && !stara.odlozone && ta(dom) === ta(stara))) return blad(409, 'ta rzecz jest już w wersji domyślnej');
+    return this._przestaw(kto, { op: c.op, co: 'cofnij', rzecz: stara.id, wersja: 'wersja' in c ? c.wersja : 'dowolna', do: ost.akt, ...(typeof c.powod === 'string' ? { powod: c.powod } : {}) }, slad);
+  }
+
+  _propozycjaDomyslnego(id) {
+    return this.spis({ rodzaj: 'propozycja/1', gdzie: { od: AUTOMAT, rzecz: id, stan: 'czeka' }, odlozone: 'razem', limit: 1 })[0] || null;
+  }
+
+  // Propozycja zasiewu "domyślny zmienił się po zmianie ręką": jedna czekająca na rzecz. Nowsza treść z kodu albo nowsza
+  // wersja rzeczy odświeża tę samą propozycję, zamiast kłaść drugą. Leży tam, gdzie rzecz (jak każda propozycja), a
+  // przyjąć ją może tylko właściciel.
+  async _polozDomyslny(rz, rodzaj, tresc, { nazwa = null, op }) {
+    const stara = this._propozycjaDomyslnego(rz.id);
+    if (stara && stara.cechy.wersja === rz.wersja && JSON.stringify(stara.cechy.tresc) === JSON.stringify(tresc)) return stara;
+    const cp = { od: AUTOMAT, co: 'poloz', rodzaj, tresc, rzecz: rz.id, wersja: rz.wersja, stan: 'czeka', wymaga: 'wlasciciel',
+      powod: `Domyślna wersja tej rzeczy${nazwa ? ` (ziarno ${nazwa})` : ''} zmieniła się w kodzie po zmianie ręką. Przyjmij (albo zrób ruch "domyslny"), żeby wrócić do domyślnego w nowej wersji; odrzuć, żeby zostać przy swojej. Twoja wersja zostaje w historii w obu przypadkach.` };
+    const k = this.ksztaltDla('propozycja/1');
+    const s = sprawdzCechy(k, cp, this._maRzecz, this._maZapis);
+    if (s.bledy.length) throw new Error('propozycja domyślnego: ' + s.bledy.join('; '));
+    const id = stara ? stara.id : await idZ('domyslny', rz.id, op);
+    const obszar = rz.obszar ?? null;
+    const p = await this.r.przygotujPolozenie({ op, rodzaj: 'propozycja/1', tresc: trescRzeczy({ obszar, cechy: cp }), glowa: 'rzecz:' + id, wersja: stara ? stara.wersja : null });
+    if (!p.ok) throw new Error('propozycja domyślnego: ' + p.blad);
+    const w = this.r.zatwierdzPolozenia(AUTOMAT, [p], { slad: 'zasiew' });
+    if (!w.ok) throw new Error('propozycja domyślnego: ' + w.blad);
+    if (!w.powtorzone) this._projekcja(id, 'propozycja/1', obszar, p.id, w.wyniki[0].wersja, AUTOMAT, cp, k, false, w.wyniki[0].kiedy);
+    return this.rzecz(id);
   }
 
   // Odłożenie, przywrócenie i cofnięcie do wcześniejszej wersji: każde jest nową wersją tej samej rzeczy.
@@ -1866,8 +1920,10 @@ export class Srodowisko {
 
   // --- zasiew: to, bez czego środowisko nie umie opisać samego siebie ---------------------------------------------
   // Ziarno ma nazwę i stałą tożsamość liczoną z tej nazwy. Raz zasiane zostaje rzeczą jak każda inna: gdy zmieni je
-  // uczestnik, jego zmiana wygrywa i zasiew jej nie rusza. Dopóki nikt poza automatem go nie ruszył, zasiew odświeża
+  // uczestnik, jego zmiana wygrywa i zasiew jej nie nadpisuje. Dopóki nikt poza automatem go nie ruszył, zasiew odświeża
   // je, gdy zmieni się w kodzie: inaczej stan budowy pod adresem rozjeżdżałby się z kodem (17 XI, uwaga po PR 33).
+  // Od 18 XI zasiew przy tym nie milknie: nowa wersja z kodu dla rzeczy zmienionej ręką kładzie się obok jako jedna
+  // widoczna propozycja, a ruch "domyslny" wraca do domyślnego jednym gestem (zasiew-nie-milknie.test.mjs).
   zasiej(ziarna) { return this._wKolejce(() => this._zasiej(ziarna)); }
 
   // Ziarno zasiane dawniej (losowy identyfikator, bez znacznika w mecie, np. po wwozie starego wywozu): rozpoznajemy
@@ -1933,13 +1989,27 @@ export class Srodowisko {
         if (!rz) continue;
         const taSama = rz.rodzaj === z.rodzaj && (rz.obszar ?? null) === (obszar ?? null) && JSON.stringify(rz.cechy) === JSON.stringify(cechy);
         if (taSama) { this.r.ustawMeta('ziarno-odcisk:' + z.nazwa, odcisk); continue; }
-        // Zasiew ustępuje ręce: rzecz, którą sam założył, a potem ktoś zmienił albo odłożył, zostaje po zmianie. Nie
+        // Zasiew ustępuje ręce (bez nadpisania; od 18 XI z propozycją, niżej): rzecz, którą sam założył, a potem ktoś
+        // zmienił albo odłożył, zostaje po zmianie. Nie
         // ustępuje rzeczy, którą pod kluczem ziarna założył ktoś inny niż właściciel i której właściciel nigdy nie
         // ruszył: agent zajmował tak z góry nazwę pokrętła, które kod dopiero zasieje, i podstawiał własną deklarację
         // (niezależny atak, 17 XI 2026). Taka rzecz wraca do treści i miejsca z ziarna; obca wersja zostaje w historii.
         const zajeta = rz.utworzyl !== AUTOMAT && rz.utworzyl !== this.wlasciciel && rz.zmienil !== this.wlasciciel
           && !this.historia(id).some((h) => h.kto === this.wlasciciel);
-        if (!zajeta && (rz.zmienil !== AUTOMAT || rz.odlozone)) continue; // ktoś zmienił ją ręką: jego zmiana wygrywa
+        if (!zajeta && rz.odlozone) continue; // odłożona zostaje odłożona; domyślny o sobie nie przypomina
+        // Zasiew nie milknie (18 XI 2026). Do tego dnia zmiana ręką zamrażała rzecz: kod przestawał ją odświeżać, a nowa
+        // wersja domyślnego do niego nie dochodziła i nikt mu tego nie mówił (jego werdykt: rejestr poz. 199; prawo 2
+        // planu: nic nie odchodzi po cichu). Teraz jego wersja dalej wygrywa, ale nowa wersja z kodu kładzie się obok
+        // jako widoczna propozycja. Rzecz, która wróciła do poprzedniej wersji domyślnej (przyjęta propozycja, ruch
+        // "domyslny"), idzie za kodem dalej sama, tak jak rzecz, której ręka nie ruszała.
+        const poprzedni = this.r.meta('ziarno-odcisk:' + z.nazwa);
+        const zaDomyslnym = rz.zmienil === AUTOMAT || (poprzedni != null && szybkiOdcisk(JSON.stringify([rz.rodzaj, rz.obszar ?? null, rz.cechy])) === poprzedni);
+        if (!zajeta && !zaDomyslnym) {
+          await this._polozDomyslny(rz, z.rodzaj, { obszar: obszar ?? null, cechy }, { nazwa: z.nazwa, op: `domyslny-${z.nazwa}-${odcisk}` });
+          this.r.ustawMeta('ziarno-odcisk:' + z.nazwa, odcisk);
+          zrobione.push(z.nazwa + ' (propozycja: domyślny zmienił się po zmianie ręką)');
+          continue;
+        }
         await zapisz(z, id, cechy, obszar, zajeta ? `zasiew-${z.nazwa}-${odcisk}-po-${rz.wersja}` : `zasiew-${z.nazwa}-${odcisk}`, rz.wersja);
         this.r.ustawMeta('ziarno-odcisk:' + z.nazwa, odcisk);
         zrobione.push(z.nazwa + ' (odświeżone)');
