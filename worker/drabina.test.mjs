@@ -11,7 +11,7 @@ import { Srodowisko } from './srodowisko.mjs';
 import { ziarna } from './ziarna.mjs';
 import { existsSync } from 'node:fs';
 import { policzUstawienia, stronaUstawien, wadaWartosci, wadyDeklaracji, TYPY_POKRETEL } from './ustawienia.mjs';
-import { wadaDrabiny, NAJWIECEJ_SZCZEBLI } from '../public/drabina.mjs';
+import { wadaDrabiny, NAJWIECEJ_SZCZEBLI, GRANICE_DRABINY } from '../public/drabina.mjs';
 
 const D = { typ: 'drabina' };
 const kopia = (x) => JSON.parse(JSON.stringify(x));
@@ -105,6 +105,31 @@ test('DR3. nieznane co przechodzi: nowa twarz i nowy element nie psują starych 
   const w = kopia(ZE_SPECYFIKACJI);
   w.szczeble.push(szczebel({ co: 'przyszly_element', od: 10, do: 20 }));
   assert.equal(wadaWartosci(D, w), null);
+});
+
+// Druga linia zgłoszenia 72 (20 XI 2026): wartość, którą reguła przepuszczała, zatrzymywała rysowanie Startu.
+test('DR7. twarde granice liczb: wartość, na której twarz stawała (2·10^8 prób na kartę), jest odrzucana zdaniem; same granice przechodzą', () => {
+  const zawieszajaca = { szczeble: [{ co: 'imie', miara: { szer: 1e6 }, rozmiar: { od: 1e-6, do: 1e9 } }] };
+  assert.ok(wadaDrabiny(zawieszajaca), 'wartość z drugiej linii zgłoszenia 72 jest odrzucana');
+  const przypadki = [
+    ['miara ponad granicę', wartosc(szczebel({ miara: { szer: GRANICE_DRABINY.miara * 10 } })), /nie większą niż 100/],
+    ['do ponad granicę px', wartosc(szczebel({ od: 0, do: GRANICE_DRABINY.px + 1 })), /przekracza 100000 px/],
+    ['pismo mniejsze niż 1 px', wartosc(ciagly({ rozmiar: { od: 0.5, do: 34 } })), /między 1 a 1000 px/],
+    ['pismo większe niż 1000 px', wartosc(ciagly({ rozmiar: { od: 9, do: 5000 } })), /między 1 a 1000 px/],
+    ['ucinaj ponad granicę', wartosc(ciagly({ ucinaj: { szer_od: 1e9, wys_od: 20, rozmiar: 9.5 } })), /najwyżej 100000 px/],
+    ['ucinaj z pismem 0.5 px', wartosc(ciagly({ ucinaj: { szer_od: 64, wys_od: 20, rozmiar: 0.5 } })), /między 1 a 1000 px/],
+  ];
+  for (const [nazwa, w, wzor] of przypadki) {
+    const wada = wadaWartosci(D, w);
+    assert.ok(wada, `${nazwa}: miała być odmowa`);
+    assert.match(wada, wzor, `${nazwa}: ${wada}`);
+  }
+  for (const [nazwa, w] of [
+    ['miara równa granicy', wartosc(szczebel({ miara: { szer: GRANICE_DRABINY.miara } }))],
+    ['do równe granicy px', wartosc(szczebel({ od: 0, do: GRANICE_DRABINY.px }))],
+    ['pismo od 1 do 1000 px', wartosc(ciagly({ rozmiar: { od: 1, do: 1000 } }))],
+    ['ucinaj na granicach', wartosc(ciagly({ ucinaj: { szer_od: GRANICE_DRABINY.px, wys_od: GRANICE_DRABINY.px, rozmiar: 1000 } }))],
+  ]) assert.equal(wadaWartosci(D, w), null, `kontrola: ${nazwa}`);
 });
 
 test('DR4. przez środowisko: pokrętło typu drabina, wartość w zasięgu, odmowa zdaniem i odwołanie {z} do drugiej drabiny', async () => {

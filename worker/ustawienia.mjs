@@ -26,7 +26,7 @@
 // zostają cechami obszaru. Ten plik nie zna Cloudflare ani drzwi: dostaje środowisko albo jego widok dla czytającego.
 
 // Reguła typu drabina mieszka w module bez zależności, który czyta też twarz (jedna reguła dla zapisu i odczytu).
-import { wadaDrabiny, NAJWIECEJ_SZCZEBLI } from '../public/drabina.mjs';
+import { wadaDrabiny, NAJWIECEJ_SZCZEBLI, GRANICE_DRABINY } from '../public/drabina.mjs';
 
 export const FORMAT_USTAWIEN = 'ustawienia-2';
 export const POKRETLO_ZESTAWOW = 'srodowisko.zestawy';
@@ -53,7 +53,7 @@ export const TYPY_POKRETEL = {
   rampa: `rampa barw: {przystanki: lista od 2 do 16 przystanków {w: 0..1, kolor} w kolejności rosnącego w, przestrzen: ${PRZESTRZENIE.join(' albo ')} (niewymagana; bez niej srgb)}`,
   kroj: 'krój pisma: {rodzina (napis jak w CSS), grubosc 1..1000 (niewymagana), osie {wght: 600, …} (niewymagane), plik {rzecz: <id rzeczy plik/1>, odcisk: <odcisk jej dzisiejszej wersji>} (niewymagany: krój z bajtów w Miejscu)}',
   cien: 'cień: {x, y, rozmycie >= 0, kolor}; krycie to kanał alfa koloru (#rrggbbaa)',
-  drabina: `drabina przedstawień: {szczeble: lista od 1 do ${NAJWIECEJ_SZCZEBLI} szczebli {co: nazwa elementu, miara: {szer, wys} (mniejsza z szerokości i wysokości karty na ekranie razy te liczby), od i do (px miary: przenikanie od niewidocznego do pełnego; 0 i 0 znaczy zawsze) albo rozmiar {od, do} (px pisma: szczebel ciągły) z ucinaj {szer_od, wys_od, rozmiar} (niewymagane)}}; nieznane pole (także krzywa przenikania, której twarz jeszcze nie czyta) jest odrzucane; twarz pomija co, którego nie zna, a wartość z węższego zasięgu zastępuje całą drabinę`,
+  drabina: `drabina przedstawień: {szczeble: lista od 1 do ${NAJWIECEJ_SZCZEBLI} szczebli {co: nazwa elementu, miara: {szer, wys} (mniejsza z szerokości i wysokości karty na ekranie razy te liczby), od i do (px miary: przenikanie od niewidocznego do pełnego; 0 i 0 znaczy zawsze) albo rozmiar {od, do} (px pisma: szczebel ciągły) z ucinaj {szer_od, wys_od, rozmiar} (niewymagane)}}; nieznane pole (także krzywa przenikania, której twarz jeszcze nie czyta) jest odrzucane; liczby mają twarde granice (miara do ${GRANICE_DRABINY.miara}, px miary do ${GRANICE_DRABINY.px}, pismo od ${GRANICE_DRABINY.pismo.od} do ${GRANICE_DRABINY.pismo.do} px); twarz pomija co, którego nie zna, a wartość z węższego zasięgu zastępuje całą drabinę`,
   zestawy: 'lista identyfikatorów rzeczy rodzaju zestaw/1 (najwyżej 8); późniejszy na liście wygrywa',
   dowolne: 'dowolna wartość JSON; środowisko jej nie sprawdza (wyjście dla narzędzi z własną strukturą)',
 };
