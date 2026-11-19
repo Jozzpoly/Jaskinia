@@ -20,7 +20,10 @@ const katalog = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'p
 const plik = path.join(katalog, 'czeka.json');
 const strona = path.join(katalog, 'index.html');
 
-const POLA = new Set(['nr', 'co', 'dlaczego_ty', 'jesli_nic', 'czego_brakuje', 'od', 'kto', 'adres', 'waga', 'sprawdzone', 'dowod']);
+// `jak` (kroki jego reka), `uwaga` (czego NIE zakladac) i `moje_zdanie` (rekomendacja, osobno od faktow)
+// doszly 18 XI: wpis, ktory prosi go o ruch, a nie mowi, co dokladnie zrobic, jest kolejnym zadaniem
+// do odszyfrowania. Kazde z nich rysuje tez strona - pole, ktorego strona nie rysuje, przepada po cichu.
+const POLA = new Set(['nr', 'co', 'dlaczego_ty', 'jesli_nic', 'czego_brakuje', 'jak', 'uwaga', 'moje_zdanie', 'od', 'kto', 'adres', 'waga', 'sprawdzone', 'dowod']);
 const WAGI = new Set(['teraz', 'kiedys', 'opcjonalne']);
 const data = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 

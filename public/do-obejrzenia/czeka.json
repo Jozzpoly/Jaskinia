@@ -1,14 +1,15 @@
 {
-  "wersja": 1,
-  "opis": "Rzeczy, które czekają na ruch właściciela. Powstało 15 XI 2026, bo powiedział, że prośby agentów przepadają mu w natłoku rozmów, a nie ma tradycji przewijania ścian tekstu. Wpis schodzi stąd tylko wtedy, gdy on odpowie albo gdy agent go wycofa z powodem. Pole sprawdzone mówi, kiedy agent ostatni raz potwierdził, że wpis jest jeszcze aktualny - nie kiedy powstał.",
-  "zebrane_z": "prywatna pamięć wspólna i repozytoria, nie z historii rozmów - wszystko, o co proszono wyłącznie w czacie przed 15 XI, może tu nie być",
-  "czeka": [],
-  "odlozone_przez_ciebie": [
-    {
-      "co": "Dług z pieniędzmi i dostępem: otwarte Workers AI w trzech starych workerach i stare klucze dostawcy w jednym z labów",
-      "twoja_decyzja": "Sam odłożyłeś to na później, dla tańszego modelu - to jest zapisane i nie jest przypomnieniem.",
-      "od": "2026-11-13",
-      "sprawdzone": "2026-11-15"
-    }
-  ]
+ "wersja": 1,
+ "opis": "Rzeczy, które czekają na ruch właściciela. Powstało 15 XI 2026, bo powiedział, że prośby agentów przepadają mu w natłoku rozmów, a nie ma tradycji przewijania ścian tekstu. Wpis schodzi stąd tylko wtedy, gdy on odpowie albo gdy agent go wycofa z powodem. Pole sprawdzone mówi, kiedy agent ostatni raz potwierdził, że wpis jest jeszcze aktualny - nie kiedy powstał.",
+ "zebrane_z": "prywatna pamięć wspólna i repozytoria, nie z historii rozmów - wszystko, o co proszono wyłącznie w czacie przed 15 XI, może tu nie być",
+ "sprawdzone": "2026-11-19",
+ "czeka": [],
+ "odlozone_przez_ciebie": [
+  {
+   "co": "Dług infrastrukturalny dotyczący dawnych usług i konfiguracji (szczegóły wyłącznie w prywatnej dokumentacji agentów)",
+   "twoja_decyzja": "Sam odłożyłeś to na później, dla tańszego modelu - to jest zapisane i nie jest przypomnieniem.",
+   "od": "2026-11-13",
+   "sprawdzone": "2026-11-15"
+  }
+ ]
 }

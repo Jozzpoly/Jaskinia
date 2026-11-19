@@ -178,13 +178,24 @@ fetch('zgloszenia.json', { cache: 'no-store' })
 // Sekcja „Czeka na Ciebie". Czyta `czeka.json` z tego repo — bez sieci zewnetrznej, bez klucza.
 // Powstala 15 XI 2026: wlasciciel powiedzial, ze prosby agentow przepadaja mu w natloku rozmow,
 // bo jedynym sposobem odzyskania ich jest przewijanie scian tekstu. Lista w czacie jest po kilku
-// godzinach nieistniejaca, wiec ta lista ma adres. Gdy plik jest pusty albo nie odpowiada,
-// sekcja po prostu sie nie pokazuje — cisza jest lepsza niz puste pudelko.
+// godzinach nieistniejaca, wiec ta lista ma adres. Gdy plik nie odpowiada, sekcja sie nie pokazuje.
+// Pusta lista pokazuje sie od 19 XI 2026: do tego dnia cisza znaczyla tu "nic nie czeka", ale tak samo
+// wygladalaby lista zepsuta albo zapomniana. Plan dnia Fable i druga linia Opusa Code (wspólna pamięć agentów, wplywy/
+// 2026-11-19-...): pusta lista tez jest wiadomoscia, i niesie date, kiedy agent ostatni raz sprawdzil,
+// ze naprawde nic nie czeka (pole `sprawdzone` w czeka.json). Bez daty pustka wyglada na zepsuta.
 (function () {
   const box = document.getElementById('czeka');
   const ZNAK = { teraz: 'teraz', kiedys: 'kiedyś', opcjonalne: 'opcjonalne' };
   const KOLEJNOSC = { teraz: 0, kiedys: 1, opcjonalne: 2 };
-  const dni = (d) => Math.floor((Date.now() - Date.parse(d)) / 86400000);
+  // Dni kalendarzowe w czasie tego, kto patrzy: data RRRR-MM-DD to jego dzień, nie doba od północy UTC (inaczej między
+  // północą a 1:00, latem 2:00, wczorajsza data wychodziła jako "dziś"; uwaga Opusa czatu, 19 XI). Zaokrąglenie łapie
+  // doby 23- i 25-godzinne przy zmianie czasu.
+  const dni = (d) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d));
+    if (!m) return Math.floor((Date.now() - Date.parse(d)) / 86400000);
+    const t = new Date();
+    return Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()) - new Date(+m[1], +m[2] - 1, +m[3])) / 86400000);
+  };
   const odkad = (d) => { const n = dni(d); return n <= 0 ? 'dziś' : n === 1 ? 'od wczoraj' : 'od ' + n + ' dni'; };
 
   fetch('czeka.json', { cache: 'no-store' })
@@ -193,7 +204,30 @@ fetch('zgloszenia.json', { cache: 'no-store' })
       const w = (Array.isArray(d && d.czeka) ? d.czeka : [])
         .slice()
         .sort((a, b) => (KOLEJNOSC[a.waga] ?? 9) - (KOLEJNOSC[b.waga] ?? 9) || Date.parse(a.od) - Date.parse(b.od));
-      if (!w.length) return;
+      if (!w.length) {
+        // Pusta lista mowi to wprost, z data ostatniego sprawdzenia. Lista, ktorej nikt nie sprawdzil od tygodnia
+        // (albo bez daty), nie twierdzi, ze nic nie czeka: mowi, ze jest pusta i ze tego nie wiadomo.
+        const st = dni(d && d.sprawdzone);
+        const zdanie = !Number.isFinite(st)
+          ? '<span class="stare">Lista jest pusta, ale nie wiadomo, kiedy ktoś ją sprawdził.</span>'
+          : st > 7
+            ? '<span class="stare">Lista jest pusta, ale nikt jej nie sprawdził od ' + st + ' dni, więc może nie mówić prawdy.</span>'
+            // "nie stoi bez Ciebie", a nie "nic nie czeka": sprawy bez pośpiechu bywają, ale żadna nie stoi (uwaga Opusa
+            // czatu); a "dziś" tylko wtedy, gdy sprawdzenie jest dzisiejsze
+            : st <= 0
+              ? 'Dziś nic nie stoi bez Ciebie. Sprawdzone dziś (' + esc(d.sprawdzone) + ').'
+              : 'Przy ostatnim sprawdzeniu, ' + (st === 1 ? 'wczoraj' : st + ' dni temu') + ' (' + esc(d.sprawdzone) + '), nic nie stało bez Ciebie.';
+        const odl = Array.isArray(d && d.odlozone_przez_ciebie) ? d.odlozone_przez_ciebie : [];
+        box.innerHTML = '<h2>Czeka na Ciebie</h2>'
+          + '<p class="pusto">' + zdanie + '</p>'
+          + (odl.length
+              ? '<details><summary>Odłożone Twoją decyzją (' + odl.length + ') — nie przypomnienie</summary><ul>'
+                + odl.map((o) => '<li>' + esc(o.co) + ' — <em>' + esc(o.twoja_decyzja) + '</em></li>').join('')
+                + '</ul></details>'
+              : '');
+        box.hidden = false;
+        return;
+      }
 
       const wpis = (k) => {
         const adres = k.adres ? bezpieczny(k.adres) : null;
@@ -211,6 +245,13 @@ fetch('zgloszenia.json', { cache: 'no-store' })
           + '<p class="dlaczego">' + esc(k.dlaczego_ty) + '</p>'
           + '<p class="skutek"><b>Jeśli nic nie zrobisz:</b> ' + esc(k.jesli_nic) + '</p>'
           + (k.czego_brakuje ? '<p class="skutek"><b>Czego brakuje, żeby to było możliwe:</b> ' + esc(k.czego_brakuje) + '</p>' : '')
+          // Wpis, ktory prosi go o RUCH, musi powiedziec, co dokladnie ma zrobic - inaczej jest kolejnym
+          // zadaniem do odszyfrowania. `jak` to kroki jego reka, `uwaga` to czego NIE zaklada, `moje_zdanie`
+          // to nasza rekomendacja, osobno od faktow. Pole, ktorego ta strona nie rysuje, jest polem, ktore
+          // przepada po cichu: do 18 XI przepadlyby wszystkie trzy.
+          + (k.jak ? '<p class="skutek"><b>Co zrobić:</b> ' + esc(k.jak) + '</p>' : '')
+          + (k.uwaga ? '<p class="skutek"><b>Uwaga:</b> ' + esc(k.uwaga) + '</p>' : '')
+          + (k.moje_zdanie ? '<p class="skutek"><b>Nasze zdanie (nie fakt):</b> ' + esc(k.moje_zdanie) + '</p>' : '')
           + (adres ? '<p><a class="otworz" href="' + esc(adres) + '">Otwórz</a></p>' : '')
           + '<p class="meta">' + esc(odkad(k.od)) + ' · prosi: ' + esc(k.kto)
           + (potw ? ' · ' + potw : '')
