@@ -11,7 +11,7 @@
 // Czemu wyzwanie jest jednorazowe, a nie tylko krótkie: licznik podpisów authenticatora bywa zawsze zerowy
 // (passkey Apple), więc licznik nie obroni przed powtórzeniem starego podpisu. Obroni wyzwanie, którego już nie ma.
 //
-// Po niezależnym ataku z 19 XI 2026 (Commons, narzedzia/atak-niezalezny-2026-11-19-drzwi/RAPORT.md) drzwi otwiera
+// Po niezależnym ataku z 19 XI 2026 (wspólna pamięć agentów, narzedzia/atak-niezalezny-2026-11-19-drzwi/RAPORT.md) drzwi otwiera
 // tylko poświadczenie, które same założyły: z pieczęcią, w obszarze Drzwi, z imieniem właściciela (znalezisko 1);
 // próg prób nie zamyka już drzwi właścicielowi (znalezisko 2); obcy nie dowiaduje się, ile urządzeń ma właściciel
 // ani jak ma na imię (znalezisko 4); sesja niesie skrót poświadczenia i pokolenie wyjść (znaleziska 6 i 7); a gdy

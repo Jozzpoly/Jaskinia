@@ -1671,7 +1671,7 @@ export class Srodowisko {
   // Jego presety jego słowami (18 XI 21:34 i 23:18, rejestr poz. 193 i 204): domyślny prowadzą agenci; on go kopiuje,
   // nazywa swoim, psuje, zapisuje ciekawy układ i wraca do niego albo do domyślnego, a wszystkie jego presety odnoszą
   // się do tego samego domyślnego. Do 19 XI kopia była dwoma ruchami i nie wiedziała, skąd przyszła, a zapisany układ
-  // umiał tylko widok (pomiar: opus-code/narzedzia/presety-jego-scenariusz.mjs w Commons).
+  // umiał tylko widok (pomiar: opus-code/narzedzia/presety-jego-scenariusz.mjs we wspólnej pamięci agentów).
 
   // Jak jawny jest obszar: 0 widzi tylko właściciel, 1 uczestnicy, 2 wszyscy (z dziedziczeniem, jak przy widoczności).
   _jawnosc(obszar) {

@@ -434,7 +434,7 @@ test('DT14. gest z ramki na cudzej stronie (crossOrigin) nie otwiera drzwi, cho�
   assert.equal((await dane(await obiekt.fetch(zad('/api/drzwi/wejdz', { cialo: { wyzwanie: z2.wyzwanie, poswiadczenie: t.id, ...prawdziwe } })))).ok, true);
 });
 
-// --- po niezależnym ataku z 19 XI 2026 (Commons: narzedzia/atak-niezalezny-2026-11-19-drzwi/RAPORT.md) -------------
+// --- po niezależnym ataku z 19 XI 2026 (wspólna pamięć agentów: narzedzia/atak-niezalezny-2026-11-19-drzwi/RAPORT.md) -------------
 // Każdy sprawdzian ma kontrolę: prawdziwy właściciel z udawanym telefonem naprawdę wchodzi tą samą drogą.
 const zalozDrzwiami = async (obiekt, tel, nazwa = 'telefon') => {
   const z = await dane(await obiekt.fetch(zad('/api/drzwi/zacznij', { kto: 'jozz', cialo: { cel: 'zaloz' } })));

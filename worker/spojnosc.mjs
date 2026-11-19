@@ -5,7 +5,7 @@
 // powiedzieć, co w nim samym jest zepsute. Kształt rodzaju `miejsce/1` mówi o sobie "leży ZAWSZE w obszarze swojego
 // widoku", ale `lezy_z` jest przeliczane tylko przy zapisie przez `poloz`; przeniesienie rzeczy, od której obszar
 // pochodzi, a także `cofnij` i `przyjmij`, zostawiają rzecz w stanie, który kształt uznaje za niemożliwy — i robią to
-// po cichu (zmierzone na podglądzie gałęzi Startu, 17 XI, zapisane w Commons: rundy/2026-11-17-dowody-srodowiska.md).
+// po cichu (zmierzone na podglądzie gałęzi Startu, 17 XI, zapisane we wspólnej pamięci agentów: rundy/2026-11-17-dowody-srodowiska.md).
 // To nie jest usterka jednego rodzaju. `lezy_z` jest PIERWSZĄ regułą mówiącą "zawsze" o związku dwóch rzeczy i nie
 // będzie ostatnią (gość ze swoim kodem, słowo ze swoją rzeczą). Każda taka reguła ma ten sam kształt dziury.
 //
