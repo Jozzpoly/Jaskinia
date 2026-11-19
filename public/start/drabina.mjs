@@ -2,8 +2,8 @@
 // Czyste funkcje, bez DOM. Wartość domyślna to rachunek Startu z pnia 057c9a5 (start.mjs: podpis rodziny w. 242,
 // imię w. 301–310, wiersz życia w. 343, opis w. 375, gałęzie w. 391), więc Start z nią rysuje to samo co przedtem.
 // Opis wartości, sprawdzania i podziału pracy: wspólna pamięć agentów, wplywy/2026-11-19-opus-czat-orientacja-i-klocek-drabina.md.
-// Gdy zaplecze dostanie typ `drabina`, ta wartość stanie się domyślną pokrętła `wyglad.karta.drabina`
-// (public/pokretla.mjs), a Start weźmie drabinę z ustawień. Do tego czasu jedynym źródłem jest ta stała.
+// Ta wartość jest domyślną pokrętła `wyglad.karta.drabina` (public/pokretla.mjs; typ i reguła: public/drabina.mjs,
+// worker/ustawienia.mjs). Start bierze drabinę z ustawień, a gdy Miejsce nic nie mówi albo jest tryb bezpieczny, z tej stałej.
 // Napisał Opus czatu, 19 XI 2026.
 
 const zamroz = (o) => Object.freeze(o);
@@ -22,9 +22,14 @@ export const DRABINA_DOMYSLNA = zamroz({
 
 // Szczebel o danym `co`: z podanej drabiny, a gdy go w niej nie ma (albo drabiny nie ma), z wartości domyślnej.
 // Szczebel o `co`, którego twarz nie zna, po prostu nigdy nie jest pytany.
+// Reguła (public/drabina.mjs) dopuszcza dla każdego `co` oba rodzaje szczebla, bo nie zna elementów twarzy. Ta twarz
+// czyta imię jako szczebel ciągły (rozmiar), a resztę jako przenikanie; szczebel innego rodzaju niż domyślny dla tego
+// `co` traktuje jak brak i bierze domyślny. Bez tego wartość {co: "imie", od, do} wywróciłaby rysowanie.
+const rodzaj = (s) => (s && 'rozmiar' in s ? 'rozmiar' : 'przenikanie');
 export function szczebel(drabina, co) {
+  const domyslny = DRABINA_DOMYSLNA.szczeble.find((s) => s.co === co) || null;
   const z = drabina && Array.isArray(drabina.szczeble) ? drabina.szczeble.find((s) => s && s.co === co) : null;
-  return z || DRABINA_DOMYSLNA.szczeble.find((s) => s.co === co) || null;
+  return z && (!domyslny || rodzaj(z) === rodzaj(domyslny)) ? z : domyslny;
 }
 
 // Miara elementu dla szczebla: mniejsza z (szerokość × szer, wysokość × wys); wymiar bez pola nie ogranicza.
@@ -53,8 +58,26 @@ export function rozmiarStartowy(s, w, h) {
 }
 
 // Rozmiar wersji uciętej wielokropkiem, gdy imię nie mieści się nawet w rozmiar.od; null, gdy karta jest za wąska
-// albo za niska (albo szczebel nie ma `ucinaj`): wtedy zostaje sam kolor życia.
+// albo za niska (albo szczebel nie ma `ucinaj`): wtedy zostaje sam kolor życia. Nigdy większy niż wysokość karty:
+// wartość z Miejsca nie może kazać twarzy rysować pisma większego niż to, na czym ma się zmieścić.
 export function ucieta(s, w, h) {
   const u = s && s.ucinaj;
-  return u && w > u.szer_od && h > u.wys_od ? u.rozmiar : null;
+  return u && w > u.szer_od && h > u.wys_od ? Math.min(u.rozmiar, h) : null;
+}
+
+// Ciąg rozmiarów, które imię próbuje po kolei, od największego. Z wartością domyślną to dokładnie dawny ciąg Startu
+// (rozmiar startowy, potem co 1,5 px, dopóki nie mniej niż rozmiar.od; najwyżej 17 prób). Wartość z Miejsca przechodzi
+// regułę zaplecza, ale reguła nie zna kosztu rysowania; druga linia Opusa Code (20 XI 00:35, zgłoszenie 72) pokazała
+// wartość, przy której pętla robiła do 2·10^8 prób na kartę w każdej klatce i zawieszała twarz. Dlatego dwie granice
+// po stronie twarzy, niezależne od wartości:
+// - nie zaczyna od rozmiaru większego niż wysokość karty (imię wyższe niż karta i tak się nie zmieści);
+// - najwyżej NAJWIECEJ_PROB prób: krok rośnie, gdy zakres jest szeroki, ale nigdy nie jest mniejszy niż 1,5 px.
+export const NAJWIECEJ_PROB = 24;
+export function probyRozmiaru(s, w, h) {
+  const od = s.rozmiar.od;
+  const start = Math.min(rozmiarStartowy(s, w, h), Math.max(od, h));
+  const krok = Math.max(1.5, (start - od) / (NAJWIECEJ_PROB - 1));
+  const proby = [];
+  for (let r = start; r >= od && proby.length < NAJWIECEJ_PROB; r -= krok) proby.push(r);
+  return proby;
 }
