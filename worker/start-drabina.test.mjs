@@ -167,9 +167,10 @@ test('probyRozmiaru z drabiną domyślną to dokładnie dawny ciąg prób imieni
   for (let w = 10; w <= 400; w += 0.25) assert.equal(probyRozmiaru(s, w, 1e6).length, dawneProby(w, 1e6).length, `siatka w=${w}`);
 });
 
-test('wartość przepuszczona przez regułę nie zawiesza twarzy: najwyżej NAJWIECEJ_PROB prób, start nie wyżej niż karta', () => {
+// Granica twarzy ma trzymać dla dowolnych liczb, niezależnie od tego, co przepuszcza reguła zaplecza (Opus Code w #73
+// dokłada regule górne granice liczb; ten sprawdzian nie zakłada ani jednego, ani drugiego).
+test('dowolne liczby w szczeblu imienia nie zawieszają twarzy: najwyżej NAJWIECEJ_PROB prób, start nie wyżej niż karta', () => {
   const zla = { szczeble: [{ co: 'imie', miara: { szer: 1000000 }, rozmiar: { od: 0.000001, do: 1000000000 } }] };
-  assert.equal(wadaDrabiny(zla), null, 'reguła zaplecza dziś to przepuszcza (granice liczb dołoży Opus Code osobno)');
   const p = probyRozmiaru(szczebel(zla, 'imie'), 300, 200);
   assert.ok(p.length <= NAJWIECEJ_PROB, `prób: ${p.length}`);
   assert.ok(p[0] <= 200, `start: ${p[0]}`);
@@ -177,13 +178,11 @@ test('wartość przepuszczona przez regułę nie zawiesza twarzy: najwyżej NAJW
   for (let i = 0; i < 5000; i++) {
     const od = r() * 50 + 1e-6;
     const s = { co: 'imie', miara: { szer: r() * 1e6 + 1e-9, wys: r() * 1e6 + 1e-9 }, rozmiar: { od, do: od + r() * 1e9 } };
-    assert.equal(wadaDrabiny({ szczeble: [s] }), null);
     const w = r() * 3000, h = r() * 3000;
     const q = probyRozmiaru(s, w, h);
     assert.ok(q.length >= 1 && q.length <= NAJWIECEJ_PROB, `w=${w} h=${h} prób=${q.length}`);
   }
   const u = { co: 'imie', miara: { szer: 1 }, rozmiar: { od: 9, do: 34 }, ucinaj: { szer_od: 0, wys_od: 0, rozmiar: 1e9 } };
-  assert.equal(wadaDrabiny({ szczeble: [u] }), null);
   assert.ok(ucieta(u, 300, 200) <= 200, 'wersja ucięta nie większa niż karta');
   assert.equal(ucieta(szczebel(DRABINA_DOMYSLNA, 'imie'), 300, 200), 9.5, 'domyślna bez zmian');
 });
