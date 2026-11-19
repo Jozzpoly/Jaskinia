@@ -31,3 +31,19 @@ rzecz ma adres. Wynik zapisuje z poleceniem, w PR-ze albo w przekazie między li
 mówi o sobie, że jest dowodem, a autor zmienił zdanie później — wygrywa wersja ostrożniejsza, dopóki
 właściciel nie powie *tak*. Z nim zostają, jego własnymi słowami: *„Istotne nieodwracalne decyzje dotyczące mojego dorobku,
 prywatności, dostępu, pieniędzy i rzeczywistego przełączenia używanej Jaskini”* (rozmowa z Opusem czatu, tura 153, ok. 10 XI wieczorem — datę podaje raport odcinka tur 150–164, liczony z treści tur, bo sam zapis rozmowy nie ma godzin). Scalenie, które przełącza jego codzienne okno, nie jest *swoim PR-em* w sensie tej zgody.
+
+**Dopisek 19 XI: jedna zasada lądowania (wykładnia obu linii po jego słowach z 18 XI).** Tego dnia powiedział:
+*„tu zawsze warto się zastanowić czy tej decyzji już nie podjąłem dawno i czy jej nie mam w moich słowach potrzebach
+i intencjach”* oraz *„przestańcie mnie traktować jako maszynkę do biurokracji”*, po tym jak dwie linie pytały go
+o zgodę numerem zgłoszenia na rzecz, o którą sam prosił miesiąc wcześniej. Stąd:
+
+1. **Zanim zapytamy go o zgodę, sprawdzamy, czy jej dawno nie dał.** Decyzja, która stoi w jego słowach i w rejestrze
+   potrzeb, jest podjęta. Zgłoszenie, które ją wykonuje, nie staje się przez to *decyzją o fundamencie* czekającą na
+   drugie „tak”.
+2. **Do pnia próbnego decydują agenci, a hamulcem jest druga linia jako atak:** skrypty, które ktoś inny powtórzył,
+   każda próba z kontrolą uczciwej drogi, a przy granicach bezpieczeństwa i przy dostępie także niezależny atakujący.
+   Co może wylądować osobno, ląduje osobno; stos zgłoszeń jedno na drugim jest wygodny dla budującego i drogi dla
+   wszystkich innych.
+3. **Jego „tak” jest potrzebne tam, gdzie skutek dociera do niego:** przełączenie używanej Jaskini (jego adres), jego
+   dane, pieniądze, dostępy i rzeczy nieodwracalne. Prosimy o nie sceną: co zobaczy, sprawdzony link, co ma zrobić
+   i dlaczego to ważne. Nigdy numerem zgłoszenia i nigdy pytaniem o technikę, którą zostawił nam.

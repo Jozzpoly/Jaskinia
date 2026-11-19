@@ -89,6 +89,9 @@ test('OK4. okno jest osobiste: kładzie je i zmienia tylko ten, czyje jest, a st
   assert.equal(zmienione.wraca, false);
   assert.match(zmienione.powiedz, /zmieniło się, odkąd je otwarto/);
   assert.equal(wraca(rz, g, 'agent-a'), true, 'okno agenta wraca u agenta');
+  // w Miejscu bez obszarów zamkniętych przed agentami obie pary oczu widzą to samo: także wtedy okno czyta jako narzędzie
+  assert.equal(s.czytelnikOkna('jozz', gosc.id), 'gosc-' + gosc.id);
+  assert.equal(s.czytelnikOkna(null, gosc.id), null, 'zwiedzający widzi mniej niż narzędzie, więc okno czyta jak on');
   assert.equal(wraca(rz, g, 'jozz'), false);
 });
 
@@ -142,7 +145,7 @@ test('OK5. narzędzie w oknie czyta słabszymi z dwóch par oczu: w oknie właś
   assert.equal(s.czytelnikOkna('jozz', gosc.id), null);
   ok(await s.ruch('jozz', { op: 'ok5-przywroc-goscia', co: 'przywroc', rzecz: gz.id, wersja: s.rzecz(gz.id).wersja }));
   assert.equal(s.czytelnikOkna('jozz', gosc.id), 'gosc-' + gosc.id);
-  assert.equal(s.czytelnikOkna('agent-a', gosc.id), 'agent-a');
+  assert.equal(s.czytelnikOkna('agent-a', gosc.id), 'gosc-' + gosc.id, 'remis: okno czyta jako narzędzie, nie jako otwierający');
   assert.equal(s.czytelnikOkna(null, gosc.id), null);
 });
 

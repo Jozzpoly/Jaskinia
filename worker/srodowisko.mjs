@@ -517,8 +517,11 @@ export class Srodowisko {
     const imie = PRZEDROSTEK_GOSCIA + gosc;
     const a = new Set(this._niewidoczneDla(kto ?? null) || []), b = new Set(this._niewidoczneDla(imie) || []);
     const zawiera = (x, y) => [...y].every((e) => x.has(e));
-    if (zawiera(a, b)) return kto ?? null; // otwierający nie widzi więcej niż narzędzie
-    if (zawiera(b, a)) return imie;        // narzędzie nie widzi więcej niż otwierający
+    // Przy remisie (obie pary oczu widzą to samo) okno czyta jako narzędzie, nie jako otwierający: dziś to ta sama
+    // widoczność, a gdy widoczność zacznie zależeć od osoby, okno ma widzieć mniej, a nie więcej (uwaga drugiej
+    // linii, 19 XI 2026). Otwierający wygrywa tylko wtedy, gdy sam widzi mniej (zwiedzający).
+    if (zawiera(b, a)) return imie;        // narzędzie nie widzi więcej niż otwierający, także przy remisie
+    if (zawiera(a, b)) return kto ?? null; // otwierający widzi mniej niż narzędzie
     return null;
   }
 
