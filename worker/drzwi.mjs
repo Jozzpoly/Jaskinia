@@ -16,7 +16,12 @@
 // więc jozzpoly.workers.dev byłaby domeną rejestrowalną - i jedno poświadczenie dzieliłoby się z każdym
 // podglądem gałęzi na tym koncie, a podglądy są publiczne i mają jawne klucze.
 
-export const CIASTKO = 'jaskinia_wejscie';
+// Przedrostek `__Host-`: przeglądarka przyjmie takie ciastko tylko od tego samego hosta, z Secure, ze ścieżką / i bez
+// Domain. Bez niego strona z dowolnej gałęzi na workers.dev (domena rejestrowalna jest wspólna dla wszystkich podglądów
+// tego konta) mogła podrzucić ciastko o tej samej nazwie z Domain na całą domenę i Path=/api i postawić je przed
+// prawdziwym, a drzwi czytały pierwsze (niezależny atak, 19 XI 2026, znalezisko 3). Ciastko o dawnej nazwie
+// (`jaskinia_wejscie`, do 19 XI) niczego już nie otwiera i wygasa samo; kosztem zmiany jest jedno dotknięcie.
+export const CIASTKO = '__Host-jaskinia_wejscie';
 
 // Sekret, którym podpisujemy sesję. Na podglądzie stoi JAWNIE w wrangler.jsonc, jak wszystkie klucze podglądu;
 // w prawdziwym Miejscu jest sekretem z ustawień Cloudflare i nigdy nie leży w pliku (zasada 12). Wartość
@@ -59,6 +64,11 @@ export function cbor(u8, i = 0) {
   else if (n === 25) { n = d.getUint16(i); i += 2; }
   else if (n === 26) { n = d.getUint32(i); i += 4; }
   else if (n === 27) throw new Error('64-bitowe długości: nie w kluczu COSE');
+  // Zadeklarowana długość nie może przekraczać bajtów, które zostały: każdy element tablicy ma co najmniej bajt, a pole
+  // mapy dwa. Bez tego `0x9a ffffffff` kazało pętli kręcić się 4,3 mld razy (niezależny atak, 19 XI 2026, uwaga U4).
+  const zostalo = u8.length - i;
+  if ((typ === 2 || typ === 3 || typ === 4) && n > zostalo) throw new Error('CBOR: zadeklarowana długość jest większa niż bajty, które zostały');
+  if (typ === 5 && n * 2 > zostalo) throw new Error('CBOR: zadeklarowana długość mapy jest większa niż bajty, które zostały');
   if (typ === 0) return [n, i];
   if (typ === 1) return [-1 - n, i];
   if (typ === 2) return [u8.slice(i, i + n), i + n];
@@ -192,13 +202,46 @@ export async function czytajSesje(sekret, zeton, { teraz = Date.now() } = {}) {
   return { imie, do: az, poswiadczenie };
 }
 
-export const ciastkoZNaglowka = (naglowek) => {
-  if (typeof naglowek !== 'string') return null;
+// Wszystkie wartości ciastka wejścia z nagłówka, w kolejności, najwyżej cztery. Przeglądarka może wysłać kilka ciastek
+// o tej samej nazwie (podrzucone stawia przed prawdziwym, gdy ma dłuższą ścieżkę), więc liczy się to, które przejdzie
+// sprawdzenie, a nie to, które przyszło pierwsze (znalezisko 3; `__Host-` wyżej zamyka to po stronie przeglądarki).
+export const CIASTEK_NAJWYZEJ = 4;
+export const ciastkaZNaglowka = (naglowek) => {
+  if (typeof naglowek !== 'string') return [];
+  const out = [];
   for (const cz of naglowek.split(';')) {
     const i = cz.indexOf('=');
-    if (i > 0 && cz.slice(0, i).trim() === CIASTKO) return cz.slice(i + 1).trim();
+    if (i > 0 && cz.slice(0, i).trim() === CIASTKO) { out.push(cz.slice(i + 1).trim()); if (out.length >= CIASTEK_NAJWYZEJ) break; }
   }
-  return null;
+  return out;
+};
+export const ciastkoZNaglowka = (naglowek) => ciastkaZNaglowka(naglowek)[0] ?? null;
+
+// Pieczęć poświadczenia (19 XI 2026, niezależny atak, znalezisko 1). Drzwi przybijają ją same, w kroku `zapisz`, po
+// ceremonii WebAuthn (origin, nazwa strony, flaga sprawdzenia człowieka), sekretem sesji, na imieniu, identyfikatorze
+// i kluczu publicznym. Poświadczenie położone każdą inną drogą (zwykły ruch, propozycja przyjęta jednym kliknięciem,
+// wwóz pliku) pieczęci nie ma i drzwi nie otwiera. Przedrostek z ukośnikiem, jak przy wyzwaniu: podpisu pieczęci nie da
+// się przełożyć na podpis sesji ani wyzwania, ani odwrotnie.
+export async function pieczecPoswiadczenia(sekret, { imie, poswiadczenie, klucz_publiczny }) {
+  const pola = [imie, poswiadczenie, klucz_publiczny].map((x) => b64uZ(T.encode(String(x ?? ''))));
+  return b64uZ(await hmac(sekret, 'pieczec/1.' + pola.join('.')));
+}
+export async function pieczecZgodna(sekret, cechy) {
+  if (!cechy || typeof cechy.pieczec !== 'string' || !cechy.pieczec) return false;
+  let oczekiwana;
+  try { oczekiwana = await pieczecPoswiadczenia(sekret, cechy); } catch { return false; }
+  return rowne(T.encode(cechy.pieczec), T.encode(oczekiwana));
+}
+// Skrót identyfikatora poświadczenia. Sesja niesie skrót (43 znaki), nie sam identyfikator: identyfikator bywa długi
+// (klucze sprzętowe, poświadczenia nie-rezydentne: do 1023 bajtów), a ucięty w nagłówku przestawał pasować i drzwi
+// mówiły "wpuszczone", dając ciastko, które nic nie otwierało (znalezisko 6).
+export const skrotPoswiadczenia = async (id) => b64uZ(new Uint8Array(await crypto.subtle.digest('SHA-256', T.encode(String(id)))));
+// Co sesja niesie jako "poświadczenie": skrót identyfikatora i pokolenie wyjść. Krok `wyjdz` podbija pokolenie w rzeczy
+// poświadczenia, więc żeton skopiowany przed wyjściem przestaje działać (znalezisko 7).
+export const posSesji = (skrot, pokolenie) => `${skrot}~${Number.isInteger(pokolenie) && pokolenie >= 0 ? pokolenie : 0}`;
+export const czytajPosSesji = (pos) => {
+  const m = typeof pos === 'string' ? /^([A-Za-z0-9_-]{43})~(\d{1,9})$/.exec(pos) : null;
+  return m ? { skrot: m[1], pokolenie: Number(m[2]) } : null;
 };
 // SameSite=Strict, bo to ciastko JEST wejściem: żadna obca strona nie ma go wysyłać w naszym imieniu.
 export const ciastkoNaglowek = (zeton, { ile = SESJA_WAZNA_MS } = {}) =>

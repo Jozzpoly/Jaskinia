@@ -34,7 +34,8 @@ const stanDrzwi = () => zad('stan');
 // listy poświadczeń — wydawało ją każdemu, kto zapukał, także obcemu bez klucza.
 async function wejdzDotknieciem() {
   const z = await zad('zacznij', { cel: 'wejdz' });
-  // Brak poświadczeń mówią same drzwi (404 w kroku `zacznij`), więc tutaj nie ma czego sprawdzać.
+  // Od 19 XI drzwi wydają wyzwanie zawsze, także gdy nie ma jeszcze żadnego poświadczenia (dawne 404 mówiło obcemu,
+  // czy właściciel ma urządzenie): wtedy przeglądarka sama powie, że nie ma czym wejść.
   const p = await navigator.credentials.get({
     publicKey: {
       challenge: b64uDo(z.wyzwanie),

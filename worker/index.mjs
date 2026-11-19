@@ -8,7 +8,30 @@ import { skrot } from './miejsce.mjs';
 import { cialoTekstem, ZLE_KODOWANIE } from './srodowisko-http.mjs';
 import { NAJWIEKSZY_PLIK } from './pliki.mjs';
 import { ADRES_ZYWEGO } from './zywe.mjs';
+import { CIALO_DRZWI_NAJWYZEJ } from './drzwi-http.mjs';
 export { Miejsce } from './miejsce-do.mjs';
+
+// Ciało żądania do drzwi czytamy z granicą, zanim cokolwiek trafi do obiektu Miejsca: do 19 XI 16 MB bez klucza było
+// czytane, parsowane i przyjmowane (niezależny atak, uwaga U3). Oddaje tekst, null (za duże) albo undefined (zły zapis znaków).
+async function cialoZGranica(request, granica) {
+  const dl = Number(request.headers.get('content-length'));
+  if (Number.isFinite(dl) && dl > granica) return null;
+  if (!request.body) return '';
+  const r = request.body.getReader();
+  const kawalki = [];
+  let ile = 0;
+  for (;;) {
+    const { done, value } = await r.read();
+    if (done) break;
+    ile += value.byteLength;
+    if (ile > granica) { try { await r.cancel(); } catch { /* strumień już zamknięty */ } return null; }
+    kawalki.push(value);
+  }
+  const u = new Uint8Array(ile);
+  let o = 0;
+  for (const k of kawalki) { u.set(k, o); o += k.byteLength; }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(u); } catch { return undefined; }
+}
 
 // /api/miejsce/…: wspólny stan po stronie serwera, tylko z kluczem (krok 1 rdzenia, 15 XI 2026; wzięte z dawcy
 // `claude/miejsce-wspolne-2026-11-11`). Worker ustala wykonawcę z klucza i nadpisuje x-kto: nagłówki do Miejsca
@@ -80,6 +103,10 @@ async function srodowisko(request, env, url) {
   }
   const cialo = request.headers.get('x-cialo');
   if (cialo) naglowki.set('x-cialo', cialo.slice(0, 80));
+  // Adres pukającego, dla progu prób drzwi (drzwi-http.mjs): ustawia go Cloudflare, a nagłówki do Miejsca budujemy od
+  // zera, więc klient nie podrzuci tu cudzego adresu.
+  const ip = request.headers.get('cf-connecting-ip');
+  if (ip && drzwi) naglowki.set('x-ip', ip.slice(0, 64));
   // ruch z okna gościa: identyfikator gościa przechodzi dalej tak, jak przyszedł; czy taki gość jest i czy wolno mu
   // pisać, sprawdza Miejsce
   const gosc = request.headers.get('x-gosc');
@@ -98,6 +125,10 @@ async function srodowisko(request, env, url) {
       if (Number.isFinite(dlugosc) && dlugosc > NAJWIEKSZY_PLIK) return zaDuzy(dlugosc);
       cialoZadania = await request.arrayBuffer();
       if (cialoZadania.byteLength > NAJWIEKSZY_PLIK) return zaDuzy(cialoZadania.byteLength);
+    } else if (drzwi) {
+      cialoZadania = await cialoZGranica(request, CIALO_DRZWI_NAJWYZEJ);
+      if (cialoZadania === null) return json({ blad: `ciało żądania do drzwi może mieć najwyżej ${CIALO_DRZWI_NAJWYZEJ} bajtów` }, 413);
+      if (cialoZadania === undefined) return json({ blad: ZLE_KODOWANIE.blad }, 400);
     } else {
       cialoZadania = await cialoTekstem(request);
       if (cialoZadania === null) return json({ blad: ZLE_KODOWANIE.blad }, 400);

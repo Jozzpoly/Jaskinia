@@ -4,14 +4,14 @@
 // Imię `jozz` to właściciel. Sam klucz zna tylko jego posiadacz; nie trafia do repo, rozmowy ani dziennika.
 // Bez ustawienia KLUCZE Miejsce jest zamknięte i mówi to wprost.
 import { skrot, poprawneImie } from './miejsce.mjs';
-import { ciastkoZNaglowka, czytajSesje, sekretSesji } from './drzwi.mjs';
+import { ciastkaZNaglowka, czytajSesje, sekretSesji } from './drzwi.mjs';
 
 // Właściciel: jedno imię z ustawienia Workera (ta sama domyślna wartość co w rdzeniu Miejsca).
 export const wlascicielZUstawien = (env = {}) => (typeof env.WLASCICIEL === 'string' && poprawneImie(env.WLASCICIEL) ? env.WLASCICIEL : 'jozz');
 
 // Czy w żądaniu jest w ogóle cokolwiek, czym można się przedstawić. Drzwi właściciela nie dają klucza
 // w nagłówku, tylko ciastko sesji, więc front musi wiedzieć, że warto zapytać.
-export const maTozsamosc = (request) => request.headers.has('authorization') || !!ciastkoZNaglowka(request.headers.get('cookie'));
+export const maTozsamosc = (request) => request.headers.has('authorization') || ciastkaZNaglowka(request.headers.get('cookie')).length > 0;
 
 // Imiona, których nie może nosić żaden klucz: pod nimi działa samo środowisko, więc klucz o takim imieniu
 // podszywałby się pod nie w dzienniku (znalezisko niezależnego ataku, 17 XI 2026). `obserwator` to automat, który
@@ -44,10 +44,16 @@ export async function ktoTo(request, env = {}) {
   }
   // Drugie wejście: sesja z drzwi właściciela (ciastko podpisane sekretem z ustawień Workera). Niesie tylko
   // imię właściciela, bo tylko on ma poświadczenie; cudze imię w podpisanym ciastku i tak tu nie wejdzie.
-  const zeton = ciastkoZNaglowka(request.headers.get('cookie'));
+  // Ciastek o tej nazwie może przyjść kilka: bierzemy pierwsze, które przejdzie podpis, a nie pierwsze z nagłówka
+  // (podrzucone stało przed prawdziwym i odbierało właścicielowi tożsamość: niezależny atak, 19 XI 2026).
+  const zetony = ciastkaZNaglowka(request.headers.get('cookie'));
   const sekret = sekretSesji(env);
-  if (zeton && sekret) {
-    const sesja = await czytajSesje(sekret, zeton).catch(() => null);
+  if (zetony.length && sekret) {
+    let sesja = null;
+    for (const zeton of zetony) {
+      sesja = await czytajSesje(sekret, zeton).catch(() => null);
+      if (sesja) break;
+    }
     // SĄSIEDNI ADRES NIE JEST OBCY DLA PRZEGLĄDARKI. `workers.dev` stoi na publicznej liście sufiksów, więc
     // wszystkie podglądy tego konta (`<galaz>-jaskinia.jozzpoly.workers.dev`) dzielą jedną domenę rejestrowalną
     // i `SameSite=Strict` ich NIE rozdziela: strona z cudzej gałęzi wysyłała żądanie do prawdziwego Miejsca,

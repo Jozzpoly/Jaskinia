@@ -327,7 +327,10 @@
     try { stanDrzwi = await window.Drzwi.stanDrzwi(); } catch { stanDrzwi = { poswiadczen: 0, nieudane: true }; }
     return stanDrzwi;
   }
-  const mozaDotknac = () => Boolean(window.Drzwi && window.Drzwi.umieDotkniecie() && stanDrzwi && stanDrzwi.poswiadczen > 0);
+  // Od 19 XI obcy nie dostaje liczby urządzeń właściciela (niezależny atak, znalezisko 4), tylko to, czy drzwi są
+  // gotowe. Cena jest świadoma: guzik "Wejdź dotknięciem" stoi także tam, gdzie nikt jeszcze nie dodał urządzenia,
+  // i wtedy przeglądarka sama powie, że nie ma czym wejść. Właściciel z kluczem dalej dostaje liczbę.
+  const mozaDotknac = () => Boolean(window.Drzwi && window.Drzwi.umieDotkniecie() && stanDrzwi && (stanDrzwi.wejscie_dotknieciem === true || stanDrzwi.poswiadczen > 0));
 
   async function dotknij(co, nazwa) {
     if (!window.Drzwi) return komunikat('Drzwi właściciela nie wczytały się na tej stronie.', true);

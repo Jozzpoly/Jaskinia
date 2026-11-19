@@ -14,7 +14,8 @@ import { obejdz } from './obserwator.mjs';
 import { WLASCICIEL as WLASCICIEL_GITHUBA } from './fakty.mjs';
 import { liczacySql, Budzet, naglowekKosztu } from './budzet.mjs';
 import { ADRES_ZYWEGO, przyjmijGniazdo, przyjmijWiadomosc, poZamknieciu, rozglos, zrobMiejsce } from './zywe.mjs';
-import { ADRES_DRZWI, obsluzDrzwi } from './drzwi-http.mjs';
+import { ADRES_DRZWI, obsluzDrzwi, poswiadczeniaDrzwi } from './drzwi-http.mjs';
+import { czytajPosSesji } from './drzwi.mjs';
 
 const MINUTA_MS = 60 * 1000;
 // Plik starej Jaskini zmienia się zwykle dwa razy na dobę: gdy koło gałęzi jest domknięte i nic się nie zmieniło,
@@ -68,7 +69,8 @@ export class Miejsce {
   // identyfikator rzeczy, przy której ktoś siedzi, więc musi pytać o prawa tam, gdzie one stoją — w środowisku.
   get _widac() { return (kto, id) => this.srod.rzecz(id, { dla: kto || null }) !== null; }
   // Czy imię z klucza ma tu wstęp: klucz dowodzi, kim ktoś jest, a prawa stoją w danych (rzecz uczestnika).
-  get _maWstep() { return (kto) => this.srod.rola(kto) !== 'zwiedzajacy'; }
+  // Gniazdo otwarte ciastkiem drzwi niesie też poświadczenie sesji: wstęp ma tylko tak długo jak ono (znalezisko 5).
+  get _maWstep() { return (kto, s) => this.srod.rola(kto) !== 'zwiedzajacy' && (!s || !s.pos || this._poswiadczenieZyje(s.pos)); }
 
   // Zasiew środowiska: jeden na instancję, kolejne wejścia czekają na ten sam.
   _zasiew() {
@@ -185,8 +187,17 @@ export class Miejsce {
   // ciastka i podał poświadczenie w `x-sesja-pos`; tylko Miejsce wie, czy ta rzecz jeszcze leży i czy nie jest
   // odłożona. Sprawdzamy to RAZ, na wejściu, i odbieramy tożsamość całemu żądaniu — inaczej każda z czterech
   // tras (drzwi, środowisko, stare drzwi, kanał) musiałaby o tym pamiętać osobno, a jedna by zapomniała.
+  // Od 19 XI sesja niesie skrót poświadczenia i pokolenie wyjść (drzwi.mjs: posSesji), a liczy się tylko poświadczenie
+  // z obszaru Drzwi z imieniem właściciela (drzwi-http.mjs: poswiadczeniaDrzwi). Wynik pamiętamy do następnego aktu:
+  // kanał na żywo pyta o to przy każdym rozgłoszeniu, a poświadczenia zmieniają się tylko aktem.
   _poswiadczenieZyje(pos) {
-    return this.srod.wszystkie({ rodzaj: 'poswiadczenie/1' }).some((p) => p.cechy.poswiadczenie === pos);
+    const p = czytajPosSesji(pos);
+    if (!p) return false;
+    const nr = this.srod.ostatniNr();
+    if (!this._zyjace || this._zyjace.nr !== nr) {
+      this._zyjace = { nr, mapa: new Map(poswiadczeniaDrzwi(this).filter((r) => typeof r.cechy.skrot === 'string').map((r) => [r.cechy.skrot, Number(r.cechy.pokolenie) || 0])) };
+    }
+    return this._zyjace.mapa.get(p.skrot) === p.pokolenie;
   }
 
   async _obsluz(request) {
@@ -196,6 +207,10 @@ export class Miejsce {
     if (pos) {
       await this._zasiew();
       if (!this._poswiadczenieZyje(pos)) {
+        // Martwa sesja poza podglądem to odmowa, a nie cichy zwiedzający: do 19 XI ciastko odłożonego urządzenia czytało
+        // obszary widoczne dla wszystkich, choć żądanie bez niczego dostawało 401 (niezależny atak, uwaga U2). Drzwi
+        // zostają otwarte, bo właśnie tędy wraca się po nowe wejście, a przeglądarka dalej wysyła stare ciastko.
+        if (!this._podglad && !sciezka.startsWith(ADRES_DRZWI)) return odmowa({ ok: false, status: 401, blad: 'wejście z tego urządzenia wygasło albo urządzenie odłożono: wejdź jeszcze raz' });
         const h = new Headers(request.headers);
         h.set('x-kto', '');
         h.delete('x-sesja-pos');
@@ -249,7 +264,7 @@ export class Miejsce {
     const klient = para[0], serwer = para[1];
     // Przyjęcie w sposób, który pozwala obiektowi zasnąć między wiadomościami: połączenie stoi, a czas nie biegnie.
     this.ctx.acceptWebSocket(serwer);
-    przyjmijGniazdo(serwer, { kto: request.headers.get('x-kto') || null, podglad: this._podglad, akt: this.srod.ostatniNr(), gniazda: this._gniazda(), widac: this._widac, maWstep: this._maWstep });
+    przyjmijGniazdo(serwer, { kto: request.headers.get('x-kto') || null, pos: request.headers.get('x-sesja-pos') || null, podglad: this._podglad, akt: this.srod.ostatniNr(), gniazda: this._gniazda(), widac: this._widac, maWstep: this._maWstep });
     return { klient };
   }
 

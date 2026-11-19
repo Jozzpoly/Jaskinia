@@ -864,6 +864,11 @@ export class Srodowisko {
     if (rola === 'zwiedzajacy') return { tryb: 'odmowa', status: 401, powod: this.powodBrakuPrawa(kto, 'do ruchu') };
     if (rodzaj === 'propozycja/1' || (stara && stara.rodzaj === 'propozycja/1')) return { tryb: 'odmowa', status: 403, powod: 'propozycje powstają same, gdy ruch nie ma prawa do skutku; zmienia je tylko przyjęcie albo odrzucenie (co: przyjmij, co: odrzuc)' };
     if (rola === 'wlasciciel') return { tryb: 'skutek' };
+    // Poświadczenie drzwi zakłada tylko właściciel, swoim urządzeniem, przez drzwi (ceremonia WebAuthn i pieczęć Miejsca).
+    // Odmowa, nie propozycja: do 19 XI agent kładł propozycję poświadczenia ze SWOIM kluczem publicznym, powód brzmiał
+    // jak zwykła prośba, a po jednym "przyjmij" właściciela agent wchodził drzwiami jako on (niezależny atak, 19 XI 2026,
+    // znalezisko 1). Drzwi i tak nie otworzą poświadczenia bez pieczęci; ta odmowa zamyka drogę, zanim cokolwiek powstanie.
+    if (rodzaj === 'poswiadczenie/1' || (stara && stara.rodzaj === 'poswiadczenie/1')) return { tryb: 'odmowa', status: 403, powod: 'poświadczenie do drzwi zakłada tylko właściciel, swoim urządzeniem, przez drzwi (/api/drzwi/); nie da się go zaproponować ani zmienić ruchem' };
     // Okno jest osobiste: należy do tego, czyje imię niesie cecha czyje. Kładzie je, zmienia, odkłada i cofa tylko on
     // sam, swoim kluczem. Nie inny uczestnik: agent kładł okno z imieniem właściciela i strona właściciela sama otwierała
     // u niego cudze narzędzie, albo zajmował z wyprzedzeniem klucz jego okna i dalej je zmieniał (niezależny atak,
