@@ -308,23 +308,104 @@
     $('wejscie-panel').hidden = true;
     zlyKlucz = null;
     przedstawSieKanalowi();
-    return odswiez().then(() => komunikat(klucz ? 'Jesteś jako ' + (opis.czytasz_jako.imie || '?') + ' (' + opis.czytasz_jako.rola + ').' : 'Wyszedłeś. Czytasz jako zwiedzający.'), (blad) => komunikat('Nie udało się wejść: ' + blad.message, true));
+    return odswiez().then(async () => {
+      komunikat(klucz ? 'Jesteś jako ' + (opis.czytasz_jako.imie || '?') + ' (' + opis.czytasz_jako.rola + ').' : 'Wyszedłeś. Czytasz jako zwiedzający.');
+      // Właściciel, który właśnie wszedł, a nie ma jeszcze żadnego urządzenia w drzwiach: zostawiamy panel
+      // OTWARTY z guzikiem „Dodaj to urządzenie". Inaczej panel znika i trzeba go otworzyć drugi raz, żeby
+      // znaleźć krok, o którym nikt jeszcze nie wie, że istnieje - a to jest ten moment, w którym człowiek odpada.
+      if (!klucz || !opis || opis.czytasz_jako.rola !== 'wlasciciel' || !window.Drzwi || !window.Drzwi.umieDotkniecie()) return;
+      await dajStanDrzwi();
+      if (stanDrzwi && stanDrzwi.sekret_sesji_ustawiony && stanDrzwi.poswiadczen === 0) { rysujWejscie(); $('wejscie-panel').hidden = false; }
+    }, (blad) => komunikat('Nie udało się wejść: ' + blad.message, true));
   }
+  // Stan drzwi (czy w ogóle jest czym wejść) pytamy RAZ, przy pierwszym otwarciu panelu. Guzik, który po
+  // naciśnięciu mówi „tu jeszcze nic nie ma", jest gorszy niż brak guzika: to jest narzędzie do zmniejszania
+  // tarcia, więc samo nie może go dokładać.
+  let stanDrzwi = null;
+  async function dajStanDrzwi() {
+    if (stanDrzwi || !window.Drzwi) return stanDrzwi;
+    try { stanDrzwi = await window.Drzwi.stanDrzwi(); } catch { stanDrzwi = { poswiadczen: 0, nieudane: true }; }
+    return stanDrzwi;
+  }
+  // Od 19 XI obcy nie dostaje liczby urządzeń właściciela (niezależny atak, znalezisko 4), tylko to, czy drzwi są
+  // gotowe. Cena jest świadoma: guzik "Wejdź dotknięciem" stoi także tam, gdzie nikt jeszcze nie dodał urządzenia,
+  // i wtedy przeglądarka sama powie, że nie ma czym wejść. Właściciel z kluczem dalej dostaje liczbę.
+  const mozaDotknac = () => Boolean(window.Drzwi && window.Drzwi.umieDotkniecie() && stanDrzwi && (stanDrzwi.wejscie_dotknieciem === true || stanDrzwi.poswiadczen > 0));
+
+  async function dotknij(co, nazwa) {
+    if (!window.Drzwi) return komunikat('Drzwi właściciela nie wczytały się na tej stronie.', true);
+    try {
+      komunikat(co === 'wejdz' ? 'Poproś urządzenie o potwierdzenie…' : 'Potwierdź na urządzeniu, że to Ty…');
+      if (co === 'wejdz') await window.Drzwi.wejdzDotknieciem();
+      else await window.Drzwi.dodajUrzadzenie(nazwa, klucz ? { authorization: 'Bearer ' + klucz } : {});
+      stanDrzwi = null; // po dodaniu urządzenia stan jest inny; pytamy od nowa przy następnym otwarciu
+      $('wejscie-panel').hidden = true;
+      await odswiez();
+      komunikat(co === 'wejdz' ? 'Jesteś w środku. Wejście zostaje w tej przeglądarce na miesiąc.' : 'To urządzenie otwiera teraz drzwi.');
+    } catch (b) {
+      // Dosłownie to, co powiedziała przeglądarka albo drzwi: zgadywanie, co się nie udało, byłoby tu najgorszą przysługą.
+      komunikat((co === 'wejdz' ? 'Nie udało się wejść dotknięciem: ' : 'Nie udało się dodać urządzenia: ') + (b && b.message ? b.message : String(b)), true);
+    }
+  }
+
+  const guzikDotkniecia = () => (mozaDotknac() ? el('button', { klasa: 'glowny', tekst: 'Wejdź dotknięciem', title: 'Passkey: urządzenie potwierdza, że to Ty, bez wklejania klucza', klik: () => dotknij('wejdz') }) : null);
+
+  // Dokładanie dzieci, które mogą nie istnieć. Zwykły append(null) wpisuje na stronę słowo "null".
+  const dolacz = (gdzie, dzieci) => gdzie.append(...dzieci.filter(Boolean));
+
   function rysujWejscie() {
     const d = opis, p = $('wejscie-panel'), g = $('wejscie');
     const imie = d.czytasz_jako.imie;
-    g.textContent = klucz && imie ? imie + ' · wyjdź' : 'Wejdź';
-    rysujWidac(Boolean(klucz && imie));
+    const w_srodku = Boolean(imie) && (Boolean(klucz) || wpuszczony());
+    g.textContent = w_srodku ? imie + ' · wyjdź' : 'Wejdź';
+    rysujWidac(w_srodku);
     p.textContent = '';
-    if (klucz && imie) { g.onclick = () => wejdz(''); return; }
-    g.onclick = () => { p.hidden = !p.hidden; };
+    if (w_srodku) {
+      g.onclick = async () => {
+        // Wyjście musi zabrać OBA wejścia: klucz z tej przeglądarki i sesję z drzwi. Zostawienie jednego
+        // znaczyłoby, że guzik „wyjdź" kłamie.
+        if (window.Drzwi) await window.Drzwi.wyjdzDrzwiami().catch(() => null);
+        return wejdz('');
+      };
+      // Właściciel, który jest w środku, może dołożyć urządzenie: to jedyny moment, w którym wolno to zrobić.
+      if (d.czytasz_jako.rola === 'wlasciciel' && window.Drzwi && window.Drzwi.umieDotkniecie()) {
+        const pole = el('input', { type: 'text', id: 'pole-urzadzenia', placeholder: 'np. telefon', 'aria-label': 'Nazwa urządzenia' });
+        dolacz(p, [el('p', { tekst: 'Dodaj urządzenie, żeby następnym razem wejść jednym dotknięciem. Klucz prywatny zostaje na urządzeniu.' }),
+          el('div', { klasa: 'rzad' }, pole, el('button', { tekst: 'Dodaj to urządzenie', klik: () => dotknij('zaloz', pole.value) }))]);
+      }
+      return;
+    }
+    g.onclick = async () => {
+      const otwieram = p.hidden;
+      p.hidden = !p.hidden;
+      // Przy pierwszym otwarciu dopytujemy drzwi i rysujemy panel jeszcze raz, już z guzikiem albo bez niego.
+      if (otwieram && !stanDrzwi && window.Drzwi) { await dajStanDrzwi(); rysujWejscie(); p.hidden = false; }
+    };
     const pole = el('input', { type: 'password', id: 'pole-klucza', placeholder: 'Twój klucz', autocomplete: 'current-password', 'aria-label': 'Klucz uczestnika' });
-    p.append(el('p', { tekst: 'Wejście jest potrzebne tylko do zmian. Klucz zostaje w tej przeglądarce.' }),
+    // Zdanie nad guzikami mówi to, co widzi czytający, a nie to, co wie autor. Właściciel stanął 17 XI przed tym
+    // panelem i zapytał „jaki klucz, jak mam go zdobyć" - bo panel prosił o klucz, a guzik obok wpuszczał bez
+    // niego. Ślepa uliczka w narzędziu, które ma zdejmować tarcie, jest gorsza niż brak narzędzia.
+    const naPodgladzie = Boolean(d.klucz_probny_wlasciciela);
+    const drzwiCzekaja = Boolean(stanDrzwi && stanDrzwi.sekret_sesji_ustawiony && stanDrzwi.poswiadczen === 0);
+    const zdanie = naPodgladzie
+      ? (drzwiCzekaja
+        ? 'Tu nie potrzebujesz żadnego klucza: guzik „Wejdź jako właściciel próbny" wpuszcza jednym naciśnięciem. Drzwi jednym dotknięciem czekają na pierwsze urządzenie — po wejściu ten panel zostanie otwarty na kroku „Dodaj to urządzenie".'
+        : 'Tu nie potrzebujesz żadnego klucza: guzik „Wejdź jako właściciel próbny" wpuszcza jednym naciśnięciem. Pole na klucz jest dla agentów bez przeglądarki.')
+      : 'Wejście jest potrzebne tylko do zmian. Klucz zostaje w tej przeglądarce.';
+    // UWAGA: append(null) wpisuje na stronę gołe słowo "null". Guzik, którego nie ma, musi zniknąć, a nie
+    // zostawić po sobie napis - zobaczone okiem na podglądzie 17 XI, dokładnie tam, gdzie właściciel szukał wejścia.
+    dolacz(p, [
+      el('p', { tekst: zdanie }),
+      guzikDotkniecia(),
       d.klucz_probny_wlasciciela ? el('button', { klasa: 'glowny', tekst: 'Wejdź jako właściciel próbny', title: 'Na podglądzie klucze próbne są jawne; nic tu nie jest prywatne', klik: () => wejdz(d.klucz_probny_wlasciciela) }) : null,
       d.klucz_probny ? el('button', { tekst: 'Wejdź jako agent próbny', klik: () => wejdz(d.klucz_probny) }) : null,
-      el('div', { klasa: 'rzad' }, pole, el('button', { tekst: 'Wejdź kluczem', klik: () => wejdz(pole.value) })));
+      el('div', { klasa: 'rzad' }, pole, el('button', { tekst: 'Wejdź kluczem', klik: () => wejdz(pole.value) })),
+    ]);
   }
-  const jestemWlascicielem = () => Boolean(opis && klucz && opis.czytasz_jako.rola === 'wlasciciel');
+  // Wpuszczony znaczy: Miejsce zna moje imię z dowodu. Dowodem jest klucz w nagłówku ALBO sesja z drzwi
+  // właściciela (ciastko), której ta strona w ogóle nie widzi - dlatego pytamy opisu, a nie schowka.
+  const wpuszczony = () => Boolean(opis && opis.czytasz_jako.imie && opis.czytasz_jako.pewnosc === 'klucz');
+  const jestemWlascicielem = () => Boolean(opis && opis.czytasz_jako.rola === 'wlasciciel' && (klucz || wpuszczony()));
   const rzeczO = (id) => rzeczy.find((r) => r.id === id) || null;
 
   // --- to, co ręka właśnie robi, przeżywa przerysowanie ------------------------------------------------------------

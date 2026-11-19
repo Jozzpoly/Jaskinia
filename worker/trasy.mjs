@@ -4,12 +4,14 @@
 
 export const WERSJA_SZKIELETU = 'szkielet-1';
 
-export function json(body, status = 200) {
+export function json(body, status = 200, dodatkowe = null) {
   return new Response(JSON.stringify(body, null, 2), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
+      // Trzeci argument jest dla odpowiedzi, które niosą coś jeszcze: dziś Set-Cookie z drzwi właściciela.
+      ...(dodatkowe || {}),
     },
   });
 }

@@ -3,12 +3,35 @@
 // więc stąd wychodzi tylko obiekt domyślny i klasa Durable Object Miejsca; trasy i stałe są w osobnych plikach.
 import { json, zdrowie, dom } from './trasy.mjs';
 import { odpowiedz, wCronie } from './fakty.mjs';
-import { ktoTo, wczytajKlucze } from './klucze.mjs';
+import { ktoTo, wczytajKlucze, maTozsamosc } from './klucze.mjs';
 import { skrot } from './miejsce.mjs';
 import { cialoTekstem, ZLE_KODOWANIE } from './srodowisko-http.mjs';
 import { NAJWIEKSZY_PLIK } from './pliki.mjs';
 import { ADRES_ZYWEGO } from './zywe.mjs';
+import { CIALO_DRZWI_NAJWYZEJ } from './drzwi-http.mjs';
 export { Miejsce } from './miejsce-do.mjs';
+
+// Ciało żądania do drzwi czytamy z granicą, zanim cokolwiek trafi do obiektu Miejsca: do 19 XI 16 MB bez klucza było
+// czytane, parsowane i przyjmowane (niezależny atak, uwaga U3). Oddaje tekst, null (za duże) albo undefined (zły zapis znaków).
+async function cialoZGranica(request, granica) {
+  const dl = Number(request.headers.get('content-length'));
+  if (Number.isFinite(dl) && dl > granica) return null;
+  if (!request.body) return '';
+  const r = request.body.getReader();
+  const kawalki = [];
+  let ile = 0;
+  for (;;) {
+    const { done, value } = await r.read();
+    if (done) break;
+    ile += value.byteLength;
+    if (ile > granica) { try { await r.cancel(); } catch { /* strumień już zamknięty */ } return null; }
+    kawalki.push(value);
+  }
+  const u = new Uint8Array(ile);
+  let o = 0;
+  for (const k of kawalki) { u.set(k, o); o += k.byteLength; }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(u); } catch { return undefined; }
+}
 
 // /api/miejsce/…: wspólny stan po stronie serwera, tylko z kluczem (krok 1 rdzenia, 15 XI 2026; wzięte z dawcy
 // `claude/miejsce-wspolne-2026-11-11`). Worker ustala wykonawcę z klucza i nadpisuje x-kto: nagłówki do Miejsca
@@ -18,6 +41,9 @@ async function miejsce(request, env) {
   const k = await ktoTo(request, env);
   if (!k.ok) return json({ blad: k.blad }, k.status);
   const naglowki = new Headers({ 'x-kto': k.kto });
+  // Jeśli tożsamość przyszła z ciastka drzwi, Miejsce dostaje też poświadczenie, którym ją otwarto, i samo
+  // sprawdza, czy ono jeszcze żyje: odłożone urządzenie ma zamykać wejście, a nie tylko znikać z listy.
+  if (k.poswiadczenie) naglowki.set('x-sesja-pos', String(k.poswiadczenie).slice(0, 256));
   const ct = request.headers.get('content-type');
   if (ct) naglowki.set('content-type', ct);
   const doMiejsca = new Request(request.url, { method: request.method, headers: naglowki, body: request.method === 'GET' ? undefined : await request.text() });
@@ -32,22 +58,31 @@ const obiektMiejsca = (env) => env.MIEJSCE.get(env.MIEJSCE.idFromName(typeof env
 // tylko na podglądzie (PODGLAD = tak), gdzie wszystko jest publiczne; ruch zawsze wymaga klucza. Kod gościa (/gosc/…)
 // jest jawny z natury: wykonuje go przeglądarka tego, kto otworzył okno.
 const SRODOWISKO_TEKSTEM = ['/co-tu-jest', '/umowa-okna', '/rodzaje', '/rzeczy', '/ustawienia'];
-const doSrodowiska = (p) => p.startsWith('/api/srodowisko/') || SRODOWISKO_TEKSTEM.includes(p) || p.startsWith('/rzecz/') || p.startsWith('/rodzaj/') || p.startsWith('/gosc/');
+const doSrodowiska = (p) => p.startsWith('/api/srodowisko/') || SRODOWISKO_TEKSTEM.includes(p) || p.startsWith('/rzecz/') || p.startsWith('/rodzaj/') || p.startsWith('/gosc/') || p.startsWith('/api/drzwi/');
 
 async function srodowisko(request, env, url) {
   if (!env.MIEJSCE) return json({ blad: 'Miejsce nie jest podłączone (brak wiązania MIEJSCE)' }, 503);
   const zywe = url.pathname === ADRES_ZYWEGO && request.method === 'GET';
-  let kto = '';
-  if (request.headers.has('authorization')) {
+  // Drzwi właściciela same wpuszczają: do nich wolno przyjść bez niczego, bo to one dają tożsamość.
+  // Który ich krok wymaga właściciela, rozstrzyga samo Miejsce (drzwi-http.mjs), nie ten front.
+  const drzwi = url.pathname.startsWith('/api/drzwi/');
+  let kto = '', poswiadczenieSesji = '';
+  if (maTozsamosc(request)) {
     const k = await ktoTo(request, env);
-    if (!k.ok) return json({ blad: k.blad }, k.status);
-    kto = k.kto;
-  } else if (request.method !== 'GET') {
+    // Ciastko mogło się przeterminować albo zostać po innym Miejscu: wtedy czytamy dalej jak bez klucza,
+    // zamiast odmawiać wszystkiego komuś, kto po prostu ma stare ciastko w przeglądarce.
+    // Ciastko z CUDZEGO adresu to nie „stare ciastko w przeglądarce”, a żądanie wysłane przez obcą stronę:
+    // takie odmawiamy wprost i mówimy dlaczego, zamiast odbijać je dalej jako „brak klucza”.
+    if (!k.ok && (request.headers.has('authorization') || k.status === 403)) return json({ blad: k.blad }, k.status);
+    if (k.ok) { kto = k.kto; poswiadczenieSesji = k.poswiadczenie || ''; }
+  }
+  if (!kto && !drzwi && request.method !== 'GET') {
     return json({ blad: 'do ruchu potrzebny jest klucz: nagłówek Authorization: Bearer <klucz>' }, 401);
-  } else if (env.PODGLAD !== 'tak' && !url.pathname.startsWith('/gosc/') && !zywe) {
+  } else if (!kto && !drzwi && env.PODGLAD !== 'tak' && !url.pathname.startsWith('/gosc/') && !zywe) {
     return json({ blad: 'to Miejsce nie jest publiczne: do czytania potrzebny jest klucz (nagłówek Authorization: Bearer <klucz>)' }, 401);
   }
   const naglowki = new Headers({ 'x-kto': kto, 'x-origin': url.origin });
+  if (poswiadczenieSesji) naglowki.set('x-sesja-pos', String(poswiadczenieSesji).slice(0, 256));
   if (zywe) {
     // Kanał na żywo. Przeglądarka nie umie dołączyć klucza do otwarcia połączenia, więc wolno je otworzyć bez klucza:
     // takie połączenie poza podglądem niczego nie słyszy, dopóki nie przedstawi się kluczem pierwszą wiadomością.
@@ -68,6 +103,10 @@ async function srodowisko(request, env, url) {
   }
   const cialo = request.headers.get('x-cialo');
   if (cialo) naglowki.set('x-cialo', cialo.slice(0, 80));
+  // Adres pukającego, dla progu prób drzwi (drzwi-http.mjs): ustawia go Cloudflare, a nagłówki do Miejsca budujemy od
+  // zera, więc klient nie podrzuci tu cudzego adresu.
+  const ip = request.headers.get('cf-connecting-ip');
+  if (ip && drzwi) naglowki.set('x-ip', ip.slice(0, 64));
   // ruch z okna gościa: identyfikator gościa przechodzi dalej tak, jak przyszedł; czy taki gość jest i czy wolno mu
   // pisać, sprawdza Miejsce
   const gosc = request.headers.get('x-gosc');
@@ -86,6 +125,10 @@ async function srodowisko(request, env, url) {
       if (Number.isFinite(dlugosc) && dlugosc > NAJWIEKSZY_PLIK) return zaDuzy(dlugosc);
       cialoZadania = await request.arrayBuffer();
       if (cialoZadania.byteLength > NAJWIEKSZY_PLIK) return zaDuzy(cialoZadania.byteLength);
+    } else if (drzwi) {
+      cialoZadania = await cialoZGranica(request, CIALO_DRZWI_NAJWYZEJ);
+      if (cialoZadania === null) return json({ blad: `ciało żądania do drzwi może mieć najwyżej ${CIALO_DRZWI_NAJWYZEJ} bajtów` }, 413);
+      if (cialoZadania === undefined) return json({ blad: ZLE_KODOWANIE.blad }, 400);
     } else {
       cialoZadania = await cialoTekstem(request);
       if (cialoZadania === null) return json({ blad: ZLE_KODOWANIE.blad }, 400);

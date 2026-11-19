@@ -34,7 +34,10 @@ const zapamietaj = (ws, s) => { try { ws.serializeAttachment(s); } catch { /* gn
 const wyslij = (ws, w) => { try { ws.send(JSON.stringify(w)); return true; } catch { return false; } };
 const zamknij = (ws, kod, powod) => { try { ws.close(kod, powod); } catch { /* już zamknięte */ } };
 // Imię gniazda, jeśli gniazdo ma klucz i to imię ma tu wstęp; inaczej null, czyli gniazdo jak bez klucza.
-const imie = (s, maWstep) => (s.kto && (!maWstep || maWstep(s.kto) === true) ? s.kto : null);
+// `maWstep` dostaje też cały stan gniazda: gniazdo otwarte ciastkiem drzwi niesie poświadczenie sesji (`pos`), a sesja
+// żyje tylko tak długo jak ono. Do 19 XI kanał otwarty przed odłożeniem zgubionego telefonu dalej słuchał jako
+// właściciel i dostawał rzeczy z obszarów zamkniętych (niezależny atak, 19 XI 2026, znalezisko 5).
+const imie = (s, maWstep) => (s.kto && (!maWstep || maWstep(s.kto, s) === true) ? s.kto : null);
 const BEZ_WSTEPU = 'klucz jest poprawny, ale uczestnik o tym imieniu nie ma tu wstępu (jego rzecz rodzaju uczestnik/1 jest odłożona albo jej nie ma)';
 
 // Kto jest teraz w Miejscu: jedno imię raz (kilka kart tej samej osoby to jedna obecność), z rzeczą, przy której jest.
@@ -108,11 +111,11 @@ export function zrobMiejsce(gniazda, najwiecej = NAJWIECEJ_GNIAZD) {
 
 // Nowe połączenie. `kto` jest znane od razu tylko wtedy, gdy łączący umiał podać klucz w nagłówku (agent);
 // przeglądarka przedstawia się dopiero pierwszą wiadomością. `gniazda` to lista już RAZEM z nowym.
-export function przyjmijGniazdo(ws, { kto = null, podglad = false, akt = 0, gniazda = [], widac = null, maWstep = null, teraz = Date.now() } = {}) {
+export function przyjmijGniazdo(ws, { kto = null, pos = null, podglad = false, akt = 0, gniazda = [], widac = null, maWstep = null, teraz = Date.now() } = {}) {
   // Imię z klucza, które nie ma tu wstępu, nie wchodzi do stanu gniazda: gniazdo stoi dalej jak gniazdo bez klucza.
-  const bezWstepu = !!kto && !!maWstep && maWstep(kto) !== true;
+  const bezWstepu = !!kto && !!maWstep && maWstep(kto, { pos }) !== true;
   if (bezWstepu) kto = null;
-  zapamietaj(ws, { kto: kto || null, przy: null, cicho: false, od: teraz, okno: teraz, n: 0, zle: 0 });
+  zapamietaj(ws, { kto: kto || null, pos: kto && pos ? String(pos).slice(0, 64) : null, przy: null, cicho: false, od: teraz, okno: teraz, n: 0, zle: 0 });
   if (bezWstepu) wyslij(ws, { t: 'blad', blad: BEZ_WSTEPU });
   if (kto) {
     wyslij(ws, { t: 'witaj', kto, akt });
@@ -169,7 +172,8 @@ export async function przyjmijWiadomosc(ws, surowe, { env = {}, gniazda = () => 
       if (!podglad) zamknij(ws, KOD_ZLY_KLUCZ, 'brak wstępu');
       return;
     }
-    zapamietaj(ws, { ...teraz2, kto, zle: 0, cicho: m.cicho === true, przy: null });
+    // Klucz w wiadomości to tożsamość z klucza, nie z sesji drzwi: poświadczenie sesji przestaje tu cokolwiek znaczyć.
+    zapamietaj(ws, { ...teraz2, kto, pos: null, zle: 0, cicho: m.cicho === true, przy: null });
     wyslij(ws, { t: 'witaj', kto, akt: akt() });
     rozglosObecnych(gniazda(), { podglad, widac, maWstep });
   } else if (m.t === 'przy') {

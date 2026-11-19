@@ -4,6 +4,14 @@
 // Imię `jozz` to właściciel. Sam klucz zna tylko jego posiadacz; nie trafia do repo, rozmowy ani dziennika.
 // Bez ustawienia KLUCZE Miejsce jest zamknięte i mówi to wprost.
 import { skrot, poprawneImie } from './miejsce.mjs';
+import { ciastkaZNaglowka, czytajSesje, sekretSesji } from './drzwi.mjs';
+
+// Właściciel: jedno imię z ustawienia Workera (ta sama domyślna wartość co w rdzeniu Miejsca).
+export const wlascicielZUstawien = (env = {}) => (typeof env.WLASCICIEL === 'string' && poprawneImie(env.WLASCICIEL) ? env.WLASCICIEL : 'jozz');
+
+// Czy w żądaniu jest w ogóle cokolwiek, czym można się przedstawić. Drzwi właściciela nie dają klucza
+// w nagłówku, tylko ciastko sesji, więc front musi wiedzieć, że warto zapytać.
+export const maTozsamosc = (request) => request.headers.has('authorization') || ciastkaZNaglowka(request.headers.get('cookie')).length > 0;
 
 // Imiona, których nie może nosić żaden klucz: pod nimi działa samo środowisko, więc klucz o takim imieniu
 // podszywałby się pod nie w dzienniku (znalezisko niezależnego ataku, 17 XI 2026). `obserwator` to automat, który
@@ -28,9 +36,41 @@ export async function ktoTo(request, env = {}) {
   if (!k.ok) return k;
   const naglowek = request.headers.get('authorization') || '';
   const m = /^Bearer\s+(\S{16,256})$/.exec(naglowek);
-  if (!m) return { ok: false, status: 401, blad: 'potrzebny klucz: nagłówek Authorization: Bearer <klucz>, co najmniej 16 znaków' };
-  const s = await skrot(m[1]);
-  const traf = k.wpisy.find(([, h]) => h === s);
-  if (!traf) return { ok: false, status: 401, blad: 'nieznany klucz' };
-  return { ok: true, kto: traf[0] };
+  if (m) {
+    const s = await skrot(m[1]);
+    const traf = k.wpisy.find(([, h]) => h === s);
+    if (!traf) return { ok: false, status: 401, blad: 'nieznany klucz' };
+    return { ok: true, kto: traf[0], skad: 'klucz' };
+  }
+  // Drugie wejście: sesja z drzwi właściciela (ciastko podpisane sekretem z ustawień Workera). Niesie tylko
+  // imię właściciela, bo tylko on ma poświadczenie; cudze imię w podpisanym ciastku i tak tu nie wejdzie.
+  // Ciastek o tej nazwie może przyjść kilka: bierzemy pierwsze, które przejdzie podpis, a nie pierwsze z nagłówka
+  // (podrzucone stało przed prawdziwym i odbierało właścicielowi tożsamość: niezależny atak, 19 XI 2026).
+  const zetony = ciastkaZNaglowka(request.headers.get('cookie'));
+  const sekret = sekretSesji(env);
+  if (zetony.length && sekret) {
+    let sesja = null;
+    for (const zeton of zetony) {
+      sesja = await czytajSesje(sekret, zeton).catch(() => null);
+      if (sesja) break;
+    }
+    // SĄSIEDNI ADRES NIE JEST OBCY DLA PRZEGLĄDARKI. `workers.dev` stoi na publicznej liście sufiksów, więc
+    // wszystkie podglądy tego konta (`<galaz>-jaskinia.jozzpoly.workers.dev`) dzielą jedną domenę rejestrowalną
+    // i `SameSite=Strict` ich NIE rozdziela: strona z cudzej gałęzi wysyłała żądanie do prawdziwego Miejsca,
+    // przeglądarka dokładała ciastko właściciela i ruch przechodził jako jego (atak Fable, 18 XI 2026 — przeszło
+    // zarówno nowymi drzwiami środowiska, jak i starymi /api/miejsce). Dlatego tożsamość Z CIASTKA liczy się
+    // tylko wtedy, gdy żądanie przyszło z tego samego adresu. Klucz w nagłówku tego nie potrzebuje: żadna
+    // przeglądarka nie dokłada go sama.
+    const skadStrona = request.headers.get('origin');
+    let mojOrigin = null;
+    try { mojOrigin = new URL(request.url).origin; } catch { mojOrigin = null; }
+    const zTegoAdresu = skadStrona ? skadStrona === mojOrigin : request.method === 'GET';
+    if (sesja && sesja.imie === wlascicielZUstawien(env)) {
+      if (!zTegoAdresu) {
+        return { ok: false, status: 403, blad: 'wejście właściciela działa tylko na stronie tego Miejsca: to żądanie przyszło z innego adresu' };
+      }
+      return { ok: true, kto: sesja.imie, skad: 'sesja', poswiadczenie: sesja.poswiadczenie };
+    }
+  }
+  return { ok: false, status: 401, blad: 'potrzebny klucz: nagłówek Authorization: Bearer <klucz>, co najmniej 16 znaków (albo wejście drzwiami właściciela)' };
 }
