@@ -187,7 +187,15 @@ fetch('zgloszenia.json', { cache: 'no-store' })
   const box = document.getElementById('czeka');
   const ZNAK = { teraz: 'teraz', kiedys: 'kiedyś', opcjonalne: 'opcjonalne' };
   const KOLEJNOSC = { teraz: 0, kiedys: 1, opcjonalne: 2 };
-  const dni = (d) => Math.floor((Date.now() - Date.parse(d)) / 86400000);
+  // Dni kalendarzowe w czasie tego, kto patrzy: data RRRR-MM-DD to jego dzień, nie doba od północy UTC (inaczej między
+  // północą a 1:00, latem 2:00, wczorajsza data wychodziła jako "dziś"; uwaga Opusa czatu, 19 XI). Zaokrąglenie łapie
+  // doby 23- i 25-godzinne przy zmianie czasu.
+  const dni = (d) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d));
+    if (!m) return Math.floor((Date.now() - Date.parse(d)) / 86400000);
+    const t = new Date();
+    return Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()) - new Date(+m[1], +m[2] - 1, +m[3])) / 86400000);
+  };
   const odkad = (d) => { const n = dni(d); return n <= 0 ? 'dziś' : n === 1 ? 'od wczoraj' : 'od ' + n + ' dni'; };
 
   fetch('czeka.json', { cache: 'no-store' })
@@ -204,7 +212,11 @@ fetch('zgloszenia.json', { cache: 'no-store' })
           ? '<span class="stare">Lista jest pusta, ale nie wiadomo, kiedy ktoś ją sprawdził.</span>'
           : st > 7
             ? '<span class="stare">Lista jest pusta, ale nikt jej nie sprawdził od ' + st + ' dni, więc może nie mówić prawdy.</span>'
-            : 'Dziś nic na Ciebie nie czeka. Sprawdzone ' + (st <= 0 ? 'dziś' : st === 1 ? 'wczoraj' : st + ' dni temu') + ' (' + esc(d.sprawdzone) + ').';
+            // "nie stoi bez Ciebie", a nie "nic nie czeka": sprawy bez pośpiechu bywają, ale żadna nie stoi (uwaga Opusa
+            // czatu); a "dziś" tylko wtedy, gdy sprawdzenie jest dzisiejsze
+            : st <= 0
+              ? 'Dziś nic nie stoi bez Ciebie. Sprawdzone dziś (' + esc(d.sprawdzone) + ').'
+              : 'Przy ostatnim sprawdzeniu, ' + (st === 1 ? 'wczoraj' : st + ' dni temu') + ' (' + esc(d.sprawdzone) + '), nic nie stało bez Ciebie.';
         const odl = Array.isArray(d && d.odlozone_przez_ciebie) ? d.odlozone_przez_ciebie : [];
         box.innerHTML = '<h2>Czeka na Ciebie</h2>'
           + '<p class="pusto">' + zdanie + '</p>'
