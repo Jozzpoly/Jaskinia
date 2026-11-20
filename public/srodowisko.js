@@ -809,8 +809,9 @@
     // historia: ostatnie pięć wersji od najnowszej; powrót do starszej tylko dla właściciela i dwudotykowo
     k.push(el('h4', { tekst: 'Historia' }),
       el('ul', { klasa: 'lista kr-historia' }, d.historia.slice(-5).reverse().map((h) => el('li', {},
-        el('span', {}, 'wersja ' + h.numer + ' · ' + h.kto + ' · ', el('span', { title: h.kiedy, tekst: kiedy(h.kiedy) }), h.numer === r.numer ? el('b', { tekst: ' (teraz)' }) : null),
-        ja && h.numer !== r.numer && !prop ? dwaDotkniecia('wróć do tej wersji', 'Na pewno wrócić?', 'do wersji ' + h.numer, (g) => ruch({ co: 'cofnij', rzecz: r.id, wersja: r.wersja, do: h.akt }, 'Wróciło do wersji ' + h.numer + ' (jako nowa wersja).', { zrodlo: g })) : null))));
+        el('span', {}, 'wersja ' + h.numer + ' · ' + h.kto + ' · ', el('span', { title: h.kiedy, tekst: kiedy(h.kiedy) }), h.numer === r.numer ? el('b', { tekst: ' (teraz)' }) : null,
+          h.wydalone ? el('span', { klasa: 'bok', title: 'Obszar trzyma tylko ostatnie wersje (ustawienie historia): tej treści już nie ma, zostały numer, autor i chwila', tekst: ' · wydalona' }) : null),
+        ja && h.numer !== r.numer && !prop && !h.wydalone ? dwaDotkniecia('wróć do tej wersji', 'Na pewno wrócić?', 'do wersji ' + h.numer, (g) => ruch({ co: 'cofnij', rzecz: r.id, wersja: r.wersja, do: h.akt }, 'Wróciło do wersji ' + h.numer + ' (jako nowa wersja).', { zrodlo: g })) : null))));
 
     k.push(el('p', { klasa: 'kr-stopka' }, el('a', { href: '/rzecz/' + r.id, target: '_blank', rel: 'noopener', tekst: 'tekstem', title: 'Ta sama rzecz jako goły tekst, w nowej karcie przeglądarki' })));
     kr.tresc.replaceChildren(...k.flat());
