@@ -2138,8 +2138,17 @@ export class Srodowisko {
     if (ocena.tryb === 'skutek') {
       const p = await this.r.przygotujPolozenie({ op, rodzaj, tresc: trescRzeczy({ obszar, cechy, odlozone, powod, zNatury }), glowa: 'rzecz:' + id, wersja: stara ? wersja : null });
       if (!p.ok) return p;
-      return this._zatwierdz(kto, [{ p, id, rodzaj, obszar, cechy, odlozone, ksztalt: spr.ksztalt }], slad,
+      // Skrócenie historii obszaru (zmiana jego ustawienia albo przeniesienie pod rodzica, który trzyma mniej): odpowiedź
+      // mówi przed skutkiem, ile wersji straci treść przy następnych zapisach, i że do pierwszego zapisu powrót ustawienia
+      // niczego nie traci (atak 8, W10, kąt 2 z listy Fable; zasada 5: każde przycięcie jest widoczne).
+      const limitPrzed = rodzaj === 'obszar/1' && stara && stara.rodzaj === 'obszar/1' ? this._limitHistorii(stara.id) : null;
+      const w = this._zatwierdz(kto, [{ p, id, rodzaj, obszar, cechy, odlozone, ksztalt: spr.ksztalt }], slad,
         { skutek: SKUTKI[co], rzecz: id, adres: '/rzecz/' + id, ...(zWersji ? { z_wersji: zWersji } : {}), ...uwagi });
+      if (w.ok && !w.powtorzone && limitPrzed !== null && this._limitHistorii(id) < limitPrzed) {
+        const s = this._skutekSkrocenia(id);
+        if (s) w.historia_skutek = s;
+      }
+      return w;
     }
     // Propozycja kosztuje uwagę właściciela, więc jeden uczestnik nie może ich mnożyć bez końca: jedna czekająca na
     // rzecz i najwyżej NAJWIECEJ_CZEKAJACYCH naraz (uwaga drugiej linii do PR 35: agent w pętli zalałby listę "czeka").
@@ -2196,6 +2205,32 @@ export class Srodowisko {
   _limitHistorii(obszar) {
     const v = this.ustawienie(obszar ?? null, 'historia').wartosc;
     return v === 'wszystko' ? Infinity : v;
+  }
+
+  // Co skrócenie historii obszaru zrobi przy następnych zapisach (W10): rzeczy w nim i w obszarach pod nim, które mają
+  // więcej wersji z treścią, niż trzyma ich dzisiejsze ustawienie. Drzewo obszarów jest małe, a liczy się raz, przy geście
+  // właściciela. Górna granica: wersji trzymanych (punkt, chwila, propozycja, stan sprzed gestu) nie odejmujemy.
+  _skutekSkrocenia(obszar) {
+    const dzieci = new Map();
+    for (const o of this.wszystkie({ rodzaj: 'obszar/1', odlozone: 'razem' })) {
+      const r = o.obszar ?? null;
+      if (!dzieci.has(r)) dzieci.set(r, []);
+      dzieci.get(r).push(o.id);
+    }
+    const zasieg = new Set(), stos = [obszar];
+    while (stos.length) { const o = stos.pop(); if (zasieg.has(o)) continue; zasieg.add(o); stos.push(...(dzieci.get(o) || [])); }
+    const bezPraw = NIE_WYDALAC.map(() => 'NOT (rodzaj >= ? AND rodzaj < ?)').join(' AND ');
+    const parPraw = NIE_WYDALAC.flatMap((x) => [x + '/', x + '0']);
+    let rzeczy = 0, wersji = 0;
+    for (const o of zasieg) {
+      const lim = this._limitHistorii(o);
+      if (lim === Infinity) continue;
+      const w = this.q(`SELECT COUNT(*) AS n, COALESCE(SUM(numer - wydalonych - ?), 0) AS s FROM rzeczy WHERE obszar = ? AND numer - wydalonych > ? AND ${bezPraw}`, lim, o, lim, ...parPraw)[0];
+      rzeczy += w.n; wersji += w.s;
+    }
+    if (!rzeczy) return null;
+    const forma = wersji === 1 ? 'wersja' : [2, 3, 4].includes(wersji % 10) && ![12, 13, 14].includes(wersji % 100) ? 'wersje' : 'wersji';
+    return { rzeczy, wersji_ponad: wersji, zdanie: `przy następnych zapisach ${rzeczy === 1 ? 'tej rzeczy' : 'tych ' + rzeczy + ' rzeczy'} treść straci najwyżej ${wersji} ${forma} ponad nowe ustawienie (wersje trzymane przez punkt zapisu, chwilę, propozycję i stan sprzed gestu zostają); dopóki nikt w nich nie zapisze, powrót ustawienia niczego nie traci` };
   }
 
   // Obszar, którego ustawienie historii wydaliło wersję (wydalone_przez), nazywa się tylko temu, kto go widzi. Obszaru, do

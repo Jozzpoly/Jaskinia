@@ -190,3 +190,27 @@ test('ZA6. zapis agenta nie wydala wersji właściciela (czekają na jego zapis)
   assert.equal(W.s.historia(Y).find((x) => x.akt === v1).wydalone, true, 'jego zapis zdejmuje jego zaległość: ' + JSON.stringify(wl.wydalanie));
   assert.equal(wl.wydalanie.czeka_na_wlasciciela, undefined);
 });
+
+test('ZA7. skrócenie historii mówi przed skutkiem, ile wersji straci treść; do pierwszego zapisu nic nie znika', async () => {
+  const W = await swiat();
+  const O = await W.obszar('Pełny');
+  const C = await W.obszar('Dziecko bez własnej historii', {}, O);
+  const X = await W.zWersjami('jozz', O, 6, 'x');
+  await W.zWersjami('jozz', O, 1, 'y');
+  const Z = await W.zWersjami('jozz', C, 4, 'z');
+  const o = W.s.rzecz(O);
+  const w = ok(await W.s.ruch('jozz', { op: op('h2'), co: 'poloz', rzecz: O, wersja: o.wersja, rodzaj: o.rodzaj, cechy: { ...o.cechy, historia: 2 } }));
+  assert.deepEqual([w.historia_skutek.rzeczy, w.historia_skutek.wersji_ponad], [2, 6], 'x ma 4 ponad, z w dziecku 2: ' + JSON.stringify(w.historia_skutek));
+  assert.match(w.historia_skutek.zdanie, /powrót ustawienia niczego nie traci/);
+  assert.equal(wydalonych(W, X) + wydalonych(W, Z), 0, 'samo ustawienie niczego nie wydala');
+  // kontrole: wydłużenie i zmiana nazwy nie niosą skutku; przeniesienie obszaru pod krótszego rodzica przez właściciela niesie
+  const o2 = W.s.rzecz(O);
+  assert.equal(ok(await W.s.ruch('jozz', { op: op('h5'), co: 'poloz', rzecz: O, wersja: o2.wersja, rodzaj: o2.rodzaj, cechy: { ...o2.cechy, historia: 5 } })).historia_skutek, undefined);
+  const o3 = W.s.rzecz(O);
+  assert.equal(ok(await W.s.ruch('jozz', { op: op('nz'), co: 'poloz', rzecz: O, wersja: o3.wersja, rodzaj: o3.rodzaj, cechy: { ...o3.cechy, nazwa: 'Pełny 2' } })).historia_skutek, undefined);
+  const K = await W.obszar('Krótki', { historia: 2 });
+  const D = await W.obszar('Wolny');
+  await W.zWersjami('jozz', D, 4, 'w');
+  const p = ok(await W.przenies('jozz', D, K));
+  assert.equal(p.historia_skutek && p.historia_skutek.wersji_ponad, 2, 'przeniesienie pod krótszego rodzica też mówi: ' + JSON.stringify(p));
+});
