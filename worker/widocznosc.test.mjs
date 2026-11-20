@@ -277,7 +277,7 @@ test('W16. widok czytelnika nie przepuszcza niczego po cichu: surowy SQL rzuca, 
   assert.throws(() => w.q('SELECT 1'), /nie podaje surowego SQL/);
   assert.equal(s.q('SELECT 1 AS x')[0].x, 1, 'na samym środowisku surowe zapytanie dalej działa');
 
-  const owiniete = new Set(['spis', 'wszystkie', 'ile', 'rzecz', 'rzeczyWiele', 'wersja', 'wskazujaNa', 'pamietaj', 'czeka', 'liczby', 'przekroj', 'q', 'ksztalty', 'ustawienie', 'widokNa']);
+  const owiniete = new Set(['spis', 'wszystkie', 'ile', 'rzecz', 'rzeczyWiele', 'wersja', 'wskazujaNa', 'pamietaj', 'czeka', 'liczby', 'przekroj', 'q', 'ksztalty', 'ustawienie', 'widokNa', 'pochodzenieDla']);
   const swiadomie = {
     historia: 'same numery aktow i autorzy, bez tresci; tresc podaje wersja(), a ta jest owinieta',
     aktyRzeczy: 'wiersze dziennika; kazdy i tak sprawdzany oczami czytelnika w opis.mjs (zmiany)',

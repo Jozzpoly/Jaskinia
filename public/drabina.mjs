@@ -1,5 +1,5 @@
 // Drabina przedstawień jako wartość pokrętła (typ `drabina`, 19 XI 2026): od jakiej miary karty na ekranie pojawia się
-// który element (imię, podpis rodziny, wiersz życia, opis, gałęzie). Specyfikacja: Opus czatu, 19 XI 18:26 (Commons,
+// który element (imię, podpis rodziny, wiersz życia, opis, gałęzie). Specyfikacja: Opus czatu, 19 XI 18:26 (wspólna pamięć agentów,
 // wplywy/2026-11-19-opus-czat-orientacja-i-klocek-drabina.md, § 2). Po co: poziom szczegółu ma być do strojenia ręką
 // bez wydania kodu, z zasięgiem (Miejsce, widok, profil telefonu, jedna rzecz), historią i cofnięciem jak każda wartość.
 //
