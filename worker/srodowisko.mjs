@@ -461,12 +461,24 @@ export class Srodowisko {
         if (cel.rzecz(id, { dla: kto }) === null) return null;
         const w = cel.wersja(id, akt);
         if (!w) return null;
+        const poziom = cel._poziom(kto);
+        if (poziom === 0) return w;
         const zle = cel._niewidoczneDla(kto);
-        if (!zle || !zle.length) return w;
         // wersja, która nie wie, gdzie leżała (rzecz z natury, zapis sprzed 18 XI 2026), nie istnieje dla nikogo, przed kim
         // cokolwiek jest zamknięte: nie da się wykluczyć, że leżała właśnie tam
-        return w.obszar_nieznany || zle.includes(w.obszar ?? null) ? null : w;
+        if (zle && zle.length && (w.obszar_nieznany || zle.includes(w.obszar ?? null))) return null;
+        // ...i wersja z czasu, gdy jej obszar był przed tym czytającym zamknięty. Otwarcie obszaru pokazuje to, co w nim
+        // w tej chwili leży, a nie jego wcześniejszą historię: do 20 XI właściciel usuwał zdanie ze szkicu, otwierał
+        // obszar, a zwiedzający bez klucza czytał wersję z tym zdaniem (atak 6 na warianty, F1). Miarą jest chwila tuż
+        // przed następną wersją (_jawnoscDawnej): wersja, która była bieżąca w chwili otwarcia, została nim pokazana
+        // i zostaje widoczna także potem.
+        if (!w.obszar_nieznany && cel._jawnoscDawnej(w) < poziom) return null;
+        return w;
       },
+      // Historia bez odcisków treści dla każdego poza właścicielem: odcisk wersji, której treści czytający nie widzi,
+      // pozwalał potwierdzić zgadniętą treść porównaniem (atak 6, F2). Numer, autor i czas zostają: że akt był, słychać
+      // i tak w dzienniku.
+      historia: (id) => { const h = cel.historia(id); return cel._poziom(kto) === 0 ? h : h.map(({ zapis, ...reszta }) => reszta); },
       // Propozycje i prośby wychodzą z `wszystkie`, ale WOŁANE NA CELU, więc okulary ich nie dotyczyły: prośba
       // z zamkniętego obszaru stała w "co czeka" z identyfikatorem i treścią (ta sama usterka co niżej w liczbach).
       czeka: () => ({
@@ -1204,7 +1216,9 @@ export class Srodowisko {
     widzi.obszar = (id) => patrzacy.every((k) => { const zle = this._niewidoczneDla(k); return !zle || !zle.includes(id ?? null); });
     // Dawny stan rzeczy (wersja, stan sprzed gestu, stan w zapisanej chwili): widać go, gdy widać obszar, w którym rzecz
     // wtedy leżała. Stan, który tego nie wie, widzi tylko ten, przed kim nic nie jest zamknięte.
-    widzi.dawna = (stan) => (stan.obszar_nieznany ? patrzacy.every((k) => { const zle = this._niewidoczneDla(k); return !zle || !zle.length; }) : widzi.obszar(stan.obszar));
+    // Od 20 XI także: obszar musiał być dla patrzącego widoczny, zanim ten stan zastąpiła następna wersja (_jawnoscDawnej).
+    // Cofnięcie nie może wynieść treści sprzed otwarcia obszaru tak samo, jak nie pokazuje jej czytanie (atak 6, F1).
+    widzi.dawna = (stan) => (stan.obszar_nieznany ? patrzacy.every((k) => { const zle = this._niewidoczneDla(k); return !zle || !zle.length; }) : patrzacy.every((k) => this._jawnoscDawnej(stan) >= this._poziom(k)));
     return widzi;
   }
 
@@ -1576,7 +1590,7 @@ export class Srodowisko {
     for (const a of this._aktyGestu(kto, gest)) {
       if (typeof przez === 'string' && !(a.cialo === 'okno:' + przez || String(a.cialo || '').startsWith('okno:' + przez + ' '))) continue;
       const id = a.glowa.slice(6), x = m.get(id);
-      if (!x) m.set(id, { rzecz: id, przed: a.z_zapisu ?? null, po: a.nr, kiedy: new Date(a.kiedy).toISOString() });
+      if (!x) m.set(id, { rzecz: id, przed: a.z_zapisu ?? null, od: a.nr, po: a.nr, kiedy: new Date(a.kiedy).toISOString() });
       else { x.po = a.nr; x.kiedy = new Date(a.kiedy).toISOString(); }
     }
     return [...m.values()];
@@ -1605,6 +1619,10 @@ export class Srodowisko {
       if (this.rzecz(widok, { dla }) === null) return [];
       const zle = this._niewidoczneDla(dla), wtedy = this._stanNa(widok, akt);
       if (!wtedy || (zle && zle.includes(wtedy.obszar ?? null))) return [];
+      // ...i układ z chwili, w której obszar widoku był przed tym czytającym zamknięty, choć dziś jest otwarty (jak dawna
+      // wersja rzeczy: otwarcie obszaru nie pokazuje jego wcześniejszej historii)
+      const poziom = this._poziom(dla);
+      if (poziom > 0 && !wtedy.obszar_nieznany && this._jawnoscNa(wtedy.obszar ?? null, akt) < poziom) return [];
     }
     const polozenia = this.wszystkie({ rodzaj: 'miejsce', gdzie: { widok }, odlozone: 'razem', ...(dla === undefined ? {} : { dla }) });
     // Ta sama granica co przy powrocie do układu: czytanie bez granicy kosztowało dwa pytania na każde położenie i mógł
@@ -1698,7 +1716,9 @@ export class Srodowisko {
       const rz = widzi(x.rzecz);
       if (!rz || rz.wersja !== x.po) { zmienione.push(x.rzecz); continue; }
       if (x.przed === null) { if (!rz.odlozone) cele.push({ rz, rodzaj: rz.rodzaj, obszar: rz.obszar, cechy: rz.cechy, odlozone: true, powod: 'cofnięty gest, w którym ta rzecz powstała' }); continue; }
-      const d = this._zeZapisu(x.przed);
+      // stan sprzed gestu przestał być bieżący w chwili pierwszego aktu gestu na tej rzeczy (x.od)
+      const d0 = this._zeZapisu(x.przed);
+      const d = d0 ? { ...d0, rzecz: x.rzecz, koniec: x.od - 1 } : null;
       if (!d || !widzi.dawna(d)) { zmienione.push(x.rzecz); continue; }
       // granica publikacji jak przy cofnięciu jednej rzeczy (_przestaw)
       cele.push({ rz, ...d, przed: this._przedDawnej(rz, d) });
@@ -1754,7 +1774,38 @@ export class Srodowisko {
   // rzecz i to, co leży przy niej, widać dziś tam, gdzie leży; dawną treść widać było tam, gdzie leżała wtedy. Stan, który
   // nie wie, gdzie leżał (rzecz z natury sprzed 18 XI 2026), liczy się jako zamknięty, jak przy czytaniu (`dla().wersja`).
   _przedDawnej(rz, d) {
-    return Math.min(this._jawnoscW(rz.obszar ?? null), d.obszar_nieznany ? 0 : this._jawnoscW(d.obszar ?? null));
+    return Math.min(this._jawnoscW(rz.obszar ?? null), d.obszar_nieznany ? 0 : this._jawnoscDawnej(d));
+  }
+
+  // Jaka jawność obszaru wystarcza temu czytającemu: właściciel widzi wszystko (0), uczestnik to, co nie jest tylko
+  // właściciela (1), zwiedzający tylko jawne (2). Ta sama miara co w _niewidoczneDla, tylko liczbą.
+  _poziom(kto) { const r = this.rola(kto); return r === 'wlasciciel' ? 0 : r === 'zwiedzajacy' ? 2 : 1; }
+
+  // Jawność obszaru w chwili aktu `nr`: ustawienia obszarów i ich rodzice z tamtej chwili, nie dzisiejsze.
+  _jawnoscNa(obszar, nr) {
+    let w = null;
+    try { w = this.ustawienie(obszar ?? null, 'widzi', (id) => this._stanNa(id, nr)).wartosc; } catch { w = null; }
+    return Object.hasOwn(JAWNOSC, w) ? JAWNOSC[w] : 0;
+  }
+
+  // Koniec życia wersji: numer aktu tuż przed następną wersją tej rzeczy; null, gdy to wersja bieżąca.
+  _koniecWersji(id, akt) {
+    const n = this.q(`SELECT nr FROM akty WHERE glowa = ? AND co = 'przesun' AND nr > ? ORDER BY nr LIMIT 1`, 'rzecz:' + id, akt)[0];
+    return n ? n.nr - 1 : null;
+  }
+
+  // Przy jakiej jawności treść dawnego stanu rzeczy była widoczna: dziś tam, gdzie wtedy leżała, i w chwili tuż przed tym,
+  // jak zastąpiła ją następna wersja (mniejsza z dwóch). Otwarcie obszaru pokazuje to, co w nim leży w tej chwili, a nie
+  // jego wcześniejszą historię (atak 6 na warianty, F1, 20 XI 2026); wersja bieżąca w chwili otwarcia została nim pokazana
+  // i liczy się jako widoczna. `stan` niesie `rzecz` i `akt` (wersja, stan w chwili) albo `koniec` wprost (stan sprzed
+  // gestu). Stan, o którym nie wiadomo, kiedy przestał być bieżący, liczy się jak dotąd: dzisiejszą jawnością obszaru.
+  _jawnoscDawnej(stan) {
+    if (stan.obszar_nieznany) return 0;
+    const dzis = this._jawnoscW(stan.obszar ?? null);
+    let koniec = stan.koniec;
+    if (koniec === undefined) koniec = typeof stan.rzecz === 'string' && Number.isInteger(stan.akt) ? this._koniecWersji(stan.rzecz, stan.akt) : null;
+    if (!Number.isInteger(koniec)) return dzis;
+    return Math.min(dzis, this._jawnoscNa(stan.obszar ?? null, koniec));
   }
 
   // Publikacja jest skutkiem, nie gestem (werdykt 68 po niezależnym ataku, 20 XI 2026). Ruch pośredni publikuje, gdy po
@@ -1980,6 +2031,17 @@ export class Srodowisko {
     if (przez && ocena.tryb !== 'odmowa') {
       const jego = this.ocen(przez, { stara, rodzaj, obszar, cechy });
       if (jego.tryb === 'odmowa' || (jego.tryb === 'propozycja' && ocena.tryb === 'skutek')) ocena = jego;
+    }
+    // Zwykłe położenie, które przenosi ISTNIEJĄCĄ rzecz tam, gdzie zobaczy ją szersze grono (albo czyni obszar jawniejszym),
+    // jest publikacją tak samo jak kopia czy cofnięcie. Publikuje właściciel, więc taki ruch uczestnika staje się
+    // propozycją, a jej przyjęcie pyta o publikuj (_rozstrzygnij). Do 20 XI agent z prawem prowadzenia w obszarze jawnym
+    // przenosił tam cudzą rzecz z obszaru uczestników i nikt nie pytał właściciela (atak 6 na warianty, F5). Nową treść
+    // autor dalej kładzie tam, gdzie wolno mu prowadzić: to pokój, który właściciel otworzył i mu powierzył. Czego to nie
+    // zamyka: kto czyta zamknięty obszar i pisze w jawnym, przepisze treść ręcznie jako nową rzecz, pod własnym imieniem.
+    if (!brama && co === 'poloz' && stara && ocena.tryb === 'skutek'
+      && [kto, ...(przez ? [przez] : [])].some((k) => { const r = this.rola(k); return r !== 'wlasciciel' && r !== 'automat'; })
+      && this._publikuje([{ id, rodzaj, obszar, cechy, przed: this._jawnoscW(stara.obszar ?? null), zNatury }])) {
+      ocena = { tryb: 'propozycja', wymaga: 'wlasciciel', powod: 'po tym ruchu rzecz zobaczy więcej osób niż dotąd: to jest publikacja, a publikuje właściciel, więc ruch czeka na jego przyjęcie' };
     }
     if (ocena.tryb === 'odmowa') return blad(ocena.status, ocena.powod);
     const uwagi = { ...(spr.nieznane.length ? { nieznane_cechy: spr.nieznane } : {}), ...(spr.bezKsztaltu ? { uwaga: `rodzaj ${rodzaj} nie ma kształtu: rzecz jest zapisana i widoczna, ale niczego w niej nie sprawdzono` } : {}) };
