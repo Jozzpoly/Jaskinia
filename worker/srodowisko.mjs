@@ -61,7 +61,25 @@ export const UWAGI = ['cisza', 'skrot', 'znak', 'budzi'];
 export const WIDZI = ['wlasciciel', 'uczestnicy', 'wszyscy'];
 export const UKLADA = ['reka', 'regula', 'agent'];
 export const USTAWIENIA = { ile_wolno: STOPNIE, uwaga: UWAGI, widzi: WIDZI, uklada: UKLADA };
-export const DOMYSLNE = { ile_wolno: 'proponowac', uwaga: 'znak', widzi: 'uczestnicy', uklada: 'reka' };
+export const DOMYSLNE = { ile_wolno: 'proponowac', uwaga: 'znak', widzi: 'uczestnicy', uklada: 'reka', historia: 'wszystko' };
+// --- ile historii trzymać (próba 1 umowy zapisu, 20 XI 2026; umowa U2, U3, U6, U12) ------------------------------
+// Jego słowa: chce wracać "kilka wersji wstecz", a ile historii trzymać ma być ustawieniem; metabolizm obejmuje
+// wydalanie. Ustawienie `historia` obszaru mówi, ile wersji każdej rzeczy w nim trzymać z treścią: liczba albo
+// "wszystko". Szukane w drodze do góry jak każde ustawienie obszaru, domyślnie "wszystko" (dopóki nikt nic nie ustawi,
+// nic się nie zmienia). Zmienia je tylko właściciel (_zastrzezone). Najmniej dwie: bieżąca i poprzednia, bo cofnięcie
+// bez wskazania wersji wraca do poprzedniej. Zakres szeroki (zasada 5); wartość spoza niego to odmowa ze zdaniem.
+export const HISTORIA_NAJMNIEJ = 2;
+export const HISTORIA_NAJWIECEJ = 100000;
+// Ile wersji najwyżej wydala jeden zapis (wszystkie rzeczy tej czynności razem). Reszta czeka na następne zapisy tej
+// rzeczy: żadnych alarmów ani pracy w tle, więc Miejsce w spoczynku dalej nic nie kosztuje (U6).
+export const WYDALAJ_NA_RAZ = 5;
+// Ile wierszy historii oddaje trasa rzeczy bez pytania o starsze strony (U12: odczyt nie rośnie z historią).
+export const HISTORIA_NA_STRONE = 20;
+// Rodzaje niosące prawa nie tracą historii: kto, kiedy i jak zmieniał prawa, ma być zawsze do przeczytania (U3).
+const NIE_WYDALAC = ['obszar', 'uczestnik', 'poswiadczenie'];
+export const poprawnaHistoria = (v) => v === 'wszystko' || (Number.isInteger(v) && v >= HISTORIA_NAJMNIEJ && v <= HISTORIA_NAJWIECEJ);
+const dozwolone = (klucz, v) => (klucz === 'historia' ? poprawnaHistoria(v) : USTAWIENIA[klucz].includes(v));
+const ZDANIE_WYDALONEJ = (w) => `wersja o znaczniku ${w.akt} została wydalona (${String(w.wydalone_kiedy || '').slice(0, 10)}): ustawienie historii obszaru trzyma tylko ostatnie wersje, więc jej treści już nie ma; zostały numer, autor i chwila. Wybierz wersję, która ma treść (historia rzeczy)`;
 export const ROLE = ['wlasciciel', 'agent', 'automat'];
 // Rodzaje, których kształt i rzeczy trzymają całość w ryzach: zmienia je tylko właściciel.
 // Rodzaje, które środowisko rozumie samo: kształt ich następnego pokolenia też ustala tylko właściciel.
@@ -317,7 +335,7 @@ function doliczPrzekroj(mapa, rodzaj, obszar, odlozone, ile) {
 const SPIS_SCHEMAT = [
   `CREATE TABLE IF NOT EXISTS rzeczy (id TEXT PRIMARY KEY, rodzaj TEXT NOT NULL, obszar TEXT, zapis TEXT NOT NULL, akt INTEGER NOT NULL,
      numer INTEGER NOT NULL DEFAULT 1, odlozone INTEGER NOT NULL DEFAULT 0, szukane TEXT NOT NULL DEFAULT '',
-     utworzyl TEXT NOT NULL, utworzono INTEGER NOT NULL, zmienil TEXT NOT NULL, zmieniono INTEGER NOT NULL)`,
+     utworzyl TEXT NOT NULL, utworzono INTEGER NOT NULL, zmienil TEXT NOT NULL, zmieniono INTEGER NOT NULL, wydalonych INTEGER NOT NULL DEFAULT 0)`,
   `CREATE INDEX IF NOT EXISTS rzeczy_rodzaj ON rzeczy (rodzaj)`,
   `CREATE INDEX IF NOT EXISTS rzeczy_obszar ON rzeczy (obszar)`,
   // Pytanie "co zmieniło się po akcie N" zadaje każda otwarta strona po każdej zmianie: bez indeksu czytałoby cały spis.
@@ -342,6 +360,9 @@ export class Srodowisko {
     const kolumny = sql.exec(`PRAGMA table_info(rzeczy)`).toArray().map((k) => k.name);
     const stary = kolumny.length > 0 && !['numer', 'odlozone', 'szukane'].every((k) => kolumny.includes(k));
     if (stary) { sql.exec(`DROP TABLE rzeczy`); sql.exec(`DROP TABLE IF EXISTS odniesienia`); }
+    // Spis sprzed wydalania (20 XI 2026): licznik wydalonych wersji dopisany z zerem, co jest prawdą dla każdej bazy,
+    // w której wydalania jeszcze nie było.
+    if (kolumny.length > 0 && !stary && !kolumny.includes('wydalonych')) sql.exec(`ALTER TABLE rzeczy ADD COLUMN wydalonych INTEGER NOT NULL DEFAULT 0`);
     for (const s of SPIS_SCHEMAT) sql.exec(s);
     this._kolejka = Promise.resolve();
     this._role = { nr: -1, mapa: new Map() };
@@ -391,7 +412,8 @@ export class Srodowisko {
     if (!t || typeof t !== 'object') t = {};
     return { id: w.id, rodzaj: w.rodzaj, obszar: w.obszar ?? null, cechy: t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {},
       wersja: w.akt, numer: w.numer, ...(w.odlozone ? { odlozone: true, ...(typeof t.powod === 'string' ? { powod: t.powod } : {}) } : {}), zapis: w.zapis,
-      utworzyl: w.utworzyl, utworzono: new Date(w.utworzono).toISOString(), zmienil: w.zmienil, zmieniono: new Date(w.zmieniono).toISOString() };
+      utworzyl: w.utworzyl, utworzono: new Date(w.utworzono).toISOString(), zmienil: w.zmienil, zmieniono: new Date(w.zmieniono).toISOString(),
+      ...(w.wydalonych ? { wydalonych: w.wydalonych } : {}) };
   }
 
   rzecz(id, { dla = undefined } = {}) {
@@ -461,6 +483,9 @@ export class Srodowisko {
         if (cel.rzecz(id, { dla: kto }) === null) return null;
         const w = cel.wersja(id, akt);
         if (!w) return null;
+        // Wersja wydalona nie ma treści ani obszaru: zostaje numer, autor i chwila, tak jak w historii, którą ten
+        // czytający i tak widzi.
+        if (w.wydalone) return w;
         const poziom = cel._poziom(kto);
         if (poziom === 0) return w;
         const zle = cel._niewidoczneDla(kto);
@@ -478,7 +503,7 @@ export class Srodowisko {
       // Historia bez odcisków treści dla każdego poza właścicielem: odcisk wersji, której treści czytający nie widzi,
       // pozwalał potwierdzić zgadniętą treść porównaniem (atak 6, F2). Numer, autor i czas zostają: że akt był, słychać
       // i tak w dzienniku.
-      historia: (id) => { const h = cel.historia(id); return cel._poziom(kto) === 0 ? h : h.map(({ zapis, ...reszta }) => reszta); },
+      historia: (id, o) => { const h = cel.historia(id, o); return cel._poziom(kto) === 0 ? h : h.map(({ zapis, ...reszta }) => reszta); },
       // Propozycje i prośby wychodzą z `wszystkie`, ale WOŁANE NA CELU, więc okulary ich nie dotyczyły: prośba
       // z zamkniętego obszaru stała w "co czeka" z identyfikatorem i treścią (ta sama usterka co niżej w liczbach).
       czeka: () => ({
@@ -729,18 +754,45 @@ export class Srodowisko {
   }
 
   // Historia rzeczy: każda wersja ma kolejny numer (1, 2, 3…) i znacznik `akt`, czyli numer aktu, który ją ustawił.
-  historia(id) {
-    return this.q(`SELECT nr, kto, kiedy, cialo, zapis FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr`, 'rzecz:' + id)
-      .map((a, i) => ({ numer: i + 1, akt: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), zapis: a.zapis, ...(a.cialo ? { cialo: a.cialo } : {}) }));
+  // Wersja wydalona (ustawienie historii obszaru) zostaje wierszem bez odcisku treści, ze znakiem `wydalone`.
+  // Bez `ile`: cała historia (dla środowiska i sprawdzianów). Z `ile`: najwyżej tyle NAJNOWSZYCH wersji (sprzed aktu
+  // `przed`, gdy podany), dalej od najstarszej do najnowszej. Tak czyta trasa rzeczy: do 20 XI oddawała całą historię,
+  // więc odczyt jednej rzeczy czytał tyle wierszy, ile rzecz miała wersji (3, 21, 201 przy 2, 20, 200; egzamin, wiersz 12).
+  // `razem`: ile wersji ma rzecz (pole numer ze spisu), gdy wołający już je zna; oszczędza dwa pytania na pierwszej stronie.
+  historia(id, { przed = null, ile = null, razem = null } = {}) {
+    const wiersz = (a, numer) => ({ numer, akt: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(),
+      ...(a.wydalone != null ? { wydalone: true, wydalone_kiedy: new Date(a.wydalone).toISOString(), wydalone_przez: a.wydalone_przez ?? null } : { zapis: a.zapis }),
+      ...(a.cialo ? { cialo: a.cialo } : {}) });
+    const glowa = 'rzecz:' + id;
+    if (ile === null || ile === undefined) return this.q(`SELECT nr, kto, kiedy, cialo, zapis, wydalone, wydalone_przez FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr`, glowa).map((a, i) => wiersz(a, i + 1));
+    const n = Math.max(1, Math.min(200, Math.trunc(Number(ile)) || HISTORIA_NA_STRONE));
+    const kursor = Number.isSafeInteger(przed) && przed > 0 ? przed : null;
+    const w = this.q(`SELECT nr, kto, kiedy, cialo, zapis, wydalone, wydalone_przez FROM akty WHERE glowa = ? AND co = 'przesun'${kursor ? ' AND nr < ?' : ''} ORDER BY nr DESC LIMIT ?`, glowa, ...(kursor ? [kursor] : []), n).reverse();
+    if (!w.length) return [];
+    // numer najnowszej wersji na stronie: wszystkie wersje rzeczy (spis je liczy) minus nowsze od niej; na pierwszej
+    // stronie najnowsza to wersja bieżąca, więc jej numer to po prostu liczba wszystkich wersji
+    const najnowszy = !kursor && Number.isSafeInteger(razem) ? razem : this._numerWersji(id, w[w.length - 1].nr);
+    return w.map((a, i) => wiersz(a, najnowszy - (w.length - 1 - i)));
   }
 
-  // Treść wcześniejszej wersji rzeczy (po znaczniku `akt` z historii).
+  // Który z kolei jest ten akt w historii rzeczy: wszystkie wersje minus nowsze od niego. Liczy wiersze nowsze, nie
+  // starsze, bo pytanie pada prawie zawsze o wersje świeże (powtórzenie ruchu, cofnięcie do poprzedniej, pierwsza strona).
+  _numerWersji(id, akt) {
+    const glowa = 'rzecz:' + id;
+    const r = this.q(`SELECT numer FROM rzeczy WHERE id = ?`, id)[0];
+    if (r) return r.numer - this.q(`SELECT COUNT(*) AS n FROM akty WHERE glowa = ? AND co = 'przesun' AND nr > ?`, glowa, akt)[0].n;
+    return this.q(`SELECT COUNT(*) AS n FROM akty WHERE glowa = ? AND co = 'przesun' AND nr <= ?`, glowa, akt)[0].n;
+  }
+
+  // Treść wcześniejszej wersji rzeczy (po znaczniku `akt` z historii): jedno pytanie o ten akt, nie cała historia.
+  // Wersja wydalona oddaje swój wiersz bez treści ze znakiem `wydalone` (U7: po wydaleniu nic nie kłamie).
   wersja(id, akt) {
     if (typeof id !== 'string' || !ID.test(id) || !Number.isInteger(akt)) return null;
-    const h = this.historia(id);
-    const w = h.find((x) => x.akt === akt);
-    if (!w) return null;
-    const z = this.q(`SELECT rodzaj, tresc FROM zapisy WHERE id = ?`, w.zapis)[0];
+    const a = this.q(`SELECT nr, kto, kiedy, zapis, wydalone, wydalone_przez FROM akty WHERE nr = ? AND glowa = ? AND co = 'przesun'`, akt, 'rzecz:' + id)[0];
+    if (!a) return null;
+    const w = { numer: this._numerWersji(id, akt), kto: a.kto, kiedy: new Date(a.kiedy).toISOString() };
+    if (a.wydalone != null) return { rzecz: id, akt, ...w, wydalone: true, wydalone_kiedy: new Date(a.wydalone).toISOString(), wydalone_przez: a.wydalone_przez ?? null };
+    const z = this.q(`SELECT rodzaj, tresc FROM zapisy WHERE id = ?`, a.zapis)[0];
     if (!z) return null;
     let t = {};
     try { t = JSON.parse(z.tresc); } catch { /* zostaje puste */ }
@@ -841,13 +893,13 @@ export class Srodowisko {
       if (kroki++ >= 64) return { wartosc: klucz === 'ile_wolno' ? 'nic' : DOMYSLNE[klucz], skad: null, urwane: true };
       const o = stan(id);
       if (!o || o.rodzaj !== 'obszar/1') break;
-      if (USTAWIENIA[klucz].includes(o.cechy[klucz])) return { wartosc: o.cechy[klucz], skad: id };
+      if (dozwolone(klucz, o.cechy[klucz])) return { wartosc: o.cechy[klucz], skad: id };
       id = o.obszar;
     }
     // Na samej górze stoi obszar główny Miejsca: jego ustawienia są domyślnymi dla wszystkiego, co nie mówi inaczej.
     const g = this.r.meta('obszar_glowny');
     const glowny = g && g !== obszar ? stan(g) : null;
-    if (glowny && USTAWIENIA[klucz].includes(glowny.cechy[klucz])) return { wartosc: glowny.cechy[klucz], skad: g };
+    if (glowny && dozwolone(klucz, glowny.cechy[klucz])) return { wartosc: glowny.cechy[klucz], skad: g };
     return { wartosc: DOMYSLNE[klucz], skad: null };
   }
 
@@ -872,7 +924,7 @@ export class Srodowisko {
     // Poświadczenie to czym się wchodzi: cudza ręka przy nim znaczyłaby cudze wejście.
     if (rodzaj === 'poswiadczenie/1' || byl('poswiadczenie/1')) return 'poświadczenia do drzwi zakłada i zmienia tylko właściciel';
     if (rodzaj === 'obszar/1' || byl('obszar/1')) {
-      for (const k of Object.keys(USTAWIENIA)) {
+      for (const k of [...Object.keys(USTAWIENIA), 'historia']) {
         const bylo = byl('obszar/1') ? (stara.cechy[k] ?? null) : null;
         const jest = rodzaj === 'obszar/1' ? (cechy[k] ?? null) : null;
         if (bylo !== jest) return `ustawienie ${k} obszaru zmienia tylko właściciel`;
@@ -971,6 +1023,10 @@ export class Srodowisko {
         if (this._prawoWObszarze(v.rodzaj, v.obszar ?? null).tryb !== 'skutek') { wynik = { tryb: 'propozycja', powod: 'ten zestaw jest włączony w zasięgu, w którym Twoja zmiana nie miałaby skutku od razu, więc zmiana samego zestawu też jest propozycją' }; break; }
       }
     }
+    // Przeniesienie do obszaru, który trzyma mniej wersji, skróciłoby historię rzeczy przy jej następnym zapisie. Głębokość
+    // historii jest ustawieniem właściciela (usuwanie jest jego), więc uczestnik nie skróci jej też naokoło, przenosząc.
+    if (stara && (stara.obszar ?? null) !== (obszar ?? null) && !NIE_WYDALAC.includes(nazwaRodzaju(rodzaj)) && this._limitHistorii(obszar ?? null) < this._limitHistorii(stara.obszar ?? null))
+      return { tryb: 'propozycja', powod: 'w obszarze docelowym trzyma się mniej wersji niż tam, gdzie rzecz leży: przeniesienie skróciłoby jej historię, a o tym decyduje tylko właściciel', wymaga: 'wlasciciel' };
     const z = this._zastrzezone(rodzaj, cechy, stara);
     if (z) return { tryb: 'propozycja', powod: z, wymaga: 'wlasciciel' };
     return wynik;
@@ -1250,6 +1306,8 @@ export class Srodowisko {
       if (stara.id === this.r.meta('obszar_glowny') || stara.id === this.r.meta('obszar_nowe')) return blad(409, 'tego obszaru środowisko potrzebuje do działania; nie da się go odłożyć ani zamienić w coś innego');
       if (this.ile({ obszar: stara.id, odlozone: 'razem' }) > 0) return blad(409, 'w tym obszarze leżą rzeczy; najpierw je przenieś, wtedy obszar da się odłożyć albo zamienić w coś innego');
     }
+    if (rodzaj === 'obszar/1' && Object.hasOwn(cechy, 'historia') && !poprawnaHistoria(cechy.historia))
+      return blad(422, `historia: ile wersji każdej rzeczy trzymać, liczba całkowita od ${HISTORIA_NAJMNIEJ} do ${HISTORIA_NAJWIECEJ} albo "wszystko" (najmniej dwie: bieżąca i poprzednia, do której wraca cofnięcie)`);
     if (rodzaj === 'ksztalt/1') {
       const b = sprawdzKsztalt(cechy);
       if (b.length) return blad(422, 'kształt nie przeszedł sprawdzenia: ' + b.join('; '), { bledy: b });
@@ -1386,7 +1444,9 @@ export class Srodowisko {
   // zamiast oceniać ruch drugi raz w innym już świecie (po zmianie ustawienia obszaru albo po rozstrzygnięciu).
   // Inna czynność pod tym samym op to konflikt, nigdy cichy sukces.
   _powtorzenie(kto, c, widzi = null) {
-    const akt = (op) => this.q(`SELECT a.nr, a.glowa, a.zapis, z.rodzaj, z.tresc FROM akty a JOIN zapisy z ON z.id = a.zapis WHERE a.kto = ? AND a.op = ? AND a.co = 'przesun'`, kto, op)[0];
+    // LEFT JOIN: akt, którego wersja została potem wydalona, dalej mówi, że ten op jest zajęty (bez treści nie da się
+    // już sprawdzić, czy to ta sama czynność, więc ponowienie dostaje 409, a nie drugi zapis).
+    const akt = (op) => this.q(`SELECT a.nr, a.glowa, a.zapis, z.rodzaj, z.tresc FROM akty a LEFT JOIN zapisy z ON z.id = a.zapis WHERE a.kto = ? AND a.op = ? AND a.co = 'przesun'`, kto, op)[0];
     const a = akt(c.op + '.p');
     if (!a || !String(a.glowa).startsWith('rzecz:')) return null;
     const id = a.glowa.slice(6);
@@ -1398,7 +1458,7 @@ export class Srodowisko {
     try { t = JSON.parse(a.tresc) || {}; } catch { /* zostaje puste */ }
     const cechy = t.cechy && typeof t.cechy === 'object' ? t.cechy : {};
     const konflikt = blad(409, 'ten op należy już do innej czynności; nowa czynność potrzebuje nowego op', { rzecz: id });
-    const numer = this.historia(id).findIndex((h) => h.akt === a.nr) + 1;
+    const numer = this._numerWersji(id, a.nr);
     const wspolne = { ok: true, powtorzone: true, wersja: a.nr, ...(numer ? { numer } : {}) };
     if (c.co === 'przyjmij') {
       const b = akt(c.op + '.prop.p');
@@ -1448,10 +1508,11 @@ export class Srodowisko {
       czeka = await this._polozDomyslny(stara, czeka.cechy.rodzaj, czeka.cechy.tresc, { op: `domyslny-odswiez-${czeka.id}-${stara.wersja}` });
     }
     if (czeka) return this._rozstrzygnij(kto, { op: c.op, co: 'przyjmij', propozycja: czeka.id }, slad);
-    const ost = this.historia(stara.id).filter((h) => h.kto === AUTOMAT).pop();
+    const ost = this.q(`SELECT nr AS akt FROM akty WHERE glowa = ? AND co = 'przesun' AND kto = ? ORDER BY nr DESC LIMIT 1`, 'rzecz:' + stara.id, AUTOMAT)[0];
     if (!ost) return blad(409, 'ta rzecz nie ma wersji domyślnej: nigdy nie położył jej automat');
     // Już domyślna to ta sama treść, nie ten sam numer: po cofnięciu bieżąca wersja ma autora ręki, a treść automatu.
     const dom = this.wersja(stara.id, ost.akt);
+    if (dom && dom.wydalone) return blad(409, 'ostatnia wersja domyślna tej rzeczy (położona przez automat) została wydalona: ' + ZDANIE_WYDALONEJ(dom), { wydalone: true, akt: dom.akt });
     const ta = (x) => JSON.stringify([x.rodzaj, x.obszar ?? null, x.cechy]);
     if (ost.akt === stara.wersja || (dom && !stara.odlozone && ta(dom) === ta(stara))) return blad(409, 'ta rzecz jest już w wersji domyślnej');
     // pod spodem cofnięcie, więc ta sama granica publikacji co przy cofnięciu (_przestaw)
@@ -1511,21 +1572,24 @@ export class Srodowisko {
       if (!stara.odlozone) return blad(409, 'ta rzecz nie jest odłożona');
       return this._zmien(kto, c.op, slad, { ...wspolne, co: 'przywroc', rodzaj: stara.rodzaj, obszar: stara.obszar, cechy: stara.cechy, odlozone: false, powod: null });
     }
-    // cofnij: do wersji wskazanej znacznikiem `do` (pole akt z historii) albo do poprzedniej
-    const h = this.historia(stara.id);
+    // cofnij: do wersji wskazanej znacznikiem `do` (pole akt z historii) albo do poprzedniej. Punktowo: pytanie o jeden
+    // akt, nie o całą historię (U12).
     let cel;
     if ('do' in c) {
       if (!Number.isInteger(c.do)) return blad(400, 'do: znacznik wcześniejszej wersji tej rzeczy (pole akt z jej historii)');
       cel = this.wersja(stara.id, c.do);
+      // Wersja wydalona: zdanie, nie pustka (U7). Że akt był, mówi i tak historia.
+      if (cel && cel.wydalone) return blad(409, ZDANIE_WYDALONEJ(cel), { wydalone: true, akt: cel.akt });
       // Dawna wersja niesie obszar, w którym rzecz wtedy leżała. Wersja z obszaru, którego piszący nie widzi, nie
       // istnieje dla niego tak samo jak przy czytaniu (`dla().wersja`): cofnięcie nie może być drogą do tego, czego
       // czytanie nie pokazuje, ani odmową, która nazywa zamknięty obszar.
       if (!cel || !widzi.dawna(cel)) return blad(404, `rzecz ${stara.id} nie ma wersji o znaczniku ${c.do}`);
     } else {
-      if (h.length < 2) return blad(409, 'ta rzecz ma tylko jedną wersję; nie ma do czego cofnąć (żeby ją schować, użyj co: odloz)');
-      const poprzednia = h.filter((x) => x.akt < stara.wersja).pop();
-      cel = poprzednia ? this.wersja(stara.id, poprzednia.akt) : null;
+      if (stara.numer < 2) return blad(409, 'ta rzecz ma tylko jedną wersję; nie ma do czego cofnąć (żeby ją schować, użyj co: odloz)');
+      const poprzednia = this.q(`SELECT nr FROM akty WHERE glowa = ? AND co = 'przesun' AND nr < ? ORDER BY nr DESC LIMIT 1`, 'rzecz:' + stara.id, stara.wersja)[0];
+      cel = poprzednia ? this.wersja(stara.id, poprzednia.nr) : null;
       if (!cel) return blad(409, 'nie ma wcześniejszej wersji tej rzeczy');
+      if (cel.wydalone) return blad(409, ZDANIE_WYDALONEJ(cel), { wydalone: true, akt: cel.akt });
       // Że poprzednia wersja jest, mówi sama historia (numery aktów są słyszalne); jej treści i obszaru nie mówimy.
       if (!widzi.dawna(cel)) return blad(409, 'poprzednia wersja tej rzeczy leży poza tym, do czego masz wstęp; wskaż wcześniejszą wersję znacznikiem do');
     }
@@ -1554,8 +1618,10 @@ export class Srodowisko {
   }
   // Stan rzeczy przy akcie o numerze `akt`: ostatnia wersja ustawiona nie później niż on; null, gdy rzeczy jeszcze nie było.
   _stanNa(id, akt) {
-    const a = this.q(`SELECT nr, zapis FROM akty WHERE glowa = ? AND co = 'przesun' AND nr <= ? ORDER BY nr DESC LIMIT 1`, 'rzecz:' + id, akt)[0];
+    const a = this.q(`SELECT nr, zapis, wydalone FROM akty WHERE glowa = ? AND co = 'przesun' AND nr <= ? ORDER BY nr DESC LIMIT 1`, 'rzecz:' + id, akt)[0];
     if (!a) return null;
+    // stan, który był, ale jego treść wydalono: nie "rzeczy jeszcze nie było", tylko jawny znak (U7)
+    if (a.wydalone != null) return { rzecz: id, akt: a.nr, wydalone: true };
     const t = this._zeZapisu(a.zapis);
     return t ? { rzecz: id, akt: a.nr, ...t } : null;
   }
@@ -1574,8 +1640,10 @@ export class Srodowisko {
     const m = new Map();
     for (let i = 0; i < ids.length; i += 100) {
       const paczka = ids.slice(i, i + 100);
-      const wiersze = this.q(`SELECT a.glowa, a.nr, z.rodzaj, z.tresc FROM akty a JOIN zapisy z ON z.id = a.zapis WHERE a.co = 'przesun' AND a.glowa IN (${paczka.map(() => '?').join(',')}) AND a.nr = (SELECT MAX(b.nr) FROM akty b WHERE b.glowa = a.glowa AND b.co = 'przesun' AND b.nr <= ?)`, ...paczka.map((id) => 'rzecz:' + id), akt);
-      for (const w of wiersze) m.set(w.glowa.slice(6), { rzecz: w.glowa.slice(6), akt: w.nr, ...this._zTresci(w.rodzaj, w.tresc) });
+      const wiersze = this.q(`SELECT a.glowa, a.nr, a.wydalone, z.rodzaj, z.tresc FROM akty a LEFT JOIN zapisy z ON z.id = a.zapis WHERE a.co = 'przesun' AND a.glowa IN (${paczka.map(() => '?').join(',')}) AND a.nr = (SELECT MAX(b.nr) FROM akty b WHERE b.glowa = a.glowa AND b.co = 'przesun' AND b.nr <= ?)`, ...paczka.map((id) => 'rzecz:' + id), akt);
+      // Stan wydalony zostaje w mapie ze znakiem: bez niego powrót do układu brałby położenie za takie, którego wtedy nie
+      // było, i odkładał je (U7).
+      for (const w of wiersze) m.set(w.glowa.slice(6), w.wydalone != null || w.tresc == null ? { rzecz: w.glowa.slice(6), akt: w.nr, wydalone: true } : { rzecz: w.glowa.slice(6), akt: w.nr, ...this._zTresci(w.rodzaj, w.tresc) });
     }
     return m;
   }
@@ -1618,6 +1686,7 @@ export class Srodowisko {
     if (dla !== undefined) {
       if (this.rzecz(widok, { dla }) === null) return [];
       const zle = this._niewidoczneDla(dla), wtedy = this._stanNa(widok, akt);
+      if (wtedy && wtedy.wydalone) return blad(410, 'wersja tego widoku z tamtej chwili została wydalona (ustawienie historii obszaru), więc nie wiadomo już, gdzie wtedy leżał; układu z tej chwili nie pokazuję');
       if (!wtedy || (zle && zle.includes(wtedy.obszar ?? null))) return [];
       // ...i układ z chwili, w której obszar widoku był przed tym czytającym zamknięty, choć dziś jest otwarty (jak dawna
       // wersja rzeczy: otwarcie obszaru nie pokazuje jego wcześniejszej historii)
@@ -1633,6 +1702,7 @@ export class Srodowisko {
     const wynik = [], stany = this._stanyNa(polozenia.map((rz) => rz.id), akt);
     for (const rz of polozenia) {
       const d = stany.get(rz.id);
+      if (d && d.wydalone) { wynik.push({ rzecz: rz.id, akt: d.akt, wydalone: true }); continue; }
       if (d && !d.odlozone && widac(d)) wynik.push({ rzecz: rz.id, akt: d.akt, cechy: d.cechy });
     }
     return wynik;
@@ -1746,6 +1816,7 @@ export class Srodowisko {
       const rz = widzi(p.id);
       if (!rz) continue;
       const d = stany.get(rz.id) || null;
+      if (d && d.wydalone) return blad(409, 'zapisany układ sięga wersji położenia, której treść została wydalona (ustawienie historii obszaru); nie przywracam niczego, bo nie wiem, gdzie ono wtedy leżało', { rzecz: rz.id, wydalone: true });
       // układ z chwili, w której położenia leżały poza tym, do czego piszący ma wstęp, nie jest drogą do tamtej przeszłości
       if (d && !widzi.dawna(d)) return blad(409, 'zapisany układ sięga chwili, w której te położenia leżały poza tym, do czego masz wstęp; nie przywracam niczego');
       if (!d) { if (!rz.odlozone) cele.push({ rz, rodzaj: rz.rodzaj, obszar: rz.obszar, cechy: rz.cechy, odlozone: true, powod: 'nie było tego położenia w przywróconym układzie' }); continue; }
@@ -2092,9 +2163,93 @@ export class Srodowisko {
   _zatwierdz(kto, lista, slad, wynik) {
     const z = this.r.zatwierdzPolozenia(kto, lista.map((x) => x.p), { slad: sladZ(slad) });
     if (!z.ok) return z;
-    if (!z.powtorzone) lista.forEach((x, i) => this._projekcja(x.id, x.rodzaj, x.obszar, x.p.id, z.wyniki[i].wersja, kto, x.cechy, x.ksztalt, x.odlozone, z.wyniki[i].kiedy));
+    let wyd = null;
+    if (!z.powtorzone) {
+      lista.forEach((x, i) => this._projekcja(x.id, x.rodzaj, x.obszar, x.p.id, z.wyniki[i].wersja, kto, x.cechy, x.ksztalt, x.odlozone, z.wyniki[i].kiedy));
+      wyd = this._wydalNadmiar(lista.map((x) => x.id));
+    }
     const pierwsza = this.rzecz(lista[0].id);
-    return { ok: true, powtorzone: z.powtorzone, ...wynik, wersja: pierwsza ? pierwsza.wersja : z.wyniki[0].wersja, ...(pierwsza ? { numer: pierwsza.numer } : {}) };
+    // Każde przycięcie jest widoczne (zasada 5): ruch mówi, ile wersji wydalił i ile jeszcze czeka.
+    return { ok: true, powtorzone: z.powtorzone, ...wynik, wersja: pierwsza ? pierwsza.wersja : z.wyniki[0].wersja, ...(pierwsza ? { numer: pierwsza.numer } : {}), ...(wyd ? { wydalanie: wyd } : {}) };
+  }
+
+  // Ile wersji trzyma obszar: liczba albo nieskończoność dla "wszystko".
+  _limitHistorii(obszar) {
+    const v = this.ustawienie(obszar ?? null, 'historia').wartosc;
+    return v === 'wszystko' ? Infinity : v;
+  }
+
+  // Wydalanie przy zapisie (U3, U4, U6). Dla każdej rzeczy z `ids`, której obszar trzyma mniej wersji, niż rzecz ma
+  // z treścią, najstarsze ponad to tracą treść: akt zostaje (numer, kto, kiedy) ze znakiem wydalone i obszarem, którego
+  // ustawienie zdecydowało; wiersz treści w `zapisy` znika tylko wtedy, gdy nie wskazuje go już żaden niewydalony akt
+  // (treść jest adresowana odciskiem i bywa wspólna; głowę zawsze ustawił akt niewydalony, bo bieżącej wersji się nie
+  // wydala). Jednym zapisem najwyżej WYDALAJ_NA_RAZ wersji, reszta przy następnych zapisach tej rzeczy.
+  // Przy życiu trzyma wersję: nieodłożony punkt zapisu (punkt/1: czego, wersja), czekająca propozycja przy tej wersji
+  // (propozycja/1: rzecz, wersja), zapisana chwila układu (chwila/1) dla położeń i widoku, którego dotyczy, oraz stan
+  // sprzed ostatniego gestu, gdy ostatni zapis rzeczy był gestem (cofnij-gest wraca do niego). Zwraca null, gdy żadna
+  // z rzeczy nie leży w obszarze z ograniczoną historią, inaczej {ustawienie, wydalone, zaleglosc, trzymane}:
+  // zaległość to wersje ponad ustawienie, które dalej mają treść (razem z trzymanymi).
+  _wydalNadmiar(ids) {
+    let wynik = null, budzet = WYDALAJ_NA_RAZ;
+    for (const id of new Set(ids)) {
+      const r = this.q(`SELECT r.rodzaj, r.obszar, r.numer, r.wydalonych, z.tresc FROM rzeczy r JOIN zapisy z ON z.id = r.zapis WHERE r.id = ?`, id)[0];
+      if (!r || NIE_WYDALAC.includes(nazwaRodzaju(r.rodzaj))) continue;
+      const u = this.ustawienie(r.obszar ?? null, 'historia');
+      if (u.wartosc === 'wszystko') continue;
+      if (!wynik) wynik = { ustawienie: u.wartosc, wydalone: 0, zaleglosc: 0, trzymane: 0 };
+      else wynik.ustawienie = Math.min(wynik.ustawienie, u.wartosc);
+      const nadmiar = r.numer - r.wydalonych - u.wartosc;
+      if (nadmiar <= 0) continue;
+      if (budzet <= 0) { wynik.zaleglosc += nadmiar; continue; }
+      const glowa = 'rzecz:' + id;
+      const trzyma = this._trzymaneWersje(id, r);
+      // najstarsze wersje z treścią spoza `u.wartosc` najnowszych; `dalej` to akt następnej wersji (koniec jej życia).
+      // Czytamy tylko tyle, ile może się przydać w tym zapisie: budżet plus wersje, które coś trzyma, więc koszt nie
+      // rośnie z zaległością.
+      const kand = this.q(`SELECT a.nr, a.kto, a.op, a.zapis, (SELECT MIN(b.nr) FROM akty b WHERE b.glowa = a.glowa AND b.co = 'przesun' AND b.nr > a.nr) AS dalej
+        FROM akty a WHERE a.glowa = ? AND a.co = 'przesun' AND a.wydalone IS NULL ORDER BY a.nr LIMIT ?`, glowa, Math.min(nadmiar, budzet + trzyma.akty.size + trzyma.chwile.length));
+      let tu = 0;
+      for (const a of kand) {
+        if (trzyma.akty.has(a.nr) || trzyma.chwile.some((x) => x >= a.nr && (a.dalej === null || x < a.dalej))) { wynik.trzymane++; continue; }
+        if (budzet <= 0) continue;
+        const kiedy = this.r.teraz();
+        this.r.sql.exec(`UPDATE akty SET wydalone = ?, wydalone_przez = ? WHERE nr = ?`, kiedy, u.skad, a.nr);
+        // akt zapisu z tej samej czynności (op.z) wkładał tę samą treść: też zostaje śladem bez treści
+        if (typeof a.op === 'string' && a.op.endsWith('.p')) this.r.sql.exec(`UPDATE akty SET wydalone = ?, wydalone_przez = ? WHERE kto = ? AND op = ? AND co = 'zapisz' AND zapis = ?`, kiedy, u.skad, a.kto, a.op.slice(0, -2) + '.z', a.zapis);
+        if (!this.q(`SELECT 1 AS j FROM akty WHERE zapis = ? AND wydalone IS NULL LIMIT 1`, a.zapis).length) this.r.sql.exec(`DELETE FROM zapisy WHERE id = ?`, a.zapis);
+        budzet--; tu++;
+      }
+      if (tu) this.r.sql.exec(`UPDATE rzeczy SET wydalonych = wydalonych + ? WHERE id = ?`, tu, id);
+      wynik.wydalone += tu;
+      wynik.zaleglosc += nadmiar - tu;
+    }
+    return wynik;
+  }
+
+  // Wersje rzeczy, które trzyma przy życiu coś, co na nie wskazuje (zob. _wydalNadmiar): zbiór numerów aktów i lista
+  // aktów z zapisanych chwil (wersja trzymana przez chwilę to ta, która była bieżąca w tej chwili).
+  _trzymaneWersje(id, r) {
+    const akty = new Set();
+    const zCech = (rodzaj, cecha, gdzie = '') => this.q(`SELECT json_extract(z.tresc, '$.cechy.wersja') AS w FROM odniesienia o JOIN rzeczy x ON x.id = o.od JOIN zapisy z ON z.id = x.zapis
+      WHERE o.cel = ? AND o.cecha = ? AND x.rodzaj >= ? AND x.rodzaj < ? AND x.odlozone = 0 ${gdzie}`, id, cecha, rodzaj + '/', rodzaj + '0');
+    for (const w of zCech('punkt', 'czego')) if (Number.isInteger(w.w)) akty.add(w.w);
+    for (const w of zCech('propozycja', 'rzecz', `AND json_extract(z.tresc, '$.cechy.stan') = 'czeka'`)) if (Number.isInteger(w.w)) akty.add(w.w);
+    // stan sprzed ostatniego gestu: gdy ostatni zapis rzeczy był gestem, wersja tuż przed jego pierwszym aktem na niej
+    const glowa = 'rzecz:' + id;
+    const ost = this.q(`SELECT nr, kto, op FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr DESC LIMIT 1`, glowa)[0];
+    if (ost && typeof ost.op === 'string' && ost.op.startsWith('g:')) {
+      const gest = ost.op.split(':')[1];
+      const pierwszy = this.q(`SELECT MIN(nr) AS n FROM akty WHERE glowa = ? AND co = 'przesun' AND kto = ? AND op >= ? AND op < ?`, glowa, ost.kto, 'g:' + gest + ':', 'g:' + gest + ';')[0];
+      const przed = pierwszy && pierwszy.n ? this.q(`SELECT nr FROM akty WHERE glowa = ? AND co = 'przesun' AND nr < ? ORDER BY nr DESC LIMIT 1`, glowa, pierwszy.n)[0] : null;
+      if (przed) akty.add(przed.nr);
+    }
+    // zapisane chwile układu: położenie (miejsce) i widok, którego dotyczą
+    let widok = null;
+    const nazwa = nazwaRodzaju(r.rodzaj);
+    if (nazwa === 'widok') widok = id;
+    else if (nazwa === 'miejsce') { try { const t = JSON.parse(r.tresc); widok = t && t.cechy && typeof t.cechy.widok === 'string' ? t.cechy.widok : null; } catch { widok = null; } }
+    const chwile = widok ? this.wszystkie({ rodzaj: 'chwila', gdzie: { widok }, odlozone: 'nie' }).map((ch) => ch.cechy.akt).filter((x) => Number.isInteger(x)) : [];
+    return { akty, chwile };
   }
 
   // Wiersz spisu dla jednej rzeczy. Czas bierze z aktu, nie z chwili liczenia, żeby spis odbudowany z dziennika
@@ -2323,11 +2478,11 @@ export class Srodowisko {
       try { t = JSON.parse(g.tresc); } catch { /* zostaje puste */ }
       if (!t || typeof t !== 'object') t = {};
       const cechy = t.cechy && typeof t.cechy === 'object' && !Array.isArray(t.cechy) ? t.cechy : {};
-      const przesuniecia = this.q(`SELECT kto, kiedy FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr`, g.nazwa);
+      const przesuniecia = this.q(`SELECT kto, kiedy, wydalone FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr`, g.nazwa);
       const pierwszy = przesuniecia[0], ostatni = przesuniecia[przesuniecia.length - 1];
       if (!pierwszy) continue;
-      this.r.sql.exec(`INSERT INTO rzeczy (id, rodzaj, obszar, zapis, akt, numer, odlozone, szukane, utworzyl, utworzono, zmienil, zmieniono) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        id, g.rodzaj, t.obszar ?? null, g.zapis, g.akt, przesuniecia.length, t.odlozone === true ? 1 : 0, doSzukania(cechy), pierwszy.kto, pierwszy.kiedy, ostatni.kto, ostatni.kiedy);
+      this.r.sql.exec(`INSERT INTO rzeczy (id, rodzaj, obszar, zapis, akt, numer, odlozone, szukane, utworzyl, utworzono, zmienil, zmieniono, wydalonych) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, g.rodzaj, t.obszar ?? null, g.zapis, g.akt, przesuniecia.length, t.odlozone === true ? 1 : 0, doSzukania(cechy), pierwszy.kto, pierwszy.kiedy, ostatni.kto, ostatni.kiedy, przesuniecia.filter((a) => a.wydalone != null).length);
     }
     this._k = null;
     this._pam = null;
@@ -2387,7 +2542,7 @@ export class Srodowisko {
       if (!p.ok) throw new Error(`ziarno ${z.nazwa}: ${p.blad}`);
       const w = this.r.zatwierdzPolozenia(AUTOMAT, [p], { slad: 'zasiew' });
       if (!w.ok) throw new Error(`ziarno ${z.nazwa}: ${w.blad}`);
-      if (!w.powtorzone) this._projekcja(id, z.rodzaj, obszar, p.id, w.wyniki[0].wersja, AUTOMAT, cechy, z.rodzaj === 'ksztalt/1' ? this.ksztaltDla('ksztalt/1') : ksztalt, false, w.wyniki[0].kiedy);
+      if (!w.powtorzone) { this._projekcja(id, z.rodzaj, obszar, p.id, w.wyniki[0].wersja, AUTOMAT, cechy, z.rodzaj === 'ksztalt/1' ? this.ksztaltDla('ksztalt/1') : ksztalt, false, w.wyniki[0].kiedy); this._wydalNadmiar([id]); }
     };
     for (const z of ziarna) {
       const klucz = 'ziarno:' + z.nazwa;
@@ -2417,7 +2572,7 @@ export class Srodowisko {
         // ruszył: agent zajmował tak z góry nazwę pokrętła, które kod dopiero zasieje, i podstawiał własną deklarację
         // (niezależny atak, 17 XI 2026). Taka rzecz wraca do treści i miejsca z ziarna; obca wersja zostaje w historii.
         const zajeta = rz.utworzyl !== AUTOMAT && rz.utworzyl !== this.wlasciciel && rz.zmienil !== this.wlasciciel
-          && !this.historia(id).some((h) => h.kto === this.wlasciciel);
+          && !this.q(`SELECT 1 AS j FROM akty WHERE glowa = ? AND co = 'przesun' AND kto = ? LIMIT 1`, 'rzecz:' + id, this.wlasciciel).length;
         if (!zajeta && rz.odlozone) continue; // odłożona zostaje odłożona; domyślny o sobie nie przypomina
         // Zasiew nie milknie (18 XI 2026). Do tego dnia zmiana ręką zamrażała rzecz: kod przestawał ją odświeżać, a nowa
         // wersja domyślnego do niego nie dochodziła i nikt mu tego nie mówił (jego werdykt: rejestr poz. 199; prawo 2
