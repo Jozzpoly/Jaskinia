@@ -1,4 +1,4 @@
-// Drabina przedstawień jako wartość pokrętła (typ drabina, 19 XI 2026; specyfikacja Opusa czatu, Commons
+// Drabina przedstawień jako wartość pokrętła (typ drabina, 19 XI 2026; specyfikacja Opusa czatu we wspólnej pamięci agentów,
 // wplywy/2026-11-19-opus-czat-orientacja-i-klocek-drabina.md, § 2). Sprawdziany pytają o to, co specyfikacja wymienia:
 // wartość domyślna przechodzi; powtórzone co, od > do, pusta miara, szczebel bez od i do i bez rozmiaru, ucinaj bez
 // rozmiaru i nieznane pole są odrzucane; nieznane co przechodzi; odwołanie {z} do pokrętła typu drabina się liczy.

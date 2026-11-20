@@ -189,8 +189,12 @@ test('GE9. przeszłość z zamkniętego obszaru nie wychodzi razem z widokiem: d
   assert.equal(uklad.ok, false, JSON.stringify(uklad));
   assert.equal(s.rzecz(m1.rzecz).cechy.x, 5, 'położenie się nie zmieniło');
   assert.deepEqual(s.widokNa(widok, aktTajny, { dla: 'agent-a' }), []);
-  // właściciel dalej może wrócić do swojej przeszłości
-  ok(await s.ruch('jozz', { op: 'ge9-wlasciciel-1', co: 'cofnij', rzecz: m1.rzecz, wersja: 'dowolna', do: aktTajny }));
+  // Właściciel dalej może wrócić do swojej przeszłości, ale dawna treść z czasu tajności trafia wtedy tam, gdzie widzą ją
+  // uczestnicy: to publikacja, więc świadomie, z publikuj: true (granica publikacji ruchów pośrednich, 20 XI 2026).
+  const bezZgody = await s.ruch('jozz', { op: 'ge9-wlasciciel-1', co: 'cofnij', rzecz: m1.rzecz, wersja: 'dowolna', do: aktTajny });
+  assert.equal(bezZgody.potwierdz, 'publikuj', JSON.stringify(bezZgody));
+  assert.equal(s.rzecz(m1.rzecz).cechy.x, 5, 'bez zgody nic się nie zmienia');
+  ok(await s.ruch('jozz', { op: 'ge9-wlasciciel-2', co: 'cofnij', rzecz: m1.rzecz, wersja: 'dowolna', do: aktTajny, publikuj: true }));
   assert.equal(s.rzecz(m1.rzecz).cechy.x, 111);
   // zapis rzeczy leżącej z natury sprzed tej poprawki nie mówi, gdzie rzecz leżała: widzi go tylko ten, przed kim nic nie jest zamknięte
   const stary = s._zTresci('miejsce/1', JSON.stringify({ obszar: null, obszar_z: 'widok', cechy: {} }));

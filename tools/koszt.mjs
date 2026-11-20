@@ -53,19 +53,33 @@ function plan(db, q, p) {
   } catch { return []; }
 }
 
+// PRZEGLAD RODZAJU (20 XI 2026): wejscie po indeksie rzeczy_rodzaj z filtrem, ktorego indeks nie zna (cecha z tresci,
+// slowo), czyta WSZYSTKIE rzeczy tego rodzaju, choc plan mowi SEARCH, nie SCAN. Do 20 XI ta miara go nie widziala:
+// spis po cesze przy tysiacu galezi wygladal jak jedno tanie zapytanie. Liczymy go osobno, z liczebnoscia rodzaju,
+// bo to ona mowi, ile wierszy pojdzie (przyrzad Opusa Code we wspolnej pamieci agentow, koszt-odczytu-rzeczy.mjs).
+const RODZAJ_W_PARAMETRACH = /^[a-z][a-z0-9_.-]*\/\d+$/;
+function liczebnoscRodzaju(db, p) {
+  const r = p.find((x) => typeof x === 'string' && RODZAJ_W_PARAMETRACH.test(x));
+  if (!r) return { rodzaj: '?', ile: wierszyW(db, 'rzeczy') }; // rodzaju nie widac: liczymy najgorzej, cala tabela
+  try { return { rodzaj: r, ile: db.prepare('SELECT COUNT(*) AS n FROM rzeczy WHERE rodzaj = ?').get(r).n }; } catch { return { rodzaj: r, ile: 0 }; }
+}
+
 function policz(sql, db) {
   const tabele = ['rzeczy', 'akty', 'zapisy', 'glowy', 'odniesienia', 'przekroj', 'meta', 'odczyty'];
   const rozmiar = Object.fromEntries(tabele.map((t) => [t, wierszyW(db, t)]));
-  const razem = { zapytan: 0, skanow: 0 };
+  const razem = { zapytan: 0, skanow: 0, przegladow: 0, wierszyPrzegladow: 0 };
   const wg = new Map();
   for (const [q, p] of sql.slad) {
     if (!/^\s*(SELECT|WITH)/i.test(q)) continue;        // zapisy liczymy osobno, tu chodzi o odczyt
     const kroki = plan(db, q, p);
-    const scan = kroki.some((k) => k.startsWith('SCAN'));
+    const scan = kroki.some((k) => k.startsWith('SCAN') && k !== 'SCAN CONSTANT ROW');
+    const przeglad = !scan && kroki.some((k) => /USING (COVERING )?INDEX rzeczy_rodzaj\b/.test(k)) ? liczebnoscRodzaju(db, p) : null;
     razem.zapytan++; if (scan) razem.skanow++;
+    if (przeglad) { razem.przegladow++; razem.wierszyPrzegladow += przeglad.ile; }
     const klucz = q.replace(/\s+/g, ' ').trim().slice(0, 120);
-    const w = wg.get(klucz) || { ile: 0, scan };
+    const w = wg.get(klucz) || { ile: 0, scan, przeglad: null };
     w.ile++; w.scan = w.scan || scan;
+    if (przeglad) w.przeglad = przeglad;
     wg.set(klucz, w);
   }
   return { razem, wg, rozmiar };
@@ -112,19 +126,29 @@ async function zmierz(ile) {
   probuj('/co-tu-jest (pelny opis tekstem)', () => coTuJest(s.dla('agent-probny'), { kto: 'agent-probny', podglad: true }));
   probuj('/api/srodowisko/opis (te same dane)', () => opisDane(s.dla('agent-probny'), { kto: 'agent-probny', podglad: true }));
   probuj('/api/srodowisko/puls (sam numer aktu)', () => s.ostatniNr());
-  probuj('/api/srodowisko/spis?rodzaj=galaz/1&ile=50', () => s.dla('agent-probny').spis({ rodzaj: 'galaz/1', limit: 50 }));
+  // Świat rośnie rzeczami projekt/1 i po tym rodzaju pytają trasy niżej. Do 20 XI pytały o galaz/1, której w tym
+  // świecie nie ma, więc spis po cesze mierzył pusty rodzaj i jego przegląd nie rósł.
+  probuj('/api/srodowisko/spis?rodzaj=projekt/1&ile=50', () => s.dla('agent-probny').spis({ rodzaj: 'projekt/1', limit: 50 }));
   probuj('/api/srodowisko/spis?ile=1000 (bez filtra)', () => s.dla('agent-probny').spis({ limit: 1000 }));
-  probuj('/api/srodowisko/rzecz?id=... (jedna rzecz)', () => { const x = s.spis({ rodzaj: 'galaz/1', limit: 1 })[0]; return x && s.dla('agent-probny').rzecz(x.id); });
-  probuj('spis po cesze (gdzie.repo=...)', () => s.dla('agent-probny').spis({ rodzaj: 'galaz/1', gdzie: { repo: 'jozzpoly/projekt-3' }, limit: 50 }));
+  // Identyfikator bierzemy przed pomiarem: jego wyszukanie (przegląd całego rodzaju) nie jest kosztem trasy, a do 20 XI
+  // doliczało się do niej (druga linia Opusa czatu, 20 XI 01:06: 514 wierszy przyrządu przy jednej rzeczy).
+  const jednaRzecz = s.spis({ rodzaj: 'projekt/1', limit: 1 })[0];
+  probuj('/api/srodowisko/rzecz?id=... (jedna rzecz)', () => jednaRzecz && s.dla('agent-probny').rzecz(jednaRzecz.id));
+  probuj('spis po cesze (gdzie.nazwa=...)', () => s.dla('agent-probny').spis({ rodzaj: 'projekt/1', gdzie: { nazwa: 'rzecz-3' }, limit: 50 }));
   probuj('szukanie po slowie', () => s.dla('agent-probny').spis({ szukaj: 'projekt-7', limit: 50 }));
 
   console.log(`\n=== ${fmt(rzeczy)} rzeczy w Miejscu ===`);
   console.log('tabele:', Object.entries(policz(sql, db).rozmiar).filter(([, n]) => n).map(([t, n]) => `${t}=${fmt(n)}`).join('  '));
   console.log('');
-  console.log('trasa                                       zapytan do bazy   z tego skanow calej tabeli');
+  console.log('trasa                                       zapytan do bazy   z tego skanow calej tabeli   przegladow rodzaju (ich wierszy)');
   for (const [nazwa, w, blad] of wyniki) {
     if (!w) { console.log(`${nazwa.padEnd(42)}  BLAD: ${blad}`); continue; }
-    console.log(`${nazwa.padEnd(42)} ${String(w.razem.zapytan).padStart(15)} ${String(w.razem.skanow).padStart(28)}`);
+    console.log(`${nazwa.padEnd(42)} ${String(w.razem.zapytan).padStart(15)} ${String(w.razem.skanow).padStart(28)} ${String(w.razem.przegladow).padStart(22)} (${fmt(w.razem.wierszyPrzegladow)})`);
+  }
+  const przegladyTras = wyniki.filter(([, w]) => w && w.razem.przegladow);
+  if (przegladyTras.length) {
+    console.log('\nPRZEGLADY RODZAJU (plan mowi SEARCH, ale czyta kazda rzecz tego rodzaju; rosna z liczba rzeczy rodzaju):');
+    for (const [nazwa, w] of przegladyTras) for (const [q, x] of w.wg) if (x.przeglad) console.log(`  ${nazwa}: ${x.ile}x ${x.przeglad.rodzaj} (${fmt(x.przeglad.ile)} rzeczy)  ${q.slice(0, 90)}`);
   }
 
   const opis = wyniki.find((x) => x[0].startsWith('/co-tu-jest'))[1];
@@ -137,16 +161,17 @@ async function zmierz(ile) {
   console.log('\nnajczestsze zapytania w /co-tu-jest:');
   [...opis.wg.entries()].sort((x, y) => y[1].ile - x[1].ile).slice(0, 7)
     .forEach(([q, w]) => console.log(`  ${String(w.ile).padStart(4)}x ${w.scan ? 'SKAN CALEJ TABELI' : 'po indeksie      '}  ${q}`));
-  return { rzeczy, opis };
+  const cecha = wyniki.find((x) => x[0].startsWith('spis po cesze'))[1];
+  return { rzeczy, opis, cecha };
 }
 
 const seria = [];
 for (const ile of ILE) seria.push(await zmierz(ile));
 if (seria.length > 1) {
   console.log('\n=== jak to rosnie ===');
-  console.log('rzeczy        zapytan na otwarcie strony       skanow calej tabeli');
-  for (const { rzeczy, opis } of seria) {
-    console.log(`${fmt(rzeczy).padStart(7)} ${String(opis.razem.zapytan).padStart(28)} ${String(opis.razem.skanow).padStart(25)}`);
+  console.log('rzeczy        zapytan na otwarcie strony       skanow calej tabeli   przegladow rodzaju (ich wierszy)');
+  for (const { rzeczy, opis, cecha } of seria) {
+    console.log(`${fmt(rzeczy).padStart(7)} ${String(opis.razem.zapytan).padStart(28)} ${String(opis.razem.skanow).padStart(25)} ${String(opis.razem.przegladow).padStart(22)} (${fmt(opis.razem.wierszyPrzegladow)})   spis po cesze: przegladu ${fmt(cecha ? cecha.razem.wierszyPrzegladow : 0)} wierszy`);
   }
   const a = seria[0], b = seria[seria.length - 1];
   const stale = a.opis.razem.zapytan === b.opis.razem.zapytan;
