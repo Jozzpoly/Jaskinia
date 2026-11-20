@@ -17,11 +17,14 @@
 // (`rzecz/2`), a obok starych przestrzeni głów jest `rzecz:<id>` (tożsamość rzeczy, rusza ją tylko warstwa środowiska).
 // miejsce-3 (17 XI 2026, po niezależnym ataku): `op` jest jednoznaczny w obrębie uczestnika, nie całego Miejsca,
 // a wywóz niesie też `meta` (znaczniki zasiewu i wskazania obszarów), bez której wwóz nie odtwarzał środowiska.
-// Wwóz przyjmuje wszystkie trzy: starsze są tym samym układem bez tych rzeczy.
-export const WERSJA = 'miejsce-3';
+// miejsce-4 (20 XI 2026, próba 1 umowy zapisu): akt może być wydalony (kolumny `wydalone`: chwila wydalenia w ms,
+// `wydalone_przez`: obszar, którego ustawienie historii o tym zdecydowało). Akt wydalony zostaje w dzienniku jako ślad
+// (numer, kto, kiedy), a jego zapis może już nie istnieć. Wwóz przyjmuje wszystkie cztery: starsze są tym samym
+// układem bez tych rzeczy (żaden akt nie jest w nich wydalony).
+export const WERSJA = 'miejsce-4';
 // Zapytania, które zmieniają tabelę aktów: po każdym takim pamiętany numer ostatniego aktu przestaje być ważny.
 const ZMIENIA_AKTY = /^\s*(INSERT\s+INTO|DELETE\s+FROM|UPDATE|ALTER\s+TABLE|DROP\s+TABLE)\s+akty\b/i;
-export const WERSJE_WWOZU = ['miejsce-1', 'miejsce-2', 'miejsce-3'];
+export const WERSJE_WWOZU = ['miejsce-1', 'miejsce-2', 'miejsce-3', 'miejsce-4'];
 export const LIMIT_TRESCI = 2 * 1024 * 1024; // bajty; wiersz SQLite w Durable Object ma limit 8 MB
 export const LIMIT_DZIENNIKA = 200;
 export const WLASCICIEL = 'jozz';
@@ -60,7 +63,7 @@ function mozePrzesunac(kto, glowa, wlasciciel = WLASCICIEL, warstwa = false) {
 // użyć tego samego napisu i żaden nie zobaczy przez to cudzego aktu (znalezisko niezależnego ataku, 17 XI 2026).
 const TABELA_AKTY = `(nr INTEGER PRIMARY KEY AUTOINCREMENT, op TEXT NOT NULL, odcisk TEXT NOT NULL,
      kto TEXT NOT NULL, kiedy INTEGER NOT NULL, co TEXT NOT NULL, zapis TEXT, glowa TEXT, z_zapisu TEXT, nowy INTEGER,
-     prywatne INTEGER NOT NULL DEFAULT 0, cialo TEXT)`;
+     prywatne INTEGER NOT NULL DEFAULT 0, cialo TEXT, wydalone INTEGER, wydalone_przez TEXT)`;
 const SCHEMAT = [
   `CREATE TABLE IF NOT EXISTS zapisy (id TEXT PRIMARY KEY, rodzaj TEXT NOT NULL, tresc TEXT NOT NULL, rozmiar INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS akty ${TABELA_AKTY}`,
@@ -98,6 +101,10 @@ export class Rdzen {
     if (!kolumny().includes('prywatne')) sql.exec(`ALTER TABLE akty ADD COLUMN prywatne INTEGER NOT NULL DEFAULT 0`);
     // migracja 17 XI: ślad ciała przy akcie (czym uczestnik to zrobił; jego własna deklaracja, nie dowód)
     if (!kolumny().includes('cialo')) sql.exec(`ALTER TABLE akty ADD COLUMN cialo TEXT`);
+    // migracja 20 XI (próba 1 umowy zapisu): ślad wydalenia przy akcie. Dopisane kolumny są puste, czyli "nic nie
+    // wydalono", co dla każdej bazy sprzed tej chwili jest prawdą.
+    if (!kolumny().includes('wydalone')) sql.exec(`ALTER TABLE akty ADD COLUMN wydalone INTEGER`);
+    if (!kolumny().includes('wydalone_przez')) sql.exec(`ALTER TABLE akty ADD COLUMN wydalone_przez TEXT`);
     // migracja 17 XI (druga): dawna tabela miała `op` jednoznaczny w całym Miejscu, wpisany w jej definicję.
     // Tego nie da się zdjąć w miejscu, więc tabela jest przepisywana raz, z tymi samymi numerami aktów.
     const def = sql.exec(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'akty'`).toArray()[0];
@@ -231,7 +238,8 @@ export class Rdzen {
 
   opisAktu(a) {
     return { nr: a.nr, op: a.op, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), co: a.co, zapis: a.zapis,
-      ...(a.co === 'przesun' ? { glowa: a.glowa, z: a.z_zapisu } : { nowy: !!a.nowy }), ...(a.prywatne ? { prywatne: true } : {}), ...(a.cialo ? { cialo: a.cialo } : {}) };
+      ...(a.co === 'przesun' ? { glowa: a.glowa, z: a.z_zapisu } : { nowy: !!a.nowy }), ...(a.prywatne ? { prywatne: true } : {}), ...(a.cialo ? { cialo: a.cialo } : {}),
+      ...(a.wydalone != null ? { wydalone: true, wydalone_kiedy: new Date(a.wydalone).toISOString(), wydalone_przez: a.wydalone_przez ?? null } : {}) };
   }
 
   // Kto co widzi (uwaga Menadżera do #10, 11 XI): domyślnie wszystko widzą wszyscy uczestnicy z kluczem, i UI mówi to
@@ -355,7 +363,7 @@ export class Rdzen {
     'glowy: stan biezacy. Glowa o nazwie "rzecz:<id>" to rzecz o tozsamosci <id>; jej pole zapis wskazuje aktualna tresc. Zapisy, ktorych nie wskazuje zadna glowa, to stare wersje albo strony gosci.',
     'wersja rzeczy = pole akt jej glowy (numer aktu, ktory ja tam ustawil), a NIE liczba przesuniec. Tej samej liczby zada drzwi przy zmianie rzeczy. Kolejny numer wersji (1, 2, 3...) to liczba aktow przesun tej glowy.',
     'tytul rzeczy: rzeczy rodzaju ksztalt/1 maja ceche dla (opisywany rodzaj) i tytul (nazwa cechy, ktora jest nazwa rzeczy tego rodzaju).',
-    'nic nie jest usuwane: zastapienie to przesuniecie glowy na nowy zapis, a stary zostaje w magazynie. Odlozenie rzeczy to tez nowa wersja, nie usuniecie.',
+    'zastapienie to przesuniecie glowy na nowy zapis, a stary zostaje w magazynie. Odlozenie rzeczy to tez nowa wersja, nie usuniecie. Wyjatek (od formatu miejsce-4): wlasciciel moze ustawic w obszarze, ile wersji rzeczy trzymac (cecha historia obszaru); wtedy najstarsze wersje ponad to traca tresc. Ich akty zostaja w dzienniku z polem wydalone (chwila wydalenia w ms) i wydalone_przez (obszar, ktorego ustawienie zdecydowalo), a zapis, ktorego nie wskazuje juz zaden niewydalony akt, znika z listy zapisy. Wersja wydalona to wiec numer, autor i chwila bez tresci.',
     'meta: klucze "ziarno:<nazwa>" wskazuja rzeczy, ktore srodowisko zasialo samo; "obszar_glowny" i "obszar_nowe" wskazuja dwa obszary, ktorych potrzebuje do liczenia praw. Wwoz odtwarza mete razem z reszta.',
   ];
 
@@ -386,7 +394,10 @@ export class Rdzen {
     const nry = new Set(), opy = new Set();
     for (const a of e.akty) {
       const klucz = a.kto + '\n' + a.op; // op jest jednoznaczny w obrębie uczestnika
-      if (!Number.isInteger(a.nr) || nry.has(a.nr) || typeof a.op !== 'string' || opy.has(klucz) || !poprawneImie(a.kto) || !['zapisz', 'przesun'].includes(a.co) || !ids.has(a.zapis))
+      // Akt wydalony (miejsce-4) może wskazywać zapis, którego już nie ma: to jest właśnie ślad wydalenia.
+      const wydalony = a.wydalone !== undefined && a.wydalone !== null;
+      if (wydalony && (!Number.isSafeInteger(a.wydalone) || (a.wydalone_przez != null && typeof a.wydalone_przez !== 'string'))) return blad(422, `akt ${a.nr}: pole wydalone ma być chwilą w ms, a wydalone_przez identyfikatorem albo null`);
+      if (!Number.isInteger(a.nr) || nry.has(a.nr) || typeof a.op !== 'string' || opy.has(klucz) || !poprawneImie(a.kto) || !['zapisz', 'przesun'].includes(a.co) || (!ids.has(a.zapis) && !(wydalony && typeof a.zapis === 'string')))
         return blad(422, `akt ${a.nr} jest niespójny (numer, op, wykonawca, czynność albo zapis)`);
       nry.add(a.nr); opy.add(klucz);
     }
@@ -395,8 +406,9 @@ export class Rdzen {
     for (const m of meta) if (!m || typeof m.klucz !== 'string' || typeof m.wartosc !== 'string' || m.klucz.length > 200 || m.wartosc.length > 4000) return blad(422, 'meta: każdy wpis ma mieć napisy klucz i wartosc');
     // od tej linii nic nie może się nie udać z powodu danych: wszystko sprawdzone
     for (const z of e.zapisy) this.sql.exec(`INSERT INTO zapisy (id, rodzaj, tresc, rozmiar) VALUES (?, ?, ?, ?)`, z.id, z.rodzaj, z.tresc, enc.encode(z.tresc).length);
-    for (const a of e.akty) this.sql.exec(`INSERT INTO akty (nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy, prywatne, cialo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      a.nr, a.op, String(a.odcisk || ''), a.kto, Number(a.kiedy), a.co, a.zapis, a.glowa ?? null, a.z_zapisu ?? null, a.nowy ?? null, a.prywatne ? 1 : 0, typeof a.cialo === 'string' && CIALO.test(a.cialo) ? a.cialo : null);
+    for (const a of e.akty) this.sql.exec(`INSERT INTO akty (nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy, prywatne, cialo, wydalone, wydalone_przez) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      a.nr, a.op, String(a.odcisk || ''), a.kto, Number(a.kiedy), a.co, a.zapis, a.glowa ?? null, a.z_zapisu ?? null, a.nowy ?? null, a.prywatne ? 1 : 0, typeof a.cialo === 'string' && CIALO.test(a.cialo) ? a.cialo : null,
+      a.wydalone ?? null, a.wydalone != null ? (a.wydalone_przez ?? null) : null);
     for (const g of e.glowy) this.sql.exec(`INSERT INTO glowy (nazwa, zapis, akt) VALUES (?, ?, ?)`, g.nazwa, g.zapis, g.akt);
     for (const o of e.odczyty) if (poprawneImie(o.kto) && Number.isInteger(o.nr)) this.sql.exec(`INSERT INTO odczyty (kto, nr, kiedy) VALUES (?, ?, ?)`, o.kto, o.nr, Number(o.kiedy) || this.teraz());
     for (const m of meta) if (m.klucz !== 'schemat') this.ustawMeta(m.klucz, m.wartosc);

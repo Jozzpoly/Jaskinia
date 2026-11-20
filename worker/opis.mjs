@@ -30,10 +30,10 @@ export function czasownikiReki() {
 
 export function czasowniki(s) {
   const lista = [
-    { nazwa: 'poloz', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'dołóż nową rzecz albo zmień istniejącą', wejscie: '{op, co:"poloz", rodzaj, cechy, obszar?, rzecz?, wersja?}', wynik: '{skutek: "polozone"|"propozycja", rzecz|propozycja, wersja, numer, adres}' },
+    { nazwa: 'poloz', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'dołóż nową rzecz albo zmień istniejącą; przeniesienie istniejącej rzeczy tam, gdzie zobaczy ją więcej osób niż dotąd, jest publikacją: u uczestnika staje się propozycją dla właściciela', wejscie: '{op, co:"poloz", rodzaj, cechy, obszar?, rzecz?, wersja?}', wynik: '{skutek: "polozone"|"propozycja", rzecz|propozycja, wersja, numer, adres, wydalanie?}; wydalanie: {ustawienie, wydalone, zaleglosc, trzymane} stoi przy każdym zapisie rzeczy z obszaru, który trzyma ograniczoną liczbę wersji (ustawienie historia): ile najstarszych wersji ten zapis wydalił (najwyżej 5 naraz), ile ponad ustawienie jeszcze ma treść i ile z nich trzymają punkty zapisu, czekające propozycje, zapisane chwile albo ostatni gest' },
     { nazwa: 'odloz', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'odłóż rzecz: znika z list, zostaje pod swoim adresem i w historii, da się ją przywrócić', wejscie: '{op, co:"odloz", rzecz, wersja, powod?}', wynik: '{skutek: "odlozone"|"propozycja", rzecz, wersja, numer}' },
     { nazwa: 'przywroc', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'przywróć odłożoną rzecz', wejscie: '{op, co:"przywroc", rzecz, wersja}', wynik: '{skutek: "przywrocone"|"propozycja", rzecz, wersja, numer}' },
-    { nazwa: 'cofnij', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'cofnij rzecz do wcześniejszej wersji (bez pola do: do poprzedniej); cofnięcie jest nową wersją, więc da się cofnąć także je', wejscie: '{op, co:"cofnij", rzecz, wersja, do?, publikuj?}', wynik: '{skutek: "cofniete"|"propozycja", rzecz, wersja, numer, z_wersji}; gdy po cofnięciu coś zobaczy więcej osób niż dotąd: agent 403, właściciel 409 z potwierdz: "publikuj" (powtórz z publikuj: true)' },
+    { nazwa: 'cofnij', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'cofnij rzecz do wcześniejszej wersji (bez pola do: do poprzedniej); cofnięcie jest nową wersją, więc da się cofnąć także je. Do wersji wydalonej (ustawienie historii obszaru) nie da się wrócić: odmowa 409 mówi to zdaniem', wejscie: '{op, co:"cofnij", rzecz, wersja, do?, publikuj?}', wynik: '{skutek: "cofniete"|"propozycja", rzecz, wersja, numer, z_wersji}; gdy po cofnięciu coś zobaczy więcej osób niż dotąd: agent 403, właściciel 409 z potwierdz: "publikuj" (powtórz z publikuj: true)' },
     { nazwa: 'kopiuj', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'kopia dowolnej rzeczy razem z jej pochodzeniem (pochodzenie/1), jednym gestem; pochodzenia nie kładzie się ręką', wejscie: '{op, co:"kopiuj", rzecz, nazwa?, obszar?, zmien?, publikuj?}', wynik: '{skutek: "skopiowane", rzecz, z, wersja_zrodla, pochodzenie}; kopia tam, gdzie widzi ją więcej osób niż źródło: agent 403, właściciel 409 z potwierdz: "publikuj"' },
     { nazwa: 'domyslny', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'rzecz wraca do wersji domyślnej: kopia do dzisiejszej treści źródła (nazwa zostaje), rzecz z ziarna do najnowszej wersji z kodu albo do ostatniej wersji automatu', wejscie: '{op, co:"domyslny", rzecz, publikuj?}', wynik: '{skutek: "domyslny-ze-zrodla"|"przyjeta"|"cofniete", rzecz}' },
     { nazwa: 'wroc-do-punktu', ktoredy: 'drzwi: POST /api/srodowisko/ruch', opis: 'rzecz wraca do wersji zapamiętanej w punkcie zapisu (punkt/1: nazwa, czego, wersja); pod spodem cofnięcie z tym samym prawem i tą samą granicą publikacji', wejscie: '{op, co:"wroc-do-punktu", punkt, publikuj?}', wynik: '{skutek: "cofniete", rzecz, wersja, numer, z_wersji}' },
@@ -42,8 +42,8 @@ export function czasowniki(s) {
     { nazwa: 'kod', ktoredy: 'drzwi: POST /api/srodowisko/kod?op=…', opis: 'zapisz kod gościa (jeden plik HTML jako ciało żądania)', wejscie: 'tekst HTML', wynik: '{zapis, adres: "/gosc/<zapis>"}' },
     { nazwa: 'ruch-z-okna', ktoredy: 'okno: {type: "move", id, move}; w drzwiach to POST /api/srodowisko/ruch z nagłówkiem X-Gosc: <id gościa>, który dokłada strona gospodarza', opis: 'ruch narzędzia otwartego w oknie: zapisuje się pod imieniem gościa (gosc-<id>), z prawem nie większym niż prawo agenta w obszarze i tego, kto okno otworzył; tylko gość zgłoszony z umową okno/3', wejscie: '{co: "poloz"|"odloz"|"przywroc"|"cofnij", rodzaj, cechy, rzecz?, wersja?, obszar?}', wynik: '{skutek, rzecz|propozycja, wersja, numer, powod?}' },
     { nazwa: 'spis', ktoredy: 'drzwi: GET /api/srodowisko/spis?rodzaj=&obszar=&gdzie.<cecha>=&szukaj=&odlozone=&po=<akt>; tekstem: /rzeczy z tymi samymi dodatkami; okno: read spis', opis: 'lista rzeczy: jednego rodzaju, z jednego obszaru, o danej wartości cechy albo z danym słowem; odłożone tylko na życzenie (odlozone=tak albo razem)', wejscie: 'rodzaj?, obszar?, gdzie?, szukaj?, odlozone?, pomin?, ile?', wynik: '{rzeczy: [{id, rodzaj, obszar, cechy, tytul, wersja, numer, …}], razem, pokazane, wszystko}' },
-    { nazwa: 'rzecz', ktoredy: 'drzwi: GET /api/srodowisko/rzecz?id=; tekstem: /rzecz/<id>; okno: read rzecz', opis: 'jedna rzecz z historią i tym, co na nią wskazuje', wejscie: 'id', wynik: '{rzecz, historia: [{numer, akt, kto, kiedy}], wskazuja (najwyżej 50), wskazuja_wiecej?, pochodzenie}' },
-    { nazwa: 'wersja', ktoredy: 'drzwi: GET /api/srodowisko/wersja?id=&akt=', opis: 'treść wcześniejszej wersji rzeczy (akt to znacznik z jej historii)', wejscie: 'id, akt', wynik: '{wersja: {rzecz, akt, numer, kto, kiedy, rodzaj, obszar, cechy, odlozone}}' },
+    { nazwa: 'rzecz', ktoredy: 'drzwi: GET /api/srodowisko/rzecz?id=; tekstem: /rzecz/<id>; okno: read rzecz', opis: 'jedna rzecz z ostatnimi wersjami historii (najwyżej 20, starsze stronami) i tym, co na nią wskazuje; wersja wydalona stoi w historii jako wiersz bez treści ze znakiem wydalone', wejscie: 'id, historia_ile? (1 do 200, domyślnie 20), historia_przed? (znacznik z historia_dalej: starsza strona)', wynik: '{rzecz, historia: [{numer, akt, kto, kiedy, wydalone?, wydalone_kiedy?}], historia_razem, historia_dalej?, wskazuja (najwyżej 50), wskazuja_wiecej?, pochodzenie}' },
+    { nazwa: 'wersja', ktoredy: 'drzwi: GET /api/srodowisko/wersja?id=&akt=', opis: 'treść wcześniejszej wersji rzeczy (akt to znacznik z jej historii); wersji z czasu, gdy jej obszar był przed Tobą zamknięty, nie ma dla Ciebie także po jego otwarciu', wejscie: 'id, akt', wynik: '{wersja: {rzecz, akt, numer, kto, kiedy, rodzaj, obszar, cechy, odlozone}}; wersja wydalona: 410 ze zdaniem i wierszem {rzecz, akt, numer, kto, kiedy, wydalone: true, wydalone_kiedy, wydalone_przez} bez treści' },
     { nazwa: 'widzialem', ktoredy: 'drzwi: POST /api/srodowisko/widzialem', opis: 'zapisz swoją wizytę: następny odczyt /co-tu-jest tym samym kluczem pokaże tylko to, co zmieniło się po niej', wejscie: '{akt?}', wynik: '{widziane_do}' },
     { nazwa: 'ksztalty', ktoredy: 'drzwi: GET /api/srodowisko/ksztalty; tekstem: /rodzaje; okno: read ksztalty', opis: 'wszystkie rodzaje rzeczy z opisem cech', wejscie: '-', wynik: '{ksztalty: [{dla, opis, cechy, …}]}' },
     { nazwa: 'cofnij-gest', ktoredy: 'drzwi: POST /api/srodowisko/ruch z co: cofnij-gest', opis: 'cofa jednym krokiem wszystko, co ruszył gest (ruchy z tym samym polem gest); wszystko albo nic; samo cofnięcie ze znakiem gestu da się ponowić', wejscie: '{op, co: "cofnij-gest", cofany: <znak gestu>, gest?: <znak tego cofnięcia>, czyj?: <imię; tylko właściciel>, publikuj?}', wynik: '{skutek: "cofniety-gest", rzeczy} albo 409 z listą rzeczy zmienionych po geście; ta sama granica publikacji co przy cofnij' },
@@ -264,7 +264,7 @@ export function coTuJest(s, opcje = {}) {
       'Propozycję przyjmuje właściciel albo uczestnik, który ten sam ruch mógłby zrobić sam ze skutkiem; autor może swoją tylko wycofać (co: odrzuc).',
       'Propozycje kosztują uwagę właściciela: możesz mieć jedną czekającą na rzecz i najwyżej 20 czekających naraz. Rzecz rodzaju uczestnik nie daje klucza ani dostępu.',
       'Gość (narzędzie w oknie, umowa okno/3) pisze pod własnym imieniem gosc-<id>, tylko gdy ten, kto otworzył okno, wszedł kluczem. Ma w obszarze tyle prawa co agent i nigdy więcej niż otwierający; propozycji z okna się nie rozstrzyga.',
-      'Niczego nie da się tu usunąć: każda zmiana jest nowym zapisem obok starego, a historia zostaje. Rzecz można odłożyć (co: odloz) i przywrócić.',
+      'Ruchem niczego nie da się tu usunąć: każda zmiana jest nowym zapisem obok starego, a historia zostaje. Rzecz można odłożyć (co: odloz) i przywrócić. Jedyny wyjątek ustala właściciel: ustawienie historia obszaru mówi, ile wersji każdej rzeczy trzymać (domyślnie wszystko). Gdy jest liczbą, najstarsze wersje ponad nią tracą treść przy następnych zapisach rzeczy, po kilka naraz; ich akty zostają w historii jako ślad (numer, kto, kiedy, znak wydalone). Przeniesienie rzeczy tam, gdzie trzyma się mniej wersji, jest propozycją do właściciela.',
     ],
     `Możliwe wartości ile_wolno: ${STOPNIE.map((x) => `${x} (${CO_ZNACZY[x]})`).join('; ')}.`,
     '',
@@ -429,7 +429,9 @@ export function stronaRodzaju(s, rodzaj) {
 export function stronaRzeczy(s, id, { kto = null } = {}) {
   const rz = s.rzecz(id);
   if (!rz) return null;
-  const h = s.historia(id);
+  // Ostatnie wersje, nie cała historia: strona rzeczy nie ma drożeć z każdą zmianą (U12 umowy zapisu).
+  const h = s.historia(id, { ile: 20, razem: rz.numer });
+  const ileHist = s.ustawienie(rz.obszar ?? null, 'historia').wartosc;
   const wsk = s.wskazujaNa(id);
   const k = s.ksztaltDla(rz.rodzaj);
   const ob = rz.obszar ? s.rzecz(rz.obszar) : null;
@@ -448,8 +450,9 @@ export function stronaRzeczy(s, id, { kto = null } = {}) {
     Object.keys(rz.cechy).length ? Object.entries(rz.cechy).map(([n, w]) => `  ${n}${k && !(n in (k.cechy || {})) ? ' [cecha spoza kształtu]' : ''}: ${obetnij(wart(w), 2000)}`) : '  (żadnych)',
     rz.rodzaj === 'gosc/1' && rz.cechy.kod ? `  kod gościa pod adresem: /gosc/${rz.cechy.kod}` : null,
     '',
-    `HISTORIA (${h.length}; każda wersja: numer, znacznik, kiedy, kto; treść dawnej wersji: /api/srodowisko/wersja?id=${rz.id}&akt=<znacznik>)`,
-    h.map((a) => `  wersja ${a.numer}, znacznik ${a.akt}, ${dzien(a.kiedy)}, ${a.kto}${a.cialo ? ' [' + a.cialo + ']' : ''}`),
+    `HISTORIA (${rz.numer} ${rz.numer === 1 ? 'wersja' : 'wersji'}${h.length < rz.numer ? `, poniżej ostatnie ${h.length}; starsze: /api/srodowisko/rzecz?id=${rz.id}&historia_przed=${h.length ? h[0].akt : 0}` : ''}; każda wersja: numer, znacznik, kiedy, kto; treść dawnej wersji: /api/srodowisko/wersja?id=${rz.id}&akt=<znacznik>)`,
+    `  ile wersji trzyma obszar tej rzeczy: ${ileHist === 'wszystko' ? 'wszystkie' : ileHist}${rz.wydalonych ? `; wydalone dotąd: ${rz.wydalonych}` : ''}`,
+    h.map((a) => `  wersja ${a.numer}, znacznik ${a.akt}, ${dzien(a.kiedy)}, ${a.kto}${a.cialo ? ' [' + a.cialo + ']' : ''}${a.wydalone ? ` [WYDALONA ${dzien(a.wydalone_kiedy)}: treści już nie ma]` : ''}`),
     '',
     wsk.length ? `CO NA NIĄ WSKAZUJE (${wsk.length})` : 'Nic na nią nie wskazuje.',
     wsk.map((w) => { const x = s.rzecz(w.od); return `  ${x ? obetnij(s.tytul(x), 70) + ' [' + x.rodzaj + ']' : '?'} przez cechę ${w.cecha} -> /rzecz/${w.od}`; }),
@@ -461,7 +464,7 @@ export function stronaRzeczy(s, id, { kto = null } = {}) {
       : [
         `  Zmiana: POST /api/srodowisko/ruch   {"op":"<twój identyfikator>","co":"poloz","rzecz":"${rz.id}","wersja":${rz.wersja},"rodzaj":"${rz.rodzaj}","cechy":{…wszystkie cechy…}}`,
         rz.odlozone ? `  Przywrócenie: {"op":"…","co":"przywroc","rzecz":"${rz.id}","wersja":${rz.wersja}}` : `  Odłożenie: {"op":"…","co":"odloz","rzecz":"${rz.id}","wersja":${rz.wersja},"powod":"…"}`,
-        h.length > 1 ? `  Cofnięcie do poprzedniej wersji: {"op":"…","co":"cofnij","rzecz":"${rz.id}","wersja":${rz.wersja}}   (do innej: dodaj "do":<znacznik z historii>)` : null,
+        rz.numer > 1 ? `  Cofnięcie do poprzedniej wersji: {"op":"…","co":"cofnij","rzecz":"${rz.id}","wersja":${rz.wersja}}   (do innej: dodaj "do":<znacznik z historii>)` : null,
       ],
     '  Wszystko o Miejscu: /co-tu-jest',
     '',

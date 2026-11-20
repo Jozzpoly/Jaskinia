@@ -7,7 +7,7 @@ import { sprawdzSpojnosc } from './spojnosc.mjs';
 import { policzUstawienia, policzUstawieniaDlaNazw, stronaUstawien } from './ustawienia.mjs';
 import { bajtyDlaCzytajacego, NAJWIEKSZY_PLIK } from './pliki.mjs';
 import { poprawneImie } from './miejsce.mjs';
-import { CZYTELNIK_PODGLADU } from './srodowisko.mjs';
+import { CZYTELNIK_PODGLADU, HISTORIA_NA_STRONE } from './srodowisko.mjs';
 
 const TEKST = { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
 const tekst = (t, status = 200) => new Response(t, { status, headers: TEKST });
@@ -137,10 +137,17 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
       // "Co na to wskazuje" ma górną granicę (WSKAZUJA_NAJWIECEJ); wskazuja_wiecej mówi, że lista jest ucięta.
       if (!rz) return json({ ok: false, status: 404, blad: 'nie ma takiej rzeczy' });
       const wsk = w.wskazujaNa(rz.id);
-      return json({ ok: true, rzecz: { ...rz, tytul: w.tytul(rz) }, historia: w.historia(rz.id), wskazuja: wsk, ...(wsk.wiecej ? { wskazuja_wiecej: true } : {}), pochodzenie: w.pochodzenieDla(rz.id) });
+      // Historia stronami (próba 1 umowy zapisu, U12): najwyżej HISTORIA_NA_STRONE najnowszych wersji, ile jest wszystkich
+      // (historia_razem, z licznika spisu, bez czytania historii) i znacznik do następnej, starszej strony
+      // (historia_dalej: podaj go jako historia_przed). Do 20 XI trasa oddawała całą historię przy każdym odczycie.
+      const h = w.historia(rz.id, { przed: liczba(p.get('historia_przed')), ile: liczba(p.get('historia_ile')) || HISTORIA_NA_STRONE, razem: rz.numer });
+      const dalej = h.length && h[0].numer > 1 ? h[0].akt : null;
+      return json({ ok: true, rzecz: { ...rz, tytul: w.tytul(rz) }, historia: h, historia_razem: rz.numer, ...(dalej ? { historia_dalej: dalej } : {}), wskazuja: wsk, ...(wsk.wiecej ? { wskazuja_wiecej: true } : {}), pochodzenie: w.pochodzenieDla(rz.id) });
     }
     if (sciezka === '/api/srodowisko/wersja') {
       const ws = w.wersja(p.get('id') || '', liczba(p.get('akt')));
+      // Wersja wydalona: zdanie i jej wiersz bez treści (U7), nie pustka i nie 404 udające, że jej nie było.
+      if (ws && ws.wydalone) return json({ ok: false, status: 410, blad: `ta wersja (znacznik ${ws.akt}, wersja ${ws.numer} tej rzeczy, ${ws.kto}) została wydalona ${String(ws.wydalone_kiedy).slice(0, 10)}: obszar trzyma tylko ostatnie wersje (ustawienie historia), więc jej treści już nie ma. Zostały numer, autor i chwila.`, wersja: ws });
       return ws ? json({ ok: true, wersja: ws }) : json({ ok: false, status: 404, blad: 'nie ma takiej wersji; znaczniki wersji (pole akt) stoją w historii rzeczy: /api/srodowisko/rzecz?id=<id>' });
     }
     // Sprawdzian spójności: co w Miejscu nie zgadza się ze swoim własnym kształtem. Tylko do czytania; widzi go ten
