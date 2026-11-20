@@ -11,7 +11,7 @@ import { stanOka } from '../oko.mjs';
 import { czasownikiTwarzy } from '../reka.mjs';
 import { NAZWY_POKRETEL, Pokretla, KOLORY, RODZAJE_USTAWIEN, krojNaCss, polaczPodglad } from '../pokretla.mjs';
 import { rodzinaKroju } from '../kroje.mjs';
-import { DRABINA_DOMYSLNA, szczebel, alfa, rozmiarStartowy, ucieta } from './drabina.mjs';
+import { szczebel, alfa, rozmiarStartowy, ucieta, probyRozmiaru } from './drabina.mjs';
 import { zbudujSwiat, ukladStaly, poleCieklego, ukladCiekly, miedzy, lagodnie, krotkieImie, zywosc, galezieWPolu, trafienie,
   kolejnoscRysowania, naEkran, naSwiat, kameraNa, przybliz, KARTA, SKALA } from './swiat.mjs';
 
@@ -183,9 +183,9 @@ function zawin(tekst, czcionka, szer, ileLinii) {
   pamiecLinii.set(klucz, w);
   return w;
 }
-// Szczegół wchodzi płynnie, bez progu: kiedy który, mówi drabina przedstawień (./drabina.mjs). Na razie jej jedynym
-// źródłem jest wartość domyślna; pokrętło `wyglad.karta.drabina` przyjdzie, gdy zaplecze dostanie typ `drabina`.
-const drabina = DRABINA_DOMYSLNA;
+// Szczegół wchodzi płynnie, bez progu: kiedy który, mówi drabina przedstawień (./drabina.mjs), czytana z pokrętła
+// `wyglad.karta.drabina` (wartość z Miejsca po sprawdzeniu regułą, w trybie bezpiecznym domyślna).
+const drabina = () => P.w('wyglad.karta.drabina');
 function zaokraglony(x, y, w, h, r) {
   const k = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
@@ -242,7 +242,7 @@ function rysuj() {
       const e = naEkran(kam, okno, r);
       if (e.x > okno.w || e.y > okno.h || e.x + e.w < 0 || e.y + e.h < 0) continue;
       const rozmiar = Math.max(11, Math.min(30, 46 * kam.k));
-      ctx.globalAlpha = alfaRodzin * alfa(szczebel(drabina, 'podpis_rodziny'), e.w, e.h);
+      ctx.globalAlpha = alfaRodzin * alfa(szczebel(drabina(), 'podpis_rodziny'), e.w, e.h);
       ctx.fillStyle = K.ciche;
       ctx.font = `600 ${rozmiar}px ${KROJ}`;
       // podpis rodziny nie wychodzi poza swoje rzeczy: z daleka skraca się, zamiast wchodzić na sąsiednie karty
@@ -301,11 +301,12 @@ function rysujTresc(p, e, teraz) {
   let y = e.y + pad;
   // Nazwa: tak duża, jak pozwala działka, do trzech linii, bez cięcia w środku słowa. Gdy nie mieści się nawet
   // najmniejsza, zostaje jej początek z wielokropkiem: żadna rzecz nie stoi bez imienia.
-  const sImie = szczebel(drabina, 'imie');
+  const sImie = szczebel(drabina(), 'imie');
   let rozmiar = rozmiarStartowy(sImie, e.w, e.h);
   let nazwa = null;
   const ileLinii = (roz) => Math.max(1, Math.min(3, Math.floor((e.h - 2 * pad) / (roz * 1.18))));
-  for (; rozmiar >= sImie.rozmiar.od; rozmiar -= 1.5) {
+  for (const r of probyRozmiaru(sImie, e.w, e.h)) {
+    rozmiar = r;
     const proba = zawin(p.tytul, `${GRUBOSC_IMION} ${rozmiar}px ${KROJ_IMION}`, szer, ileLinii(rozmiar));
     if (!proba.zaSzeroka && !proba.ucieto) { nazwa = proba; break; }
   }
@@ -346,7 +347,7 @@ function rysujTresc(p, e, teraz) {
   }
   const dol = e.y + e.h - pad;
   // Wiersz na dole: kiedy żyło, ile gałęzi, ile słów; wchodzi płynnie, gdy działka rośnie.
-  const alfaMeta = alfa(szczebel(drabina, 'zycie'), e.w, e.h);
+  const alfaMeta = alfa(szczebel(drabina(), 'zycie'), e.w, e.h);
   let metaGora = dol;
   if (alfaMeta > 0.02) {
     const cz = [];
@@ -378,7 +379,7 @@ function rysujTresc(p, e, teraz) {
     }
   }
   // Jedno zdanie, czym projekt jest.
-  const alfaOpis = alfa(szczebel(drabina, 'opis'), e.w, e.h);
+  const alfaOpis = alfa(szczebel(drabina(), 'opis'), e.w, e.h);
   if (alfaOpis > 0.02 && p.opis && nazwa) {
     const wys = 13.5 * 1.35, miejsce = metaGora - y - 6;
     const ile = Math.max(0, Math.min(e.h > 420 ? 4 : 6, Math.floor(miejsce / wys)));
@@ -394,7 +395,7 @@ function rysujTresc(p, e, teraz) {
   // Z bliska projekt otwiera się: gałęzie jako działki w środku, świeższe większe. Wchodzą płynnie, w trakcie
   // przybliżania, a nie po nim.
   const gal = swiat.galezie.get(p.id);
-  const alfaGal = alfa(szczebel(drabina, 'galezie'), e.w, e.h);
+  const alfaGal = alfa(szczebel(drabina(), 'galezie'), e.w, e.h);
   if (gal && gal.length && alfaGal > 0.02) {
     const g0 = y + 10, g1 = metaGora - 6;
     if (g1 - g0 > 60) {
