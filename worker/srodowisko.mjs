@@ -77,6 +77,9 @@ export const WYDALAJ_NA_RAZ = 5;
 export const HISTORIA_NA_STRONE = 20;
 // Rodzaje niosące prawa nie tracą historii: kto, kiedy i jak zmieniał prawa, ma być zawsze do przeczytania (U3).
 const NIE_WYDALAC = ['obszar', 'uczestnik', 'poswiadczenie'];
+// Strażnicy wersji: rzeczy, które trzymają przy życiu wersję innej rzeczy (_trzymaneWersje). Cudzego strażnika w obszarze
+// z ograniczoną historią rusza tylko właściciel (atak 8 na tę próbę, W3 i W7).
+const STRAZNICY = ['punkt', 'chwila'];
 export const poprawnaHistoria = (v) => v === 'wszystko' || (Number.isInteger(v) && v >= HISTORIA_NAJMNIEJ && v <= HISTORIA_NAJWIECEJ);
 const dozwolone = (klucz, v) => (klucz === 'historia' ? poprawnaHistoria(v) : USTAWIENIA[klucz].includes(v));
 const ZDANIE_WYDALONEJ = (w) => `wersja o znaczniku ${w.akt} została wydalona (${String(w.wydalone_kiedy || '').slice(0, 10)}): ustawienie historii obszaru trzyma tylko ostatnie wersje, więc jej treści już nie ma; zostały numer, autor i chwila. Wybierz wersję, która ma treść (historia rzeczy)`;
@@ -484,8 +487,8 @@ export class Srodowisko {
         const w = cel.wersja(id, akt);
         if (!w) return null;
         // Wersja wydalona nie ma treści ani obszaru: zostaje numer, autor i chwila, tak jak w historii, którą ten
-        // czytający i tak widzi.
-        if (w.wydalone) return w;
+        // czytający i tak widzi. Obszar, którego ustawienie zdecydowało, nazywa się tylko temu, kto go widzi.
+        if (w.wydalone) return cel._wydalonePrzezDla(w, kto);
         const poziom = cel._poziom(kto);
         if (poziom === 0) return w;
         const zle = cel._niewidoczneDla(kto);
@@ -503,7 +506,7 @@ export class Srodowisko {
       // Historia bez odcisków treści dla każdego poza właścicielem: odcisk wersji, której treści czytający nie widzi,
       // pozwalał potwierdzić zgadniętą treść porównaniem (atak 6, F2). Numer, autor i czas zostają: że akt był, słychać
       // i tak w dzienniku.
-      historia: (id, o) => { const h = cel.historia(id, o); return cel._poziom(kto) === 0 ? h : h.map(({ zapis, ...reszta }) => reszta); },
+      historia: (id, o) => { const h = cel.historia(id, o); return cel._poziom(kto) === 0 ? h : h.map(({ zapis, ...reszta }) => cel._wydalonePrzezDla(reszta, kto)); },
       // Propozycje i prośby wychodzą z `wszystkie`, ale WOŁANE NA CELU, więc okulary ich nie dotyczyły: prośba
       // z zamkniętego obszaru stała w "co czeka" z identyfikatorem i treścią (ta sama usterka co niżej w liczbach).
       czeka: () => ({
@@ -1027,6 +1030,22 @@ export class Srodowisko {
     // historii jest ustawieniem właściciela (usuwanie jest jego), więc uczestnik nie skróci jej też naokoło, przenosząc.
     if (stara && (stara.obszar ?? null) !== (obszar ?? null) && !NIE_WYDALAC.includes(nazwaRodzaju(rodzaj)) && this._limitHistorii(obszar ?? null) < this._limitHistorii(stara.obszar ?? null))
       return { tryb: 'propozycja', powod: 'w obszarze docelowym trzyma się mniej wersji niż tam, gdzie rzecz leży: przeniesienie skróciłoby jej historię, a o tym decyduje tylko właściciel', wymaga: 'wlasciciel' };
+    // To samo dla obszaru (atak 8 na tę próbę, W1): obszar bez własnej historii dziedziczy ją po rodzicu, więc przeniesienie
+    // go pod rodzica, który trzyma mniej, skracało historię wszystkiego w środku, a reguła wyżej pomija obszary (NIE_WYDALAC
+    // chroni ich własną historię, nie ich wnętrze). Liczy się historia, którą obszar ma dziś, i ta, którą miałby po
+    // przeniesieniu: własna, gdy ją ma, inaczej nowego rodzica.
+    if (stara && stara.rodzaj === 'obszar/1' && rodzaj === 'obszar/1' && (stara.obszar ?? null) !== (obszar ?? null)) {
+      const wlasna = poprawnaHistoria(cechy.historia) ? cechy.historia : null;
+      const po = wlasna === null ? this._limitHistorii(obszar ?? null) : (wlasna === 'wszystko' ? Infinity : wlasna);
+      if (po < this._limitHistorii(stara.id))
+        return { tryb: 'propozycja', powod: 'pod nowym rodzicem ten obszar trzymałby mniej wersji niż dziś: przeniesienie skróciłoby historię wszystkiego, co w nim leży, a o tym decyduje tylko właściciel', wymaga: 'wlasciciel' };
+    }
+    // Strażnik wersji (atak 8, W3 i W7): punkt zapisu i zapisana chwila trzymają wersje przy życiu. Ich zmiana, odłożenie
+    // albo przeniesienie zdejmuje ochronę, a w obszarze z ograniczoną historią następny zapis wydala to, co trzymały, bez
+    // powrotu. Na pniu ta ochrona była zbędna, bo nic nie znikało. Cudzego strażnika rusza więc tylko właściciel; swojego
+    // każdy, kto go położył.
+    if (stara && STRAZNICY.includes(nazwaRodzaju(stara.rodzaj)) && stara.utworzyl !== kto && this._limitHistorii(stara.obszar ?? null) !== Infinity)
+      return { tryb: 'propozycja', powod: 'ten punkt zapisu albo zapisany układ trzyma wersję, której ustawienie historii obszaru inaczej by nie zostawiło: cudzy zmienić, odłożyć albo przenieść może tylko właściciel', wymaga: 'wlasciciel' };
     const z = this._zastrzezone(rodzaj, cechy, stara);
     if (z) return { tryb: 'propozycja', powod: z, wymaga: 'wlasciciel' };
     return wynik;
@@ -2119,8 +2138,17 @@ export class Srodowisko {
     if (ocena.tryb === 'skutek') {
       const p = await this.r.przygotujPolozenie({ op, rodzaj, tresc: trescRzeczy({ obszar, cechy, odlozone, powod, zNatury }), glowa: 'rzecz:' + id, wersja: stara ? wersja : null });
       if (!p.ok) return p;
-      return this._zatwierdz(kto, [{ p, id, rodzaj, obszar, cechy, odlozone, ksztalt: spr.ksztalt }], slad,
+      // Skrócenie historii obszaru (zmiana jego ustawienia albo przeniesienie pod rodzica, który trzyma mniej): odpowiedź
+      // mówi przed skutkiem, ile wersji straci treść przy następnych zapisach, i że do pierwszego zapisu powrót ustawienia
+      // niczego nie traci (atak 8, W10, kąt 2 z listy Fable; zasada 5: każde przycięcie jest widoczne).
+      const limitPrzed = rodzaj === 'obszar/1' && stara && stara.rodzaj === 'obszar/1' ? this._limitHistorii(stara.id) : null;
+      const w = this._zatwierdz(kto, [{ p, id, rodzaj, obszar, cechy, odlozone, ksztalt: spr.ksztalt }], slad,
         { skutek: SKUTKI[co], rzecz: id, adres: '/rzecz/' + id, ...(zWersji ? { z_wersji: zWersji } : {}), ...uwagi });
+      if (w.ok && !w.powtorzone && limitPrzed !== null && this._limitHistorii(id) < limitPrzed) {
+        const s = this._skutekSkrocenia(id);
+        if (s) w.historia_skutek = s;
+      }
+      return w;
     }
     // Propozycja kosztuje uwagę właściciela, więc jeden uczestnik nie może ich mnożyć bez końca: jedna czekająca na
     // rzecz i najwyżej NAJWIECEJ_CZEKAJACYCH naraz (uwaga drugiej linii do PR 35: agent w pętli zalałby listę "czeka").
@@ -2166,7 +2194,7 @@ export class Srodowisko {
     let wyd = null;
     if (!z.powtorzone) {
       lista.forEach((x, i) => this._projekcja(x.id, x.rodzaj, x.obszar, x.p.id, z.wyniki[i].wersja, kto, x.cechy, x.ksztalt, x.odlozone, z.wyniki[i].kiedy));
-      wyd = this._wydalNadmiar(lista.map((x) => ({ id: x.id, rodzaj: x.rodzaj, obszar: x.obszar ?? null })));
+      wyd = this._wydalNadmiar(lista.map((x) => ({ id: x.id, rodzaj: x.rodzaj, obszar: x.obszar ?? null })), kto);
     }
     const pierwsza = this.rzecz(lista[0].id);
     // Każde przycięcie jest widoczne (zasada 5): ruch mówi, ile wersji wydalił i ile jeszcze czeka.
@@ -2177,6 +2205,42 @@ export class Srodowisko {
   _limitHistorii(obszar) {
     const v = this.ustawienie(obszar ?? null, 'historia').wartosc;
     return v === 'wszystko' ? Infinity : v;
+  }
+
+  // Co skrócenie historii obszaru zrobi przy następnych zapisach (W10): rzeczy w nim i w obszarach pod nim, które mają
+  // więcej wersji z treścią, niż trzyma ich dzisiejsze ustawienie. Drzewo obszarów jest małe, a liczy się raz, przy geście
+  // właściciela. Górna granica: wersji trzymanych (punkt, chwila, propozycja, stan sprzed gestu) nie odejmujemy.
+  _skutekSkrocenia(obszar) {
+    const dzieci = new Map();
+    for (const o of this.wszystkie({ rodzaj: 'obszar/1', odlozone: 'razem' })) {
+      const r = o.obszar ?? null;
+      if (!dzieci.has(r)) dzieci.set(r, []);
+      dzieci.get(r).push(o.id);
+    }
+    const zasieg = new Set(), stos = [obszar];
+    while (stos.length) { const o = stos.pop(); if (zasieg.has(o)) continue; zasieg.add(o); stos.push(...(dzieci.get(o) || [])); }
+    const bezPraw = NIE_WYDALAC.map(() => 'NOT (rodzaj >= ? AND rodzaj < ?)').join(' AND ');
+    const parPraw = NIE_WYDALAC.flatMap((x) => [x + '/', x + '0']);
+    let rzeczy = 0, wersji = 0;
+    for (const o of zasieg) {
+      const lim = this._limitHistorii(o);
+      if (lim === Infinity) continue;
+      const w = this.q(`SELECT COUNT(*) AS n, COALESCE(SUM(numer - wydalonych - ?), 0) AS s FROM rzeczy WHERE obszar = ? AND numer - wydalonych > ? AND ${bezPraw}`, lim, o, lim, ...parPraw)[0];
+      rzeczy += w.n; wersji += w.s;
+    }
+    if (!rzeczy) return null;
+    const forma = wersji === 1 ? 'wersja' : [2, 3, 4].includes(wersji % 10) && ![12, 13, 14].includes(wersji % 100) ? 'wersje' : 'wersji';
+    return { rzeczy, wersji_ponad: wersji, zdanie: `przy następnych zapisach ${rzeczy === 1 ? 'tej rzeczy' : 'tych ' + rzeczy + ' rzeczy'} treść straci najwyżej ${wersji} ${forma} ponad nowe ustawienie (wersje trzymane przez punkt zapisu, chwilę, propozycję i stan sprzed gestu zostają); dopóki nikt w nich nie zapisze, powrót ustawienia niczego nie traci` };
+  }
+
+  // Obszar, którego ustawienie historii wydaliło wersję (wydalone_przez), nazywa się tylko temu, kto go widzi. Obszaru, do
+  // którego ktoś nie ma wstępu, się mu nie wymienia (17 XI), a tu wychodził w historii, w trasie rzeczy i w odpowiedzi 410,
+  // gdy ustawienie dziedziczyło się z zamkniętego rodzica albo rzecz leżała kiedyś w zamkniętym obszarze (atak 8, W4).
+  _wydalonePrzezDla(w, kto) {
+    if (!w || !w.wydalone_przez || this._poziom(kto) === 0) return w;
+    const zle = this._niewidoczneDla(kto);
+    const ukryty = !!zle && (zle.includes(w.wydalone_przez) || (w.wydalone_przez === this.r.meta('obszar_glowny') && zle.includes(null)));
+    return ukryty ? { ...w, wydalone_przez: null } : w;
   }
 
   // Wydalanie przy zapisie (U3, U4, U6). Dla każdej rzeczy z `ids`, której obszar trzyma mniej wersji, niż rzecz ma
@@ -2191,8 +2255,13 @@ export class Srodowisko {
   // zaległość to wersje ponad ustawienie, które dalej mają treść (razem z trzymanymi).
   // `cele`: identyfikatory albo {id, rodzaj, obszar} (wtedy pytanie o spis pada dopiero, gdy ustawienie jest liczbą,
   // więc zapis w obszarze, który trzyma wszystko, płaci tylko za drogę w górę po ustawieniu).
-  _wydalNadmiar(cele) {
-    let wynik = null, budzet = WYDALAJ_NA_RAZ;
+  // `kto`: kto pisze. Zapis kogokolwiek poza właścicielem nie wydala wersji, których autorem jest właściciel (W2 z ataku
+  // 8, wersja ostrożna z głosu Fable jako autora umowy zapisu, 20 XI 2026): ustawienie `historia` mówi, ile trzymać, a nie
+  // kto może spowodować zniknięcie, a usuwanie jest jego (zasada 4). Jego wersje czekają do jego następnego zapisu albo
+  // gestu; odpowiedź mówi, ile czeka (czeka_na_wlasciciela). Tak samo przy zapisie automatu i przy zasiewie.
+  _wydalNadmiar(cele, kto = null) {
+    let wynik = null, budzet = WYDALAJ_NA_RAZ, czekaNaNiego = 0;
+    const jegoNieRuszaj = kto !== this.wlasciciel;
     const widziane = new Set();
     for (const c of cele) {
       const id = typeof c === 'string' ? c : c.id;
@@ -2214,12 +2283,15 @@ export class Srodowisko {
       const trzyma = this._trzymaneWersje(id, r);
       // najstarsze wersje z treścią spoza `u.wartosc` najnowszych; `dalej` to akt następnej wersji (koniec jej życia).
       // Czytamy tylko tyle, ile może się przydać w tym zapisie: budżet plus wersje, które coś trzyma, więc koszt nie
-      // rośnie z zaległością.
+      // rośnie z zaległością. Po indeksie samych żywych wersji (akty_glowa_zywe), nie głowy: nagrobki zostają na zawsze
+      // i po indeksie głowy każdy zapis przechodził przez wszystkie (atak 8, poprawka kosztu). `dalej` liczy się po
+      // wszystkich aktach, także wydalonych, bo koniec życia wersji wyznacza następny akt, jakikolwiek jest.
       const kand = this.q(`SELECT a.nr, a.kto, a.op, a.zapis, (SELECT MIN(b.nr) FROM akty b WHERE b.glowa = a.glowa AND b.co = 'przesun' AND b.nr > a.nr) AS dalej
-        FROM akty a WHERE a.glowa = ? AND a.co = 'przesun' AND a.wydalone IS NULL ORDER BY a.nr LIMIT ?`, glowa, Math.min(nadmiar, budzet + trzyma.akty.size + trzyma.chwile.length));
+        FROM akty a INDEXED BY akty_glowa_zywe WHERE a.glowa = ? AND a.co = 'przesun' AND a.wydalone IS NULL ORDER BY a.nr LIMIT ?`, glowa, Math.min(nadmiar, budzet + trzyma.akty.size + trzyma.chwile.length));
       let tu = 0;
       for (const a of kand) {
         if (trzyma.akty.has(a.nr) || trzyma.chwile.some((x) => x >= a.nr && (a.dalej === null || x < a.dalej))) { wynik.trzymane++; continue; }
+        if (jegoNieRuszaj && a.kto === this.wlasciciel) { czekaNaNiego++; continue; }
         if (budzet <= 0) continue;
         const kiedy = this.r.teraz();
         this.r.sql.exec(`UPDATE akty SET wydalone = ?, wydalone_przez = ? WHERE nr = ?`, kiedy, u.skad, a.nr);
@@ -2232,6 +2304,7 @@ export class Srodowisko {
       wynik.wydalone += tu;
       wynik.zaleglosc += nadmiar - tu;
     }
+    if (wynik && czekaNaNiego) wynik.czeka_na_wlasciciela = czekaNaNiego;
     return wynik;
   }
 
@@ -2248,7 +2321,8 @@ export class Srodowisko {
     const ost = this.q(`SELECT nr, kto, op FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr DESC LIMIT 1`, glowa)[0];
     if (ost && typeof ost.op === 'string' && ost.op.startsWith('g:')) {
       const gest = ost.op.split(':')[1];
-      const pierwszy = this.q(`SELECT MIN(nr) AS n FROM akty WHERE glowa = ? AND co = 'przesun' AND kto = ? AND op >= ? AND op < ?`, glowa, ost.kto, 'g:' + gest + ':', 'g:' + gest + ';')[0];
+      // po indeksie (kto, op): czyta akty tego gestu, a nie całą historię rzeczy (po indeksie głowy rosło z historią)
+      const pierwszy = this.q(`SELECT MIN(nr) AS n FROM akty INDEXED BY akty_kto_op WHERE kto = ? AND op >= ? AND op < ? AND glowa = ? AND co = 'przesun'`, ost.kto, 'g:' + gest + ':', 'g:' + gest + ';', glowa)[0];
       const przed = pierwszy && pierwszy.n ? this.q(`SELECT nr FROM akty WHERE glowa = ? AND co = 'przesun' AND nr < ? ORDER BY nr DESC LIMIT 1`, glowa, pierwszy.n)[0] : null;
       if (przed) akty.add(przed.nr);
     }
@@ -2551,7 +2625,7 @@ export class Srodowisko {
       if (!p.ok) throw new Error(`ziarno ${z.nazwa}: ${p.blad}`);
       const w = this.r.zatwierdzPolozenia(AUTOMAT, [p], { slad: 'zasiew' });
       if (!w.ok) throw new Error(`ziarno ${z.nazwa}: ${w.blad}`);
-      if (!w.powtorzone) { this._projekcja(id, z.rodzaj, obszar, p.id, w.wyniki[0].wersja, AUTOMAT, cechy, z.rodzaj === 'ksztalt/1' ? this.ksztaltDla('ksztalt/1') : ksztalt, false, w.wyniki[0].kiedy); this._wydalNadmiar([{ id, rodzaj: z.rodzaj, obszar: obszar ?? null }]); }
+      if (!w.powtorzone) { this._projekcja(id, z.rodzaj, obszar, p.id, w.wyniki[0].wersja, AUTOMAT, cechy, z.rodzaj === 'ksztalt/1' ? this.ksztaltDla('ksztalt/1') : ksztalt, false, w.wyniki[0].kiedy); this._wydalNadmiar([{ id, rodzaj: z.rodzaj, obszar: obszar ?? null }], AUTOMAT); }
     };
     for (const z of ziarna) {
       const klucz = 'ziarno:' + z.nazwa;
