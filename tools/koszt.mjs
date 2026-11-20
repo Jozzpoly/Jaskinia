@@ -20,6 +20,7 @@ import { Rdzen } from '../worker/miejsce.mjs';
 import { Srodowisko } from '../worker/srodowisko.mjs';
 import { ziarna } from '../worker/ziarna.mjs';
 import { opisDane, coTuJest } from '../worker/opis.mjs';
+import { WYCINEK } from '../public/start/drzwi.mjs';
 
 const ROZMIARY = process.argv.slice(2).map(Number).filter((n) => Number.isFinite(n) && n > 0);
 const ILE = ROZMIARY.length ? ROZMIARY : [636, 2000, 5000];
@@ -57,11 +58,19 @@ function plan(db, q, p) {
 // slowo), czyta WSZYSTKIE rzeczy tego rodzaju, choc plan mowi SEARCH, nie SCAN. Do 20 XI ta miara go nie widziala:
 // spis po cesze przy tysiacu galezi wygladal jak jedno tanie zapytanie. Liczymy go osobno, z liczebnoscia rodzaju,
 // bo to ona mowi, ile wierszy pojdzie (przyrzad Opusa Code we wspolnej pamieci agentow, koszt-odczytu-rzeczy.mjs).
+// Wycinek (rodzaje=, 20 XI) pyta o kilka rodzajow naraz, a sama nazwa idzie zakresem od "nazwa/" do "nazwa0": liczymy
+// wszystkie rzeczy, ktore pasuja do ktoregokolwiek z nich, jednym zapytaniem, zeby rodzaj podany dwa razy nie liczyl sie dwa.
 const RODZAJ_W_PARAMETRACH = /^[a-z][a-z0-9_.-]*\/\d+$/;
+const NAZWA_W_PARAMETRACH = /^[a-z][a-z0-9_.-]*\/$/;
 function liczebnoscRodzaju(db, p) {
-  const r = p.find((x) => typeof x === 'string' && RODZAJ_W_PARAMETRACH.test(x));
-  if (!r) return { rodzaj: '?', ile: wierszyW(db, 'rzeczy') }; // rodzaju nie widac: liczymy najgorzej, cala tabela
-  try { return { rodzaj: r, ile: db.prepare('SELECT COUNT(*) AS n FROM rzeczy WHERE rodzaj = ?').get(r).n }; } catch { return { rodzaj: r, ile: 0 }; }
+  const tekst = p.filter((x) => typeof x === 'string');
+  const dokladne = [...new Set(tekst.filter((x) => RODZAJ_W_PARAMETRACH.test(x)))];
+  const nazwy = [...new Set(tekst.filter((x) => NAZWA_W_PARAMETRACH.test(x)))];
+  if (!dokladne.length && !nazwy.length) return { rodzaj: '?', ile: wierszyW(db, 'rzeczy') }; // rodzaju nie widac: liczymy najgorzej, cala tabela
+  const rodzaj = [...dokladne, ...nazwy.map((n) => n.slice(0, -1))];
+  const opis = rodzaj.length > 3 ? `${rodzaj.slice(0, 3).join(',')} i ${rodzaj.length - 3} innych` : rodzaj.join(',');
+  const war = [...dokladne.map(() => 'rodzaj = ?'), ...nazwy.map(() => '(rodzaj >= ? AND rodzaj < ?)')].join(' OR ');
+  try { return { rodzaj: opis, ile: db.prepare(`SELECT COUNT(*) AS n FROM rzeczy WHERE ${war}`).get(...dokladne, ...nazwy.flatMap((n) => [n, n.slice(0, -1) + '0'])).n }; } catch { return { rodzaj: opis, ile: 0 }; }
 }
 
 function policz(sql, db) {
@@ -136,6 +145,12 @@ async function zmierz(ile) {
   probuj('/api/srodowisko/rzecz?id=... (jedna rzecz)', () => jednaRzecz && s.dla('agent-probny').rzecz(jednaRzecz.id));
   probuj('spis po cesze (gdzie.nazwa=...)', () => s.dla('agent-probny').spis({ rodzaj: 'projekt/1', gdzie: { nazwa: 'rzecz-3' }, limit: 50 }));
   probuj('szukanie po slowie', () => s.dla('agent-probny').spis({ szukaj: 'projekt-7', limit: 50 }));
+  // Dwa pytania Startu (20 XI 2026): wejście (spis wycinka i jego razem) przy każdym otwarciu strony i doganianie (to
+  // samo po akcie) po każdej zmianie w każdej otwartej stronie. Do 20 XI ta miara ich nie zadawała, a pod adresem pnia
+  // kosztowały 2688 i 1361 wierszy: doganianie czytało cały wycinek, żeby oddać zero zmian.
+  const W = WYCINEK.split(','), akt = s.ostatniNr();
+  probuj('Start: wejscie (spis wycinka i razem)', () => { const c = s.dla('agent-probny'); c.spis({ rodzaje: W, limit: 1000 }); c.ile({ rodzaje: W }); });
+  probuj('Start: doganianie po akcie (zero zmian)', () => { const c = s.dla('agent-probny'); const f = { po: akt, rodzaje: W, odlozone: 'razem' }; c.spis({ ...f, limit: 1000 }); c.ile(f); });
 
   console.log(`\n=== ${fmt(rzeczy)} rzeczy w Miejscu ===`);
   console.log('tabele:', Object.entries(policz(sql, db).rozmiar).filter(([, n]) => n).map(([t, n]) => `${t}=${fmt(n)}`).join('  '));
