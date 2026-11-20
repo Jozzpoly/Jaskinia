@@ -2185,7 +2185,7 @@ export class Srodowisko {
     let wyd = null;
     if (!z.powtorzone) {
       lista.forEach((x, i) => this._projekcja(x.id, x.rodzaj, x.obszar, x.p.id, z.wyniki[i].wersja, kto, x.cechy, x.ksztalt, x.odlozone, z.wyniki[i].kiedy));
-      wyd = this._wydalNadmiar(lista.map((x) => ({ id: x.id, rodzaj: x.rodzaj, obszar: x.obszar ?? null })));
+      wyd = this._wydalNadmiar(lista.map((x) => ({ id: x.id, rodzaj: x.rodzaj, obszar: x.obszar ?? null })), kto);
     }
     const pierwsza = this.rzecz(lista[0].id);
     // Każde przycięcie jest widoczne (zasada 5): ruch mówi, ile wersji wydalił i ile jeszcze czeka.
@@ -2220,8 +2220,13 @@ export class Srodowisko {
   // zaległość to wersje ponad ustawienie, które dalej mają treść (razem z trzymanymi).
   // `cele`: identyfikatory albo {id, rodzaj, obszar} (wtedy pytanie o spis pada dopiero, gdy ustawienie jest liczbą,
   // więc zapis w obszarze, który trzyma wszystko, płaci tylko za drogę w górę po ustawieniu).
-  _wydalNadmiar(cele) {
-    let wynik = null, budzet = WYDALAJ_NA_RAZ;
+  // `kto`: kto pisze. Zapis kogokolwiek poza właścicielem nie wydala wersji, których autorem jest właściciel (W2 z ataku
+  // 8, wersja ostrożna z głosu Fable jako autora umowy zapisu, 20 XI 2026): ustawienie `historia` mówi, ile trzymać, a nie
+  // kto może spowodować zniknięcie, a usuwanie jest jego (zasada 4). Jego wersje czekają do jego następnego zapisu albo
+  // gestu; odpowiedź mówi, ile czeka (czeka_na_wlasciciela). Tak samo przy zapisie automatu i przy zasiewie.
+  _wydalNadmiar(cele, kto = null) {
+    let wynik = null, budzet = WYDALAJ_NA_RAZ, czekaNaNiego = 0;
+    const jegoNieRuszaj = kto !== this.wlasciciel;
     const widziane = new Set();
     for (const c of cele) {
       const id = typeof c === 'string' ? c : c.id;
@@ -2251,6 +2256,7 @@ export class Srodowisko {
       let tu = 0;
       for (const a of kand) {
         if (trzyma.akty.has(a.nr) || trzyma.chwile.some((x) => x >= a.nr && (a.dalej === null || x < a.dalej))) { wynik.trzymane++; continue; }
+        if (jegoNieRuszaj && a.kto === this.wlasciciel) { czekaNaNiego++; continue; }
         if (budzet <= 0) continue;
         const kiedy = this.r.teraz();
         this.r.sql.exec(`UPDATE akty SET wydalone = ?, wydalone_przez = ? WHERE nr = ?`, kiedy, u.skad, a.nr);
@@ -2263,6 +2269,7 @@ export class Srodowisko {
       wynik.wydalone += tu;
       wynik.zaleglosc += nadmiar - tu;
     }
+    if (wynik && czekaNaNiego) wynik.czeka_na_wlasciciela = czekaNaNiego;
     return wynik;
   }
 
@@ -2583,7 +2590,7 @@ export class Srodowisko {
       if (!p.ok) throw new Error(`ziarno ${z.nazwa}: ${p.blad}`);
       const w = this.r.zatwierdzPolozenia(AUTOMAT, [p], { slad: 'zasiew' });
       if (!w.ok) throw new Error(`ziarno ${z.nazwa}: ${w.blad}`);
-      if (!w.powtorzone) { this._projekcja(id, z.rodzaj, obszar, p.id, w.wyniki[0].wersja, AUTOMAT, cechy, z.rodzaj === 'ksztalt/1' ? this.ksztaltDla('ksztalt/1') : ksztalt, false, w.wyniki[0].kiedy); this._wydalNadmiar([{ id, rodzaj: z.rodzaj, obszar: obszar ?? null }]); }
+      if (!w.powtorzone) { this._projekcja(id, z.rodzaj, obszar, p.id, w.wyniki[0].wersja, AUTOMAT, cechy, z.rodzaj === 'ksztalt/1' ? this.ksztaltDla('ksztalt/1') : ksztalt, false, w.wyniki[0].kiedy); this._wydalNadmiar([{ id, rodzaj: z.rodzaj, obszar: obszar ?? null }], AUTOMAT); }
     };
     for (const z of ziarna) {
       const klucz = 'ziarno:' + z.nazwa;

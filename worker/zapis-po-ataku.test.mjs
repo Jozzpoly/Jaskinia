@@ -165,3 +165,28 @@ test('ZA5. zapis tam, gdzie się wydala, nie przechodzi przez nagrobki: kandydac
   ok(await s.ruch('jozz', { op: op('cg'), co: 'cofnij-gest', cofany: 'gest-za5' }));
   assert.equal(s.rzecz(X).cechy.nazwa, przedGestem);
 });
+
+test('ZA6. zapis agenta nie wydala wersji właściciela (czekają na jego zapis); wersje agentów wydala jak dotąd', async () => {
+  const W = await swiat();
+  const K = await W.obszar('Krótki', { historia: 2 });
+  const Y = await W.poloz('jozz', K, 'projekt/1', { nazwa: 'jego jedyna' });
+  const v1 = W.s.historia(Y)[0].akt;
+  ok(await W.zmien('agent-a', Y, { nazwa: 'agent 1' }));
+  const w = ok(await W.zmien('agent-a', Y, { nazwa: 'agent 2' }));
+  assert.equal(W.s.historia(Y).find((h) => h.akt === v1).wydalone, undefined, 'wersja właściciela zostaje mimo ustawienia 2');
+  assert.equal(w.wydalanie.czeka_na_wlasciciela, 1, 'odpowiedź mówi, ile czeka: ' + JSON.stringify(w.wydalanie));
+  assert.ok(w.wydalanie.zaleglosc >= 1, 'i liczy to do zaległości');
+  // kontrola: wersje agentów agent wydala (za jego wersją właściciela, w granicy nadmiaru)
+  ok(await W.zmien('agent-a', Y, { nazwa: 'agent 3' }));
+  const h = W.s.historia(Y);
+  assert.equal(h.find((x) => x.akt === v1).wydalone, undefined);
+  assert.equal(h.find((x) => x.kto === 'agent-a').wydalone, true, 'najstarsza wersja agenta odchodzi: ' + JSON.stringify(h.map((x) => [x.kto, !!x.wydalone])));
+  // kontrola: rzecz samych agentów wydala się jak dotąd
+  const A = await W.poloz('agent-a', K, 'projekt/1', { nazwa: 'agenta 1' });
+  for (let i = 2; i <= 4; i++) ok(await W.zmien('agent-b', A, { nazwa: 'agenta ' + i }));
+  assert.equal(wydalonych(W, A), 2);
+  // kontrola: zapis właściciela wydala także jego czekającą wersję
+  const wl = ok(await W.zmien('jozz', Y, { nazwa: 'jego druga' }));
+  assert.equal(W.s.historia(Y).find((x) => x.akt === v1).wydalone, true, 'jego zapis zdejmuje jego zaległość: ' + JSON.stringify(wl.wydalanie));
+  assert.equal(wl.wydalanie.czeka_na_wlasciciela, undefined);
+});
