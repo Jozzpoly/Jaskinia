@@ -423,7 +423,7 @@ test('wywóz i wwóz: po powrocie do pustego Miejsca stoi to samo środowisko', 
   await s.ruch('jozz', { op: op(), co: 'odloz', rzecz: p.rzecz, wersja: p.wersja });
   const obraz = (x) => JSON.stringify([x.q(`SELECT id, rodzaj, obszar, zapis, akt, numer, odlozone, szukane, utworzyl, utworzono, zmienil, zmieniono FROM rzeczy ORDER BY id`), x.q(`SELECT od, cecha, cel FROM odniesienia ORDER BY od, cecha, cel`)]);
   const e = JSON.parse(JSON.stringify(r.eksport()));
-  assert.equal(e.wersja, 'miejsce-3');
+  assert.equal(e.wersja, 'miejsce-4'); // miejsce-4 od 20 XI 2026: akt może nieść ślad wydalenia (worker/zapis.test.mjs)
   const r2 = new Rdzen(sqlZNode());
   assert.equal((await r2.importuj(e)).ok, true);
   const s2 = new Srodowisko(r2);
