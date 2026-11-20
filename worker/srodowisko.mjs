@@ -2243,9 +2243,11 @@ export class Srodowisko {
       const trzyma = this._trzymaneWersje(id, r);
       // najstarsze wersje z treścią spoza `u.wartosc` najnowszych; `dalej` to akt następnej wersji (koniec jej życia).
       // Czytamy tylko tyle, ile może się przydać w tym zapisie: budżet plus wersje, które coś trzyma, więc koszt nie
-      // rośnie z zaległością.
+      // rośnie z zaległością. Po indeksie samych żywych wersji (akty_glowa_zywe), nie głowy: nagrobki zostają na zawsze
+      // i po indeksie głowy każdy zapis przechodził przez wszystkie (atak 8, poprawka kosztu). `dalej` liczy się po
+      // wszystkich aktach, także wydalonych, bo koniec życia wersji wyznacza następny akt, jakikolwiek jest.
       const kand = this.q(`SELECT a.nr, a.kto, a.op, a.zapis, (SELECT MIN(b.nr) FROM akty b WHERE b.glowa = a.glowa AND b.co = 'przesun' AND b.nr > a.nr) AS dalej
-        FROM akty a WHERE a.glowa = ? AND a.co = 'przesun' AND a.wydalone IS NULL ORDER BY a.nr LIMIT ?`, glowa, Math.min(nadmiar, budzet + trzyma.akty.size + trzyma.chwile.length));
+        FROM akty a INDEXED BY akty_glowa_zywe WHERE a.glowa = ? AND a.co = 'przesun' AND a.wydalone IS NULL ORDER BY a.nr LIMIT ?`, glowa, Math.min(nadmiar, budzet + trzyma.akty.size + trzyma.chwile.length));
       let tu = 0;
       for (const a of kand) {
         if (trzyma.akty.has(a.nr) || trzyma.chwile.some((x) => x >= a.nr && (a.dalej === null || x < a.dalej))) { wynik.trzymane++; continue; }
@@ -2277,7 +2279,8 @@ export class Srodowisko {
     const ost = this.q(`SELECT nr, kto, op FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr DESC LIMIT 1`, glowa)[0];
     if (ost && typeof ost.op === 'string' && ost.op.startsWith('g:')) {
       const gest = ost.op.split(':')[1];
-      const pierwszy = this.q(`SELECT MIN(nr) AS n FROM akty WHERE glowa = ? AND co = 'przesun' AND kto = ? AND op >= ? AND op < ?`, glowa, ost.kto, 'g:' + gest + ':', 'g:' + gest + ';')[0];
+      // po indeksie (kto, op): czyta akty tego gestu, a nie całą historię rzeczy (po indeksie głowy rosło z historią)
+      const pierwszy = this.q(`SELECT MIN(nr) AS n FROM akty INDEXED BY akty_kto_op WHERE kto = ? AND op >= ? AND op < ? AND glowa = ? AND co = 'przesun'`, ost.kto, 'g:' + gest + ':', 'g:' + gest + ';', glowa)[0];
       const przed = pierwszy && pierwszy.n ? this.q(`SELECT nr FROM akty WHERE glowa = ? AND co = 'przesun' AND nr < ? ORDER BY nr DESC LIMIT 1`, glowa, pierwszy.n)[0] : null;
       if (przed) akty.add(przed.nr);
     }

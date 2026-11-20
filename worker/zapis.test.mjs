@@ -298,7 +298,9 @@ test('Z12. migracja: baza sprzed wydalania (bez nowych kolumn) otwiera się, dos
   const W = await swiat({ sql });
   const Z = await W.obszar('krótka');
   const X = await zWersjami(W, Z, 5);
-  // stan bazy sprzed 20 XI: bez kolumn wydalenia w aktach i bez licznika w spisie
+  // stan bazy sprzed 20 XI: bez kolumn wydalenia w aktach i bez licznika w spisie (i bez indeksu żywych wersji, który na
+  // kolumnę wydalone wskazuje; prawdziwa baza sprzed tej chwili go nie ma, a SQLite nie zrzuci kolumny, na którą on patrzy)
+  sql.exec(`DROP INDEX IF EXISTS akty_glowa_zywe`);
   sql.exec(`ALTER TABLE akty DROP COLUMN wydalone_przez`);
   sql.exec(`ALTER TABLE akty DROP COLUMN wydalone`);
   sql.exec(`ALTER TABLE rzeczy DROP COLUMN wydalonych`);

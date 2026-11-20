@@ -77,6 +77,12 @@ const INDEKSY = [
   `CREATE INDEX IF NOT EXISTS akty_zapis ON akty (zapis)`,
   `CREATE INDEX IF NOT EXISTS akty_glowa ON akty (glowa)`,
   `CREATE INDEX IF NOT EXISTS zapisy_rodzaj ON zapisy (rodzaj)`,
+  // Żywe wersje rzeczy (próba zapisu 1, poprawka po ataku 8, 20 XI 2026). Wydalanie szuka najstarszych wersji z treścią,
+  // a nagrobki zostają na zawsze: po indeksie głowy zapytanie przechodziło przez WSZYSTKIE nagrobki rzeczy przy każdym
+  // zapisie (przy 5000 wersjach 5000 wierszy indeksu i tyle samo tabeli), więc koszt zapisu rósł z historią, a koszt
+  // używania z jej kwadratem (U12). Indeks częściowy trzyma tylko żywe: wydalenie wyjmuje akt z indeksu. Cena: wpis
+  // indeksu przy każdej nowej wersji. Stoi po migracjach, bo potrzebuje kolumny `wydalone`.
+  `CREATE INDEX IF NOT EXISTS akty_glowa_zywe ON akty (glowa, nr) WHERE co = 'przesun' AND wydalone IS NULL`,
 ];
 
 const blad = (status, tekst, extra = {}) => ({ ok: false, status, blad: tekst, ...extra });

@@ -4,6 +4,7 @@
 // nie widzi. Każdy sprawdzian ma kontrolę drogi uczciwej: to, co ma działać jak na pniu, działa.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { Rdzen } from './miejsce.mjs';
 import { sqlZNode } from './sql-node.mjs';
 import { Srodowisko } from './srodowisko.mjs';
@@ -126,4 +127,41 @@ test('ZA4. wydalone_przez nazywa obszar tylko temu, kto go widzi (historia, tras
   const Zq = await W.zWersjami('jozz', Q, 4, 'w jawnym');
   assert.equal(W.s.dla('agent-a').historia(Zq).find((h) => h.wydalone).wydalone_przez, Q);
   assert.equal(W.s.dla('agent-a').wersja(Zq, W.s.historia(Zq)[0].akt).wydalone_przez, Q);
+});
+
+test('ZA5. zapis tam, gdzie się wydala, nie przechodzi przez nagrobki: kandydaci po indeksie żywych wersji, gest po (kto, op)', async () => {
+  const db = new DatabaseSync(':memory:');
+  const baza = sqlZNode(db);
+  const slad = [];
+  const sql = { exec: (q, ...p) => { slad.push([q, p]); return baza.exec(q, ...p); } };
+  let t = Date.UTC(2026, 10, 20, 19, 0, 0);
+  const r = new Rdzen(sql, { wlasciciel: 'jozz', teraz: () => (t += 1000) });
+  const s = new Srodowisko(r);
+  await s.zasiej(ziarna({ wlasciciel: 'jozz', uczestnicy: ['agent-a'] }));
+  const K = ok(await s.ruch('jozz', { op: op('k'), co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'K', ile_wolno: 'prowadzic', historia: 2 } })).rzecz;
+  const X = ok(await s.ruch('jozz', { op: op('x'), co: 'poloz', rodzaj: 'projekt/1', obszar: K, cechy: { nazwa: 'x 0' } })).rzecz;
+  let k = 0;
+  const krok = (gest) => { const x = s.rzecz(X); return s.ruch('jozz', { op: op('s'), ...(gest ? { gest } : {}), co: 'poloz', rzecz: X, wersja: x.wersja, rodzaj: x.rodzaj, obszar: K, cechy: { nazwa: 'x ' + ++k } }); };
+  for (let i = 0; i < 40; i++) ok(await krok());
+  const plan = (q, p) => db.prepare('EXPLAIN QUERY PLAN ' + q).all(...p).map((x) => String(x.detail)).join(' | ');
+  slad.length = 0;
+  ok(await krok());
+  const kand = slad.find(([q]) => /a\.wydalone IS NULL ORDER BY a\.nr LIMIT/.test(q));
+  assert.ok(kand, 'zapis szukał kandydatów do wydalenia');
+  assert.match(plan(...kand), /USING INDEX akty_glowa_zywe/, 'kandydaci po indeksie żywych wersji: ' + plan(...kand));
+  // ile wierszy przejdzie: w indeksie żywych wersji tej rzeczy jest tyle, ile ustawienie trzyma, nie cała historia
+  const zywych = db.prepare(`SELECT COUNT(*) AS n FROM akty INDEXED BY akty_glowa_zywe WHERE glowa = ? AND co = 'przesun' AND wydalone IS NULL`).get('rzecz:' + X).n;
+  const wszystkich = db.prepare(`SELECT COUNT(*) AS n FROM akty WHERE glowa = ? AND co = 'przesun'`).get('rzecz:' + X).n;
+  assert.ok(zywych <= 2 && wszystkich >= 40, `żywych ${zywych}, wszystkich ${wszystkich}`);
+  // gest: stan sprzed gestu szuka się po aktach gestu, nie po całej historii rzeczy
+  const przedGestem = s.rzecz(X).cechy.nazwa;
+  for (let i = 0; i < 3; i++) ok(await krok('gest-za5'));
+  slad.length = 0;
+  ok(await krok('gest-za5'));
+  const g = slad.find(([q]) => /SELECT MIN\(nr\) AS n FROM akty/.test(q));
+  assert.ok(g, 'zapis gestu szukał stanu sprzed gestu');
+  assert.match(plan(...g), /USING (COVERING )?INDEX akty_kto_op/, 'po (kto, op): ' + plan(...g));
+  // wynik ten sam co dotąd: cofnięcie gestu wraca do stanu sprzed niego, choć w środku gestu wydalało
+  ok(await s.ruch('jozz', { op: op('cg'), co: 'cofnij-gest', cofany: 'gest-za5' }));
+  assert.equal(s.rzecz(X).cechy.nazwa, przedGestem);
 });
