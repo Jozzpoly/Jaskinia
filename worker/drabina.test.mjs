@@ -118,6 +118,9 @@ test('DR7. twarde granice liczb: wartość, na której twarz stawała (2·10^8 p
     ['pismo większe niż 1000 px', wartosc(ciagly({ rozmiar: { od: 9, do: 5000 } })), /między 1 a 1000 px/],
     ['ucinaj ponad granicę', wartosc(ciagly({ ucinaj: { szer_od: 1e9, wys_od: 20, rozmiar: 9.5 } })), /najwyżej 100000 px/],
     ['ucinaj z pismem 0.5 px', wartosc(ciagly({ ucinaj: { szer_od: 64, wys_od: 20, rozmiar: 0.5 } })), /między 1 a 1000 px/],
+    // dwa warunki, na których mutanty przeżyły (druga linia Opusa czatu, 20 XI 01:06): każdy ma teraz własny przypadek
+    ['ucinaj z wys_od ponad granicę', wartosc(ciagly({ ucinaj: { szer_od: 64, wys_od: GRANICE_DRABINY.px + 1, rozmiar: 9.5 } })), /najwyżej 100000 px/],
+    ['ucinaj z pismem ponad 1000 px', wartosc(ciagly({ ucinaj: { szer_od: 64, wys_od: 20, rozmiar: GRANICE_DRABINY.pismo.do + 1 } })), /między 1 a 1000 px/],
   ];
   for (const [nazwa, w, wzor] of przypadki) {
     const wada = wadaWartosci(D, w);
