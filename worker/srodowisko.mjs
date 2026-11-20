@@ -1788,10 +1788,19 @@ export class Srodowisko {
     return Object.hasOwn(JAWNOSC, w) ? JAWNOSC[w] : 0;
   }
 
-  // Koniec życia wersji: numer aktu tuż przed następną wersją tej rzeczy; null, gdy to wersja bieżąca.
+  // Koniec życia wersji: numer aktu tuż przed CZYNNOŚCIĄ, która napisała następną wersję tej rzeczy; null, gdy to wersja
+  // bieżąca. Czynność wielu rzeczy pisze akty po kolei, ale dzieje się naraz: do 20 XI liczyliśmy od samego aktu rzeczy,
+  // więc cofnięcie gestu, które w jednej czynności otwierało obszar (wcześniejszy akt) i cofało rzecz (późniejszy),
+  // pokazywało zwiedzającemu szkic zapisany w zamknięciu, którego nikt poza właścicielem nigdy nie widział (S1, atak 7
+  // Opusa czatu na granicę jawności). Akty jednej czynności mają ten sam op wykonawcy z przyrostkami systemu
+  // (.0, .1 … i .z, .p); op klienta kropki nie ma, więc przyrostki da się odciąć bez zgadywania.
   _koniecWersji(id, akt) {
-    const n = this.q(`SELECT nr FROM akty WHERE glowa = ? AND co = 'przesun' AND nr > ? ORDER BY nr LIMIT 1`, 'rzecz:' + id, akt)[0];
-    return n ? n.nr - 1 : null;
+    const n = this.q(`SELECT nr, kto, op FROM akty WHERE glowa = ? AND co = 'przesun' AND nr > ? ORDER BY nr LIMIT 1`, 'rzecz:' + id, akt)[0];
+    if (!n) return null;
+    const baza = String(n.op).replace(/\.[zp]$/, '').replace(/\.\d+$/, '');
+    const pierwszy = this.q(`SELECT MIN(nr) AS nr FROM akty INDEXED BY akty_kto_op WHERE kto = ? AND op >= ? AND op < ?`, n.kto, baza + '.', baza + '/')[0];
+    const poczatek = pierwszy && Number.isInteger(pierwszy.nr) && pierwszy.nr <= n.nr ? pierwszy.nr : n.nr;
+    return poczatek - 1;
   }
 
   // Przy jakiej jawności treść dawnego stanu rzeczy była widoczna: dziś tam, gdzie wtedy leżała, i w chwili tuż przed tym,
