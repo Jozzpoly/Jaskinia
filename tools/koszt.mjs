@@ -130,7 +130,10 @@ async function zmierz(ile) {
   // świecie nie ma, więc spis po cesze mierzył pusty rodzaj i jego przegląd nie rósł.
   probuj('/api/srodowisko/spis?rodzaj=projekt/1&ile=50', () => s.dla('agent-probny').spis({ rodzaj: 'projekt/1', limit: 50 }));
   probuj('/api/srodowisko/spis?ile=1000 (bez filtra)', () => s.dla('agent-probny').spis({ limit: 1000 }));
-  probuj('/api/srodowisko/rzecz?id=... (jedna rzecz)', () => { const x = s.spis({ rodzaj: 'projekt/1', limit: 1 })[0]; return x && s.dla('agent-probny').rzecz(x.id); });
+  // Identyfikator bierzemy przed pomiarem: jego wyszukanie (przegląd całego rodzaju) nie jest kosztem trasy, a do 20 XI
+  // doliczało się do niej (druga linia Opusa czatu, 20 XI 01:06: 514 wierszy przyrządu przy jednej rzeczy).
+  const jednaRzecz = s.spis({ rodzaj: 'projekt/1', limit: 1 })[0];
+  probuj('/api/srodowisko/rzecz?id=... (jedna rzecz)', () => jednaRzecz && s.dla('agent-probny').rzecz(jednaRzecz.id));
   probuj('spis po cesze (gdzie.nazwa=...)', () => s.dla('agent-probny').spis({ rodzaj: 'projekt/1', gdzie: { nazwa: 'rzecz-3' }, limit: 50 }));
   probuj('szukanie po slowie', () => s.dla('agent-probny').spis({ szukaj: 'projekt-7', limit: 50 }));
 
