@@ -77,6 +77,9 @@ const PUBLIKUJ = 'publikuj: true, gdy świadomie publikujesz (po ruchu coś zoba
 // Ile odniesień najwyżej oddaje "co na to wskazuje" (wskazujaNa): odczyt rzeczy ma kosztować tyle samo przy pięciu
 // i przy pięciuset rzeczach, które na nią wskazują (niezależny atak na warianty, 20 XI 2026: każda kopia wskazuje źródło).
 export const WSKAZUJA_NAJWIECEJ = 50;
+// Ile wierszy odniesień najwyżej przegląda odczyt dla kogoś, przed kim coś jest zamknięte: granica listy liczy się
+// wtedy PO okularach, a koszt i tak ma zostać ograniczony (atak 6 na warianty, F3, 20 XI 2026).
+export const WSKAZUJA_PRZEGLAD = 400;
 // Porównanie treści bez względu na kolejność kluczy (w każdej głębokości).
 const kanon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
 // poswiadczenie/1 przychodzi z drzwiami wlasciciela (PR 51): stoi tu zawczasu, zeby rozstrzygniecie konfliktu przy scalaniu nie wypisalo go z rdzenia.
@@ -739,10 +742,21 @@ export class Srodowisko {
   // wskazuje źródło: 5, 55 i 205 zapytań przy 0, 50 i 200 kopiach (niezależny atak na warianty, A6b). Gdy jest ich więcej,
   // lista ma znacznik `wiecej` (trasa rzeczy oddaje go jako wskazuja_wiecej); kolejność jak dotąd, po identyfikatorze.
   wskazujaNa(id, { dla = undefined, limit = WSKAZUJA_NAJWIECEJ } = {}) {
-    const w = this.q(`SELECT o.od, o.cecha, r.obszar FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ? LIMIT ?`, id, limit + 1);
     const zle = dla === undefined ? null : this._niewidoczneDla(dla);
+    // Granica liczy się PO okularach czytającego. Do 20 XI cięła przed filtrem: znacznik `wiecej` mówił wtedy czytającemu
+    // o odniesieniach z obszarów, których nie widzi (ponad 50 ukrytych kopii dawało `wiecej` przy pustej liście), a jego
+    // własne odniesienie mogło z listy wypaść (atak 6, F3). Kto ma coś zamknięte, dostaje przegląd najwyżej
+    // WSKAZUJA_PRZEGLAD wierszy: jedno zapytanie, koszt ograniczony, a lista i znacznik tylko z tego, co sam widzi.
+    // Filtr stoi w samym zapytaniu, więc wraca najwyżej limit + 1 wierszy także wtedy, gdy kopii są setki.
+    // Czego to nie zamyka: gdy na rzecz wskazuje ponad WSKAZUJA_PRZEGLAD rzeczy, lista dla takiego czytającego bywa niepełna.
+    let w;
+    if (!zle) w = this.q(`SELECT o.od, o.cecha, r.obszar FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ? LIMIT ?`, id, limit + 1);
+    else {
+      const ukryte = JSON.stringify(zle.filter((x) => x !== null));
+      const obszarWidac = zle.includes(null) ? `(obszar IS NOT NULL AND obszar NOT IN (SELECT value FROM json_each(?)))` : `(obszar IS NULL OR obszar NOT IN (SELECT value FROM json_each(?)))`;
+      w = this.q(`SELECT od, cecha FROM (SELECT o.od AS od, o.cecha AS cecha, r.obszar AS obszar FROM odniesienia o JOIN rzeczy r ON r.id = o.od WHERE o.cel = ? LIMIT ?) WHERE ${obszarWidac} AND od NOT IN (SELECT value FROM json_each(?)) LIMIT ?`, id, Math.max(WSKAZUJA_PRZEGLAD, limit + 1), ukryte, ukryte, limit + 1);
+    }
     const lista = w.slice(0, limit)
-      .filter((x) => !zle || !(zle.includes(x.obszar ?? null) || zle.includes(x.od)))
       .map(({ od, cecha }) => ({ od, cecha }))
       .sort((a, b) => (a.od < b.od ? -1 : a.od > b.od ? 1 : a.cecha < b.cecha ? -1 : a.cecha > b.cecha ? 1 : 0));
     if (w.length > limit) Object.defineProperty(lista, 'wiecej', { value: true });
@@ -2137,6 +2151,17 @@ export class Srodowisko {
     const odlozone = t.odlozone === true;
     const spr = this._sprawdzTresc(pr.cechy.rodzaj, cechy, obszar, stara, odlozone, widzi);
     if (!spr.ok) return blad(spr.status, 'propozycja nie przechodzi dzisiejszego sprawdzenia: ' + spr.blad);
+    // Przyjęcie propozycji jest ruchem pośrednim: przyjmujący jednym gestem wykonuje to, co ułożył ktoś inny, a stan mógł
+    // się od tamtej chwili zmienić. Ta sama granica publikacji co przy kopii i cofnięciu (_publikuje), liczona DZIŚ: treść
+    // propozycji i rzecz, której dotyczy, widać było tam, gdzie leżą (propozycja leży przy rzeczy). Do 20 XI przyjęcie
+    // dawnej propozycji cofnięcia wynosiło treść do obszaru otwartego w międzyczasie bez pytania, choć to samo cofnięcie
+    // ręką właściciela już pytało (atak 6 na warianty, F4a i F4b). Uczestnik, który przyjmuje cudzą propozycję, nie
+    // publikuje wcale.
+    const przedProp = Math.min(this._jawnoscW(pr.obszar ?? null), stara ? this._jawnoscW(stara.obszar ?? null) : 2);
+    if (this._publikuje([{ id, rodzaj: pr.cechy.rodzaj, obszar, cechy, przed: przedProp, zNatury: zn ? zn.cecha : null }])) {
+      const odm = this._odmowaPublikacji(kto, null, c.publikuj, 'przyjęcie tej propozycji pokazałoby rzecz albo to, co leży przy niej, większemu gronu niż dotąd');
+      if (odm) return odm;
+    }
     const p1 = await this.r.przygotujPolozenie({ op: c.op, rodzaj: pr.cechy.rodzaj, tresc: trescRzeczy({ obszar, cechy, odlozone, powod: typeof t.powod === 'string' ? t.powod : null, zNatury: zn ? zn.cecha : null }), glowa: 'rzecz:' + id, wersja: stara ? stara.wersja : null });
     if (!p1.ok) return p1;
     const nc = { ...pr.cechy, stan: 'przyjeta', rozstrzygnal: kto, rozstrzygnieto: kiedy, wynik: id };

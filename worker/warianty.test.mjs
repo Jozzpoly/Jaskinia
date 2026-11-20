@@ -463,3 +463,57 @@ test('WA16. warianty, których niezależny atak nie uruchomił: pochodzenia nie 
   }
   assert.deepEqual([ile(s, 'okno/1'), ile(s, 'poswiadczenie/1')], [okien, poswiadczen], 'nic nie powstało');
 });
+
+test('WA14. przyjęcie propozycji przechodzi przez granicę publikacji: propozycja, która wynosi rzecz do szerszego grona, pyta właściciela o publikuj, także gdy obszar otwarto dopiero po jej złożeniu (atak 6, F4a i F4b)', async () => {
+  const { s, obszar } = await swiat();
+  const Q = await obszar('Q', 'uczestnicy', 'proponowac');
+  const P = await obszar('P', 'wszyscy', 'prowadzic');
+  // F4a: agent proponuje przeniesienie rzeczy z Q do P
+  const X = ok(await s.ruch('jozz', { op: op('x'), co: 'poloz', rodzaj: 'zestaw/1', obszar: Q, cechy: { nazwa: 'dla uczestników', wartosci: {} } })).rzecz;
+  const x = s.rzecz(X);
+  const pr = ok(await s.ruch('agent-a', { op: op('mv'), co: 'poloz', rzecz: X, wersja: x.wersja, rodzaj: x.rodzaj, obszar: P, cechy: x.cechy }));
+  assert.equal(pr.skutek, 'propozycja');
+  const bez = await s.ruch('jozz', { op: op('prz'), co: 'przyjmij', propozycja: pr.propozycja });
+  assert.deepEqual([bez.ok, bez.status, bez.potwierdz], [false, 409, 'publikuj']);
+  assert.equal(s.dla(null).rzecz(X), null, 'bez potwierdzenia nic nie wychodzi');
+  assert.equal(ok(await s.ruch('jozz', { op: op('prz'), co: 'przyjmij', propozycja: pr.propozycja, publikuj: true })).skutek, 'przyjeta');
+  assert.ok(s.dla(null).rzecz(X), 'po potwierdzeniu rzecz jest jawna');
+  // F4b: propozycja cofnięcia złożona, gdy niczego nie publikowała; potem właściciel otwiera obszar dawnej wersji
+  const J = await obszar('J', 'uczestnicy', 'proponowac'), K = await obszar('K', 'uczestnicy', 'proponowac');
+  const Y = ok(await s.ruch('jozz', { op: op('y'), co: 'poloz', rodzaj: 'zestaw/1', obszar: J, cechy: { nazwa: 'z czasu, gdy J było zamknięte', wartosci: {} } })).rzecz;
+  const y = s.rzecz(Y), a1 = y.wersja;
+  ok(await s.ruch('jozz', { op: op('mv'), co: 'poloz', rzecz: Y, wersja: y.wersja, rodzaj: y.rodzaj, obszar: K, cechy: { ...y.cechy, nazwa: 'w K' } }));
+  const pc = ok(await s.ruch('agent-a', { op: op('cof'), co: 'cofnij', rzecz: Y, wersja: s.rzecz(Y).wersja, do: a1 }));
+  assert.equal(pc.skutek, 'propozycja');
+  const j = s.rzecz(J);
+  ok(await s.ruch('jozz', { op: op('otw'), co: 'poloz', rzecz: J, wersja: j.wersja, rodzaj: j.rodzaj, obszar: j.obszar, cechy: { ...j.cechy, widzi: 'wszyscy' } }));
+  const bez2 = await s.ruch('jozz', { op: op('prz'), co: 'przyjmij', propozycja: pc.propozycja });
+  assert.deepEqual([bez2.ok, bez2.status, bez2.potwierdz], [false, 409, 'publikuj']);
+  assert.equal(s.dla(null).rzecz(Y), null, 'dawna propozycja nie wynosi rzeczy do obszaru otwartego w międzyczasie');
+  // kontrola drogi uczciwej: propozycja, która niczego nie wynosi, przyjmuje się jak dotąd
+  const Z = ok(await s.ruch('jozz', { op: op('z'), co: 'poloz', rodzaj: 'zestaw/1', obszar: Q, cechy: { nazwa: 'zostaje w Q', wartosci: {} } })).rzecz;
+  const zz = s.rzecz(Z);
+  const pz = ok(await s.ruch('agent-a', { op: op('zm'), co: 'poloz', rzecz: Z, wersja: zz.wersja, rodzaj: zz.rodzaj, obszar: Q, cechy: { ...zz.cechy, nazwa: 'zmieniona' } }));
+  assert.equal(pz.skutek, 'propozycja');
+  assert.equal(ok(await s.ruch('jozz', { op: op('prz'), co: 'przyjmij', propozycja: pz.propozycja })).skutek, 'przyjeta');
+});
+
+test('WA15. "co na to wskazuje" liczy granicę po okularach czytającego: ukryte kopie nie stawiają znacznika i nie wypychają widocznych (atak 6, F3)', async () => {
+  const { s, obszar, D } = await swiat();
+  const T = await obszar('T', 'wlasciciel', 'prowadzic');
+  ok(await s.ruch('agent-a', { op: op('k'), co: 'kopiuj', rzecz: D }));
+  for (let i = 0; i < 60; i++) ok(await s.ruch('jozz', { op: op('kt'), co: 'kopiuj', rzecz: D, obszar: T, nazwa: 'prywatna ' + i }));
+  const agent = s.dla('agent-a').wskazujaNa(D);
+  assert.equal(agent.length, 1, 'agent widzi odniesienie swojej kopii');
+  assert.equal(agent.wiecej, undefined, 'ukryte kopie nie stawiają znacznika');
+  assert.deepEqual([...s.dla(null).wskazujaNa(D)], [], 'zwiedzający nie widzi żadnego');
+  assert.equal(s.dla(null).wskazujaNa(D).wiecej, undefined);
+  const wlasciciel = s.dla('jozz').wskazujaNa(D);
+  assert.equal(wlasciciel.length, WSKAZUJA_NAJWIECEJ);
+  assert.equal(wlasciciel.wiecej, true, 'właściciel widzi wszystko, więc u niego lista jest ucięta');
+  // kontrola: gdy widocznych jest ponad granicę, znacznik stoi także u agenta
+  for (let i = 0; i < WSKAZUJA_NAJWIECEJ + 1; i++) ok(await s.ruch('agent-a', { op: op('ka'), co: 'kopiuj', rzecz: D }));
+  const agent2 = s.dla('agent-a').wskazujaNa(D);
+  assert.equal(agent2.length, WSKAZUJA_NAJWIECEJ);
+  assert.equal(agent2.wiecej, true);
+});
