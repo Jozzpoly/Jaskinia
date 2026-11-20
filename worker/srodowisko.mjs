@@ -77,6 +77,9 @@ export const WYDALAJ_NA_RAZ = 5;
 export const HISTORIA_NA_STRONE = 20;
 // Rodzaje niosące prawa nie tracą historii: kto, kiedy i jak zmieniał prawa, ma być zawsze do przeczytania (U3).
 const NIE_WYDALAC = ['obszar', 'uczestnik', 'poswiadczenie'];
+// Strażnicy wersji: rzeczy, które trzymają przy życiu wersję innej rzeczy (_trzymaneWersje). Cudzego strażnika w obszarze
+// z ograniczoną historią rusza tylko właściciel (atak 8 na tę próbę, W3 i W7).
+const STRAZNICY = ['punkt', 'chwila'];
 export const poprawnaHistoria = (v) => v === 'wszystko' || (Number.isInteger(v) && v >= HISTORIA_NAJMNIEJ && v <= HISTORIA_NAJWIECEJ);
 const dozwolone = (klucz, v) => (klucz === 'historia' ? poprawnaHistoria(v) : USTAWIENIA[klucz].includes(v));
 const ZDANIE_WYDALONEJ = (w) => `wersja o znaczniku ${w.akt} została wydalona (${String(w.wydalone_kiedy || '').slice(0, 10)}): ustawienie historii obszaru trzyma tylko ostatnie wersje, więc jej treści już nie ma; zostały numer, autor i chwila. Wybierz wersję, która ma treść (historia rzeczy)`;
@@ -484,8 +487,8 @@ export class Srodowisko {
         const w = cel.wersja(id, akt);
         if (!w) return null;
         // Wersja wydalona nie ma treści ani obszaru: zostaje numer, autor i chwila, tak jak w historii, którą ten
-        // czytający i tak widzi.
-        if (w.wydalone) return w;
+        // czytający i tak widzi. Obszar, którego ustawienie zdecydowało, nazywa się tylko temu, kto go widzi.
+        if (w.wydalone) return cel._wydalonePrzezDla(w, kto);
         const poziom = cel._poziom(kto);
         if (poziom === 0) return w;
         const zle = cel._niewidoczneDla(kto);
@@ -503,7 +506,7 @@ export class Srodowisko {
       // Historia bez odcisków treści dla każdego poza właścicielem: odcisk wersji, której treści czytający nie widzi,
       // pozwalał potwierdzić zgadniętą treść porównaniem (atak 6, F2). Numer, autor i czas zostają: że akt był, słychać
       // i tak w dzienniku.
-      historia: (id, o) => { const h = cel.historia(id, o); return cel._poziom(kto) === 0 ? h : h.map(({ zapis, ...reszta }) => reszta); },
+      historia: (id, o) => { const h = cel.historia(id, o); return cel._poziom(kto) === 0 ? h : h.map(({ zapis, ...reszta }) => cel._wydalonePrzezDla(reszta, kto)); },
       // Propozycje i prośby wychodzą z `wszystkie`, ale WOŁANE NA CELU, więc okulary ich nie dotyczyły: prośba
       // z zamkniętego obszaru stała w "co czeka" z identyfikatorem i treścią (ta sama usterka co niżej w liczbach).
       czeka: () => ({
@@ -1027,6 +1030,22 @@ export class Srodowisko {
     // historii jest ustawieniem właściciela (usuwanie jest jego), więc uczestnik nie skróci jej też naokoło, przenosząc.
     if (stara && (stara.obszar ?? null) !== (obszar ?? null) && !NIE_WYDALAC.includes(nazwaRodzaju(rodzaj)) && this._limitHistorii(obszar ?? null) < this._limitHistorii(stara.obszar ?? null))
       return { tryb: 'propozycja', powod: 'w obszarze docelowym trzyma się mniej wersji niż tam, gdzie rzecz leży: przeniesienie skróciłoby jej historię, a o tym decyduje tylko właściciel', wymaga: 'wlasciciel' };
+    // To samo dla obszaru (atak 8 na tę próbę, W1): obszar bez własnej historii dziedziczy ją po rodzicu, więc przeniesienie
+    // go pod rodzica, który trzyma mniej, skracało historię wszystkiego w środku, a reguła wyżej pomija obszary (NIE_WYDALAC
+    // chroni ich własną historię, nie ich wnętrze). Liczy się historia, którą obszar ma dziś, i ta, którą miałby po
+    // przeniesieniu: własna, gdy ją ma, inaczej nowego rodzica.
+    if (stara && stara.rodzaj === 'obszar/1' && rodzaj === 'obszar/1' && (stara.obszar ?? null) !== (obszar ?? null)) {
+      const wlasna = poprawnaHistoria(cechy.historia) ? cechy.historia : null;
+      const po = wlasna === null ? this._limitHistorii(obszar ?? null) : (wlasna === 'wszystko' ? Infinity : wlasna);
+      if (po < this._limitHistorii(stara.id))
+        return { tryb: 'propozycja', powod: 'pod nowym rodzicem ten obszar trzymałby mniej wersji niż dziś: przeniesienie skróciłoby historię wszystkiego, co w nim leży, a o tym decyduje tylko właściciel', wymaga: 'wlasciciel' };
+    }
+    // Strażnik wersji (atak 8, W3 i W7): punkt zapisu i zapisana chwila trzymają wersje przy życiu. Ich zmiana, odłożenie
+    // albo przeniesienie zdejmuje ochronę, a w obszarze z ograniczoną historią następny zapis wydala to, co trzymały, bez
+    // powrotu. Na pniu ta ochrona była zbędna, bo nic nie znikało. Cudzego strażnika rusza więc tylko właściciel; swojego
+    // każdy, kto go położył.
+    if (stara && STRAZNICY.includes(nazwaRodzaju(stara.rodzaj)) && stara.utworzyl !== kto && this._limitHistorii(stara.obszar ?? null) !== Infinity)
+      return { tryb: 'propozycja', powod: 'ten punkt zapisu albo zapisany układ trzyma wersję, której ustawienie historii obszaru inaczej by nie zostawiło: cudzy zmienić, odłożyć albo przenieść może tylko właściciel', wymaga: 'wlasciciel' };
     const z = this._zastrzezone(rodzaj, cechy, stara);
     if (z) return { tryb: 'propozycja', powod: z, wymaga: 'wlasciciel' };
     return wynik;
@@ -2177,6 +2196,16 @@ export class Srodowisko {
   _limitHistorii(obszar) {
     const v = this.ustawienie(obszar ?? null, 'historia').wartosc;
     return v === 'wszystko' ? Infinity : v;
+  }
+
+  // Obszar, którego ustawienie historii wydaliło wersję (wydalone_przez), nazywa się tylko temu, kto go widzi. Obszaru, do
+  // którego ktoś nie ma wstępu, się mu nie wymienia (17 XI), a tu wychodził w historii, w trasie rzeczy i w odpowiedzi 410,
+  // gdy ustawienie dziedziczyło się z zamkniętego rodzica albo rzecz leżała kiedyś w zamkniętym obszarze (atak 8, W4).
+  _wydalonePrzezDla(w, kto) {
+    if (!w || !w.wydalone_przez || this._poziom(kto) === 0) return w;
+    const zle = this._niewidoczneDla(kto);
+    const ukryty = !!zle && (zle.includes(w.wydalone_przez) || (w.wydalone_przez === this.r.meta('obszar_glowny') && zle.includes(null)));
+    return ukryty ? { ...w, wydalone_przez: null } : w;
   }
 
   // Wydalanie przy zapisie (U3, U4, U6). Dla każdej rzeczy z `ids`, której obszar trzyma mniej wersji, niż rzecz ma
