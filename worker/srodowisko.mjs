@@ -2166,7 +2166,7 @@ export class Srodowisko {
     let wyd = null;
     if (!z.powtorzone) {
       lista.forEach((x, i) => this._projekcja(x.id, x.rodzaj, x.obszar, x.p.id, z.wyniki[i].wersja, kto, x.cechy, x.ksztalt, x.odlozone, z.wyniki[i].kiedy));
-      wyd = this._wydalNadmiar(lista.map((x) => x.id));
+      wyd = this._wydalNadmiar(lista.map((x) => ({ id: x.id, rodzaj: x.rodzaj, obszar: x.obszar ?? null })));
     }
     const pierwsza = this.rzecz(lista[0].id);
     // Każde przycięcie jest widoczne (zasada 5): ruch mówi, ile wersji wydalił i ile jeszcze czeka.
@@ -2189,12 +2189,21 @@ export class Srodowisko {
   // sprzed ostatniego gestu, gdy ostatni zapis rzeczy był gestem (cofnij-gest wraca do niego). Zwraca null, gdy żadna
   // z rzeczy nie leży w obszarze z ograniczoną historią, inaczej {ustawienie, wydalone, zaleglosc, trzymane}:
   // zaległość to wersje ponad ustawienie, które dalej mają treść (razem z trzymanymi).
-  _wydalNadmiar(ids) {
+  // `cele`: identyfikatory albo {id, rodzaj, obszar} (wtedy pytanie o spis pada dopiero, gdy ustawienie jest liczbą,
+  // więc zapis w obszarze, który trzyma wszystko, płaci tylko za drogę w górę po ustawieniu).
+  _wydalNadmiar(cele) {
     let wynik = null, budzet = WYDALAJ_NA_RAZ;
-    for (const id of new Set(ids)) {
+    const widziane = new Set();
+    for (const c of cele) {
+      const id = typeof c === 'string' ? c : c.id;
+      if (widziane.has(id)) continue;
+      widziane.add(id);
+      if (typeof c === 'object' && NIE_WYDALAC.includes(nazwaRodzaju(c.rodzaj))) continue;
+      const wst = typeof c === 'object' ? this.ustawienie(c.obszar, 'historia') : null;
+      if (wst && wst.wartosc === 'wszystko') continue;
       const r = this.q(`SELECT r.rodzaj, r.obszar, r.numer, r.wydalonych, z.tresc FROM rzeczy r JOIN zapisy z ON z.id = r.zapis WHERE r.id = ?`, id)[0];
       if (!r || NIE_WYDALAC.includes(nazwaRodzaju(r.rodzaj))) continue;
-      const u = this.ustawienie(r.obszar ?? null, 'historia');
+      const u = (r.obszar ?? null) === (typeof c === 'object' ? c.obszar : undefined) && wst ? wst : this.ustawienie(r.obszar ?? null, 'historia');
       if (u.wartosc === 'wszystko') continue;
       if (!wynik) wynik = { ustawienie: u.wartosc, wydalone: 0, zaleglosc: 0, trzymane: 0 };
       else wynik.ustawienie = Math.min(wynik.ustawienie, u.wartosc);
@@ -2542,7 +2551,7 @@ export class Srodowisko {
       if (!p.ok) throw new Error(`ziarno ${z.nazwa}: ${p.blad}`);
       const w = this.r.zatwierdzPolozenia(AUTOMAT, [p], { slad: 'zasiew' });
       if (!w.ok) throw new Error(`ziarno ${z.nazwa}: ${w.blad}`);
-      if (!w.powtorzone) { this._projekcja(id, z.rodzaj, obszar, p.id, w.wyniki[0].wersja, AUTOMAT, cechy, z.rodzaj === 'ksztalt/1' ? this.ksztaltDla('ksztalt/1') : ksztalt, false, w.wyniki[0].kiedy); this._wydalNadmiar([id]); }
+      if (!w.powtorzone) { this._projekcja(id, z.rodzaj, obszar, p.id, w.wyniki[0].wersja, AUTOMAT, cechy, z.rodzaj === 'ksztalt/1' ? this.ksztaltDla('ksztalt/1') : ksztalt, false, w.wyniki[0].kiedy); this._wydalNadmiar([{ id, rodzaj: z.rodzaj, obszar: obszar ?? null }]); }
     };
     for (const z of ziarna) {
       const klucz = 'ziarno:' + z.nazwa;
