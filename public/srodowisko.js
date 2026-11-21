@@ -273,6 +273,8 @@
     const B = A ? okna.get(A.para) : null;
     const obaWidac = !!A && !A.sekcja.hidden && !B.sekcja.hidden;
     for (const o of okna.values()) { o.sekcja.classList.toggle('ab-a', obaWidac && o === A); o.sekcja.classList.toggle('ab-b', obaWidac && o === B); }
+    // tło pod parą: między oknami a pasem nie przebija strona (druga linia Opusa Code na 88)
+    $('okna').classList.toggle('ab-tryb', obaWidac);
     if (obaWidac) zbudujAB();
     if (!ab.sekcja) return;
     ab.sekcja.hidden = !obaWidac;
@@ -296,7 +298,9 @@
       ab.wykres.replaceChildren();
       return;
     }
-    ab.stan.textContent = (skad ? skad + ': ' : 'Przejazd: ') + (program.nazwa || 'program') + ', ' + liczbaPL(s) + ' s.';
+    // „Twój przejazd z okna A” jest już nazwą programu: nie powtarzamy jej dwa razy (ślepa ręka, D4)
+    ab.stan.textContent = (skad || 'Przejazd: ' + (program.nazwa || 'program')) + ', ' + liczbaPL(s) + ' s.';
+    delete ab.zdanie.dataset.przejsciowe;
     ab.zdanie.textContent = zdanieAB(pa.przebieg, pb.przebieg, program);
     ab.wykres.replaceChildren(wykresAB(pa.przebieg, pb.przebieg));
   }
@@ -307,7 +311,7 @@
     const zrodlo = B.dotkniete > A.dotkniete ? B : A;
     ab.stan.textContent = 'Biorę Twój przejazd z okna ' + zrodlo.rola + '…';
     const r = await zapytajSwiat(zrodlo, { type: 'record' }, 10000);
-    if (!r.ok || !r.program || !Array.isArray(r.program.odcinki) || !r.program.odcinki.length) { ab.stan.textContent = ''; ab.zdanie.textContent = 'Nie ma czego powtórzyć: ' + String(r.error || 'w oknie ' + zrodlo.rola + ' nikt jeszcze nie jechał od startu') + '.'; return; }
+    if (!r.ok || !r.program || !Array.isArray(r.program.odcinki) || !r.program.odcinki.length) { ab.stan.textContent = ''; ab.zdanie.textContent = 'Nie ma czego powtórzyć: ' + String(r.error || 'w oknie ' + zrodlo.rola + ' nikt jeszcze nie jechał od startu') + '.'; ab.zdanie.dataset.przejsciowe = '1'; return; }
     const program = { ...r.program, nazwa: r.program.nazwa || 'Twój przejazd z okna ' + zrodlo.rola };
     await jedzWObu(program, 'Twój przejazd z okna ' + zrodlo.rola + (r.obciete ? ' (ucięty do limitu programu)' : ''));
   }
@@ -316,7 +320,8 @@
   const ileAB = (x, m = 1) => (typeof x === 'number' && Number.isFinite(x) ? x.toLocaleString('pl-PL', { maximumFractionDigits: m }) : '?');
   function zdanieAB(a, b, program) {
     if (!Array.isArray(a.probki) || !Array.isArray(b.probki) || !a.probki.length || !b.probki.length) return 'Świat oddał przebieg bez próbek, więc nie ma czego porównać.';
-    if (a.skrot && a.skrot === b.skrot) return 'Ustawienia B nie zmieniły tej jazdy: oba okna przejechały „' + (program.nazwa || 'program') + '” bit w bit tak samo.';
+    // po „wróć do A” zdanie „ustawienia B nie zmieniły jazdy” czytało się dziwnie (ślepa ręka, D6): mówimy, co widać
+    if (a.skrot && a.skrot === b.skrot) return 'Oba okna przejechały „' + (program.nazwa || 'program') + '” bit w bit tak samo: w tej jeździe A i B niczym się nie różnią.';
     const ka = kolumnyAB(a), kb = kolumnyAB(b);
     const wChwili = (p, k) => p.probki.reduce((naj, r) => (Math.abs(r[k.t] - CHWILA_AB) < Math.abs(naj[k.t] - CHWILA_AB) ? r : naj));
     const ra = wChwili(a, ka), rb = wChwili(b, kb);
@@ -367,7 +372,11 @@
     return svg;
   }
   // Gdzie ręka jechała ostatnio: ramka dostaje fokus przy kliknięciu, a strona traci go w tej samej chwili.
-  addEventListener('blur', () => setTimeout(() => { const a = document.activeElement; for (const o of okna.values()) if (o.ramka === a) o.dotkniete = Date.now(); }, 0));
+  // Zdanie „nie ma czego powtórzyć” znika, gdy ręka znowu wchodzi do gry, inaczej wisiało po przejeździe (ślepa ręka, D4).
+  addEventListener('blur', () => setTimeout(() => {
+    const a = document.activeElement;
+    for (const o of okna.values()) if (o.ramka === a) { o.dotkniete = Date.now(); if (ab.zdanie && ab.zdanie.dataset.przejsciowe && o.para) { ab.zdanie.textContent = ''; delete ab.zdanie.dataset.przejsciowe; } }
+  }, 0));
   // Rozmowa z gośćmi. Przyjmujemy wiadomości tylko od ramek, które sami otworzyliśmy.
   addEventListener('message', async (e) => {
     const m = e.data;
@@ -594,19 +603,25 @@
       const x = (u.wartosci || {})[d.nazwa] || { wartosc: d.domyslna, skad: 'domyslna' };
       const swoja = !!zasieg && x.skad === 'wartosc' && x.zasieg === zasieg;
       const wPresecie = !!aktywny && !!aktywny.cechy.wartosci && Object.hasOwn(aktywny.cechy.wartosci, d.nazwa);
+      const poza = typeof x.wartosc === 'number' && !!d.zakres && Number.isFinite(d.zakres.od) && Number.isFinite(d.zakres.do) && (x.wartosc < d.zakres.od || x.wartosc > d.zakres.do);
       const skad = (swoja ? 'ustawione dla ' + tu + (wPresecie ? ' (ważniejsze niż preset)' : '')
         : x.skad === 'wartosc' ? skadWyzej(x.zasieg)
           : x.skad === 'zestaw' ? 'z presetu „' + x.zestaw + '”' : x.skad === 'brak' ? 'brak wartości' : 'domyślne')
         // ile wynosi domyślna, żeby „wróć do domyślnego” nie było skokiem w nieznane (ślepa ręka, 21 XI: C6)
-        + (x.skad === 'domyslna' ? '' : ' · domyślnie ' + pokazWartosc(d.domyslna, d.jednostka));
+        + (x.skad === 'domyslna' ? '' : ' · domyślnie ' + pokazWartosc(d.domyslna, d.jednostka))
+        // liczba spoza zakresu suwaka (wolno: reguła właściciela z 9 VII) stawia suwak na końcu skali, więc 3 i 40 wyglądały
+        // tak samo; podpis mówi, że wartość jest poza suwakiem (ślepa ręka na dwóch oknach, 21 XI: D5)
+        + (poza ? ' · poza suwakiem (' + liczbaPL(d.zakres.od) + '–' + liczbaPL(d.zakres.do) + ')' : '');
       const e = etykieta(d);
+      // zdania o zmianie mówią ludzką nazwą pokrętła i tym, dla kogo (okno B to nie „świat”), nie kluczem (ślepa ręka, D2)
+      const dlaKogo = o.rola === 'B' ? 'okna B' : '„' + o.nazwa + '”';
       // Z aktywnym presetem suwak pisze w preset (nowa wersja zestawu z tą jedną zmianą), chyba że świat ma tu własną
       // wartość: ta jest ważniejsza niż preset, więc pisanie w preset nic by nie zmieniło.
-      const doPresetu = aktywny && !swoja ? (w) => zmienPreset((c) => ({ ...c, wartosci: { ...c.wartosci, [d.nazwa]: w } }), { zdanie: (n) => 'Zmienione w presecie „' + n + '”: ' + d.nazwa + '.', co: d.nazwa }) : null;
+      const doPresetu = aktywny && !swoja ? (w) => zmienPreset((c) => ({ ...c, wartosci: { ...c.wartosci, [d.nazwa]: w } }), { zdanie: (n) => 'Zmienione w presecie „' + n + '”: ' + e.nazwa + '.', co: e.nazwa }) : null;
       // ten sam zapis co suwak (w preset albo w wartość świata), dla powrotu do wartości z historii
-      const ustawTo = async (w) => { const r = doPresetu ? await doPresetu(w) : await ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, zasieg, wartosc: w } }, 'Ustawione dla „' + o.nazwa + '”: ' + d.nazwa + '.'); if (r) rysujSuwaki(o); return r; };
+      const ustawTo = async (w) => { const r = doPresetu ? await doPresetu(w) : await ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, zasieg, wartosc: w } }, 'Ustawione dla ' + dlaKogo + ': ' + e.nazwa + '.'); if (r) rysujSuwaki(o); return r; };
       const pole = PROSTE.includes(d.typ) && zasieg
-        ? poleUstawienia(d, x, { zasieg, zapis: doPresetu, potem: () => rysujSuwaki(o), zdanie: 'Ustawione dla „' + o.nazwa + '”: ' + d.nazwa + '.' })
+        ? poleUstawienia(d, x, { zasieg, zapis: doPresetu, potem: () => rysujSuwaki(o), zdanie: 'Ustawione dla ' + dlaKogo + ': ' + e.nazwa + '.' })
         : el('span', { klasa: 'bok', tekst: zasieg ? 'typ ' + d.typ + ': zmiana ruchem, opis pod /ustawienia' : String(x.wartosc) });
       const wyjmij = wPresecie && klucz && !swoja ? el('button', { tekst: 'wyjmij z presetu', title: cudzy ? 'Ten preset prowadzi ' + aktywny.utworzyl + ': powstanie Twoja kopia bez tego pokrętła' : 'Preset przestaje ustawiać to pokrętło: wraca wartość spoza presetu', klik: async () => {
         const bezTego = (c) => {
@@ -614,17 +629,17 @@
           delete reszta[d.nazwa];
           return { ...c, wartosci: reszta };
         };
-        const r = await zmienPreset(bezTego, { zdanie: (n) => 'Wyjęte z presetu „' + n + '”: ' + d.nazwa + '.', co: 'bez ' + d.nazwa });
+        const r = await zmienPreset(bezTego, { zdanie: (n) => 'Wyjęte z presetu „' + n + '”: ' + e.nazwa + '.', co: 'bez ' + e.nazwa });
         if (r) rysujSuwaki(o);
       } }) : null;
-      return el('li', { klasa: 'suwak', title: d.nazwa + (d.opis ? '\n' + d.opis : '') },
+      return el('li', { klasa: 'suwak' + (poza ? ' poza' : ''), title: d.nazwa + (d.opis ? '\n' + d.opis : '') },
         el('span', { klasa: 'nazwa', tekst: e.nazwa }),
         e.opis ? el('span', { klasa: 'opis', tekst: e.opis, tabindex: '0', title: 'Dotknij, żeby zobaczyć cały opis', klik: (ev) => ev.currentTarget.classList.toggle('caly') }) : null,
         el('span', { klasa: 'skad' + (swoja ? ' swoja' : ''), tekst: skad + (x.z ? ', idzie za ' + x.z : '') }),
         pole,
         el('span', { klasa: 'czynnosci' },
           swoja && klucz ? el('button', { tekst: o.rola === 'B' ? 'wróć do A' : 'wróć do domyślnego', title: o.rola === 'B' ? 'Odłóż wartość okna B: wraca ta, którą ma okno A' : 'Odłóż wartość ustawioną dla ' + tu + ': wraca wspólna albo domyślna', klik: async () => {
-            const r = await ruch({ co: 'odloz', rzecz: x.rzecz, wersja: 'dowolna', powod: 'powrót do wartości odziedziczonej' }, 'Wróciło dla „' + o.nazwa + '”: ' + d.nazwa + '.');
+            const r = await ruch({ co: 'odloz', rzecz: x.rzecz, wersja: 'dowolna', powod: 'powrót do wartości odziedziczonej' }, 'Wróciło dla ' + dlaKogo + ': ' + e.nazwa + '.');
             if (r) rysujSuwaki(o);
           } }) : null,
           wyjmij,
