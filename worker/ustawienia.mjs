@@ -280,14 +280,27 @@ function zestawyWZasiegach(w, lancuch, wart) {
   return m;
 }
 
+// Nakładki do łańcucha: najwyżej NAJWIECEJ_NAKLADEK identyfikatorów rzeczy. Reszta mówi w pominiete, a nie odpada po
+// cichu (druga linia Opusa czatu na 86, 21 XI 2026: zły kształt i piąta nakładka znikały bez słowa).
+export const NAJWIECEJ_NAKLADEK = 4;
+function nakladkiDoLancucha(nakladki, pominiete) {
+  const nakl = [];
+  for (const x of Array.isArray(nakladki) ? nakladki : []) {
+    if (typeof x !== 'string' || !ID.test(x)) pominiete.push({ nakladka: String(x).slice(0, 40), dlaczego: 'to nie identyfikator rzeczy (26 znaków: cyfry i małe litery)' });
+    else if (nakl.length >= NAJWIECEJ_NAKLADEK) pominiete.push({ nakladka: x, dlaczego: `najwyżej ${NAJWIECEJ_NAKLADEK} nakładki w jednym pytaniu, ta jest dalsza` });
+    else nakl.push(x);
+  }
+  return nakl;
+}
+
 // Wartości wszystkich pokręteł dla zasięgu, policzone oczami czytającego (`w` to widok z srodowisko.dla albo samo
 // środowisko). Jedno żądanie daje twarzy wszystko, czego potrzebuje do narysowania się.
 // `zrodlo`: deklaracje, wartości i zestawy już wybrane po nazwach (policzUstawieniaDlaNazw); bez niego wszystko, co leży
 // w Miejscu.
 export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = false, zrodlo = null } = {}) {
   if (dla !== null && !(typeof dla === 'string' && ID.test(dla))) return { ok: false, status: 400, blad: 'dla: identyfikator rzeczy, dla której liczyć ustawienia (26 znaków); bez niego liczy się dla całego Miejsca' };
-  const nakl = (Array.isArray(nakladki) ? nakladki : []).filter((x) => typeof x === 'string' && ID.test(x)).slice(0, 4);
   const pominieteNakladki = [];
+  const nakl = nakladkiDoLancucha(nakladki, pominieteNakladki);
   const lancuch = zrodlo ? zrodlo.lancuch : lancuchZasiegow(w, dla, nakl, pominieteNakladki);
   if (lancuch === null) return { ok: false, status: 404, blad: `nie ma rzeczy ${dla}` };
   const dekl = zrodlo ? zrodlo.dekl : w.pamietaj('ustawienia:deklaracje', () => { const m = new Map(); for (const d of w.wszystkie({ rodzaj: 'pokretlo/1' })) if (typeof d.cechy.nazwa === 'string' && !m.has(d.cechy.nazwa)) m.set(d.cechy.nazwa, d); return m; });
@@ -296,7 +309,8 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
   // (niezależny atak, 18 XI 2026).
   const wart = zrodlo ? zrodlo.wart : new Map(lancuch.flatMap((z) => w.pamietaj('ustawienia:wartosci:' + z.id, () => w._wartosciZasiegu(z.id).map((id) => w.rzecz(id)).filter((x) => x && x.rodzaj === 'wartosc/1' && !x.odlozone)).map((x) => [x.cechy.pokretlo + '|' + z.id, x])));
   const zestawyW = zrodlo && zrodlo.zestawy ? zrodlo.zestawy : (dekl.has(POKRETLO_ZESTAWOW) ? zestawyWZasiegach(w, lancuch, wart) : new Map(lancuch.map((z) => [z.id, []])));
-  const pominiete = [...pominieteNakladki];
+  // droga po nazwach liczy łańcuch sama, więc jej pominięte nakładki przychodzą w zrodlo (druga linia Opusa czatu na 86)
+  const pominiete = [...(zrodlo ? zrodlo.pominieteNakladki || [] : pominieteNakladki)];
   const maRzecz = (id) => w.rzecz(id);
 
   // Zaufanie odwołań: ustawienie, które obowiązuje tam, gdzie zmiana wymaga zgody, nie idzie za pokrętłem zadeklarowanym
@@ -405,8 +419,9 @@ export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], na
   if (dla !== null && !(typeof dla === 'string' && ID.test(dla))) return policzUstawienia(w, { dla });
   const lista = [...new Set((Array.isArray(nazwy) ? nazwy : []).filter((n) => typeof n === 'string' && NAZWA.test(n)))];
   if (lista.length > NAJWIECEJ_NAZW) return { ok: false, status: 400, blad: `nazwy: najwyżej ${NAJWIECEJ_NAZW} nazw pokręteł w jednym pytaniu` };
-  const nakl = (Array.isArray(nakladki) ? nakladki : []).filter((x) => typeof x === 'string' && ID.test(x)).slice(0, 4);
-  const lancuch = lancuchZasiegow(w, dla, nakl);
+  const pominieteNakladki = [];
+  const nakl = nakladkiDoLancucha(nakladki, pominieteNakladki);
+  const lancuch = lancuchZasiegow(w, dla, nakl, pominieteNakladki);
   if (lancuch === null) return { ok: false, status: 404, blad: `nie ma rzeczy ${dla}` };
   const kP = w.ksztaltDla('pokretlo/1'), kW = w.ksztaltDla('wartosc/1');
   const dekl = new Map(), wart = new Map(), brak = new Set();
@@ -445,7 +460,7 @@ export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], na
     }
     kolejka = nastepne;
   }
-  const u = policzUstawienia(w, { dla, nakladki: nakl, deklaracje, zrodlo: { dekl, wart, lancuch, zestawy } });
+  const u = policzUstawienia(w, { dla, nakladki: nakl, deklaracje, zrodlo: { dekl, wart, lancuch, zestawy, pominieteNakladki } });
   if (u.ok) {
     const pytane = new Set(lista);
     u.wartosci = Object.fromEntries(Object.entries(u.wartosci).filter(([n]) => pytane.has(n)));
@@ -459,8 +474,8 @@ export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], na
 const pokaz = (x) => { const t = JSON.stringify(x); return t.length > 90 ? t.slice(0, 89) + '…' : t; };
 
 // To samo tekstem, dla ciała, które umie tylko czytać.
-export function stronaUstawien(w, { dla = null, origin = '' } = {}) {
-  const u = policzUstawienia(w, { dla, deklaracje: true });
+export function stronaUstawien(w, { dla = null, nakladki = [], origin = '' } = {}) {
+  const u = policzUstawienia(w, { dla, nakladki, deklaracje: true });
   if (!u.ok) return u.blad + '\n';
   const glowny = w.r.meta('obszar_glowny');
   const wiersze = [
