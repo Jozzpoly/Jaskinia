@@ -220,6 +220,31 @@
   // prędkość i przechył, bo szybsze nie znaczy lepsze (pierwszy zrzut A/B pokazał szybsze auto na boku).
   const PROGRAM_AB = { schemat: 'wejscie/1', nazwa: 'Osiadanie, ruszanie, łuk, hamowanie do zatrzymania', odcinki: [{ s: 1 }, { s: 2, gaz: 1 }, { s: 1, gaz: 1, skret: 0.5 }, { s: 3, hamulec: 1 }] };
   const CHWILA_AB = 3, PRZEWROTKA_ST = 60;
+  // Kilka gotowych przejazdów do wyboru (jego „ten sam input… inne ustawienia, inny rig, moc”: różne próby pokazują różne
+  // rzeczy: rozpęd, drogę hamowania, przechył w łukach) i przejazdy zapisane jako rzeczy przejazd/1 (np. jazda jego ręki).
+  const PRZEJAZDY_GOTOWE = [
+    PROGRAM_AB,
+    { schemat: 'wejscie/1', nazwa: 'Przyspieszanie na prostej', odcinki: [{ s: 1 }, { s: 6, gaz: 1 }] },
+    { schemat: 'wejscie/1', nazwa: 'Hamowanie z rozpędu do zatrzymania', odcinki: [{ s: 1 }, { s: 4, gaz: 1 }, { s: 4, hamulec: 1 }] },
+    { schemat: 'wejscie/1', nazwa: 'Slalom: prawo, lewo, prawo, hamowanie', odcinki: [{ s: 1 }, { s: 2, gaz: 1 }, { s: 1.5, gaz: 0.6, skret: 0.6 }, { s: 1.5, gaz: 0.6, skret: -0.6 }, { s: 1.5, gaz: 0.6, skret: 0.6 }, { s: 2, hamulec: 1 }] },
+  ];
+  const NAJWIEKSZY_PRZEJAZD_ZNAKI = 32000;
+  const programPrzejazdu = (r) => { const p = r && r.cechy && r.cechy.program; return p && p.schemat === 'wejscie/1' && Array.isArray(p.odcinki) && p.odcinki.length ? { ...p, nazwa: typeof r.cechy.nazwa === 'string' && r.cechy.nazwa ? r.cechy.nazwa : (p.nazwa || 'przejazd') } : null; };
+  const przejazdyZapisane = () => rzeczy.filter((r) => r.rodzaj === 'przejazd/1' && !r.odlozone && programPrzejazdu(r));
+  function wybranyProgram() {
+    const v = ab.wybor ? ab.wybor.value : 'g:0';
+    if (v.startsWith('r:')) { const r = rzeczy.find((x) => x.id === v.slice(2)); const p = programPrzejazdu(r); if (p) return p; }
+    return PRZEJAZDY_GOTOWE[Number(v.slice(2))] || PROGRAM_AB;
+  }
+  function rysujWybor(zaznacz = null) {
+    if (!ab.wybor) return;
+    const bylo = zaznacz || ab.wybor.value || 'g:0';
+    const zap = przejazdyZapisane();
+    ab.wybor.replaceChildren(
+      el('optgroup', { label: 'Gotowe' }, ...PRZEJAZDY_GOTOWE.map((p, i) => el('option', { value: 'g:' + i, tekst: p.nazwa + ' (' + liczbaPL(sekundyProgramu(p)) + ' s)' }))),
+      ...(zap.length ? [el('optgroup', { label: 'Zapisane' }, ...zap.map((r) => el('option', { value: 'r:' + r.id, tekst: programPrzejazdu(r).nazwa + ' (' + liczbaPL(sekundyProgramu(programPrzejazdu(r))) + ' s)' })))] : []));
+    ab.wybor.value = [...ab.wybor.options].some((o) => o.value === bylo) ? bylo : 'g:0';
+  }
   // Pokrętło nie ma w kształcie osobnej etykiety: deklarujący pisze ludzką nazwę na początku opisu przed dwukropkiem
   // (tak deklaruje JV: „Moment napędu: …”); bez niej ręka widzi ostatni człon nazwy. Panel i porównanie A/B mówią tym samym.
   function etykietaPokretla(d) { const m = /^([^:.]{2,40}):\s+(.+)$/s.exec(d.opis || ''); return m ? { nazwa: m[1], opis: m[2] } : { nazwa: d.nazwa.split('.').pop().replace(/_/g, ' '), opis: d.opis || '' }; }
@@ -299,10 +324,15 @@
     ab.zdanie = el('p', { klasa: 'ab-zdanie', 'aria-live': 'polite' });
     ab.roznica = el('p', { klasa: 'ab-roznica' });
     ab.wykres = el('div', { klasa: 'ab-wykres' });
-    ab.jedz = el('button', { klasa: 'glowny', tekst: 'Jedź tak samo w obu', title: 'Oba auta wracają na start i jadą ten sam program: ' + PROGRAM_AB.nazwa.toLowerCase() + ' (' + liczbaPL(sekundyProgramu(PROGRAM_AB)) + ' s)', klik: () => jedzWObu(PROGRAM_AB) });
+    ab.wybor = el('select', { klasa: 'ab-wybor', 'aria-label': 'Przejazd do porównania', title: 'Który przejazd pojadą oba auta' });
+    rysujWybor();
+    ab.jedz = el('button', { klasa: 'glowny', tekst: 'Jedź tak samo w obu', title: 'Oba auta wracają na start i jadą wybrany przejazd', klik: () => jedzWObu(wybranyProgram()) });
     ab.powtorz = el('button', { tekst: 'Powtórz mój przejazd w obu', title: 'Twoja jazda od ostatniego startu w oknie, w którym jechałeś, odtworzona od startu w obu oknach', klik: () => powtorzWObu() });
+    ab.zapisz = el('button', { tekst: 'Zapisz ten przejazd', hidden: true, title: 'Twoja jazda zostaje jako przejazd do wyboru, także dla agentów (rzecz przejazd/1)', klik: () => zapiszPrzejazd() });
     ab.sekcja = el('section', { klasa: 'ab', hidden: true, 'aria-label': 'Porównanie okien A i B' },
-      el('div', { klasa: 'ab-guziki' }, ab.jedz, ab.powtorz, ab.stan), ab.zdanie, ab.roznica, ab.wykres);
+      // guziki w jednym rzędzie; stan, zdanie i różnica w jednym bloku, który się przewija (z wyborem przejazdu stan
+      // zawijał się pod guziki i zjadał miejsce zdaniu)
+      el('div', { klasa: 'ab-guziki' }, ab.wybor, ab.jedz, ab.powtorz, ab.zapisz), el('div', { klasa: 'ab-tekst' }, ab.stan, ab.zdanie, ab.roznica), ab.wykres);
     $('okna').append(ab.sekcja);
   }
   // Para A/B widoczna razem: okna stają obok siebie (na telefonie jedno pod drugim), a pod nimi pas porównania.
@@ -322,7 +352,7 @@
   async function jedzWObu(program, skad = '') {
     const A = ab.para, B = A && okna.get(A.para);
     if (!A || !B || ab.trwa) return;
-    ab.trwa = true; ab.jedz.disabled = true; ab.powtorz.disabled = true;
+    ab.trwa = true; ab.jedz.disabled = true; ab.powtorz.disabled = true; ab.zapisz.hidden = true;
     const s = sekundyProgramu(program);
     ab.stan.textContent = 'Oba auta jadą od startu: ' + (program.nazwa || 'program') + ' (' + liczbaPL(s) + ' s)…';
     // wolne okno jedzie tak samo, tylko później: zwykły limit to trzy długości programu i start; po nim czekamy dalej na
@@ -340,7 +370,7 @@
       ab.roznica.textContent = '';
       ab.zdanie.textContent = 'Nie wyszło. ' + [!pa.ok || !pa.przebieg ? 'A: ' + String(pa.error || 'brak przebiegu').slice(0, 160) : null, !pb.ok || !pb.przebieg ? 'B: ' + String(pb.error || 'brak przebiegu').slice(0, 160) : null].filter(Boolean).join('; ') + '.';
       ab.wykres.replaceChildren();
-      return;
+      return false;
     }
     // „Twój przejazd z okna A” jest już nazwą programu: nie powtarzamy jej dwa razy (ślepa ręka, D4)
     ab.stan.textContent = (skad || 'Przejazd: ' + (program.nazwa || 'program')) + ', ' + liczbaPL(s) + ' s.';
@@ -348,6 +378,24 @@
     ab.zdanie.textContent = zdanieAB(pa.przebieg, pb.przebieg, program);
     ab.roznica.textContent = zdanieRoznicy(roznica);
     ab.wykres.replaceChildren(wykresAB(pa.przebieg, pb.przebieg));
+    return true;
+  }
+  // Jazda ręki zostaje jako przejazd/1: wraca w wyborze przy następnym porównaniu (też w innych ustawieniach) i agent
+  // może ją przeczytać. Nazwa z godziną, jak kopia presetu; długa jazda nie mieści się w jednej rzeczy, więc mówimy to wprost.
+  async function zapiszPrzejazd() {
+    const p = ab.mojPrzejazd;
+    if (!p) return;
+    const program = { schemat: 'wejscie/1', nazwa: p.nazwa, odcinki: p.odcinki };
+    const znaki = JSON.stringify(program).length;
+    if (znaki > NAJWIEKSZY_PRZEJAZD_ZNAKI) { komunikat('Ten przejazd ma ' + p.odcinki.length + ' odcinków, a jedna rzecz zmieści najwyżej ok. ' + liczbaPL(NAJWIEKSZY_PRZEJAZD_ZNAKI / 1000) + ' tys. znaków. Krótsza jazda się zapisze.', true); return; }
+    const nazwa = 'Mój przejazd, ' + godzinaTeraz() + ' (' + liczbaPL(sekundyProgramu(program)) + ' s)';
+    const r = await ruch({ co: 'poloz', rodzaj: 'przejazd/1', cechy: { nazwa, opis: 'Jazda ręki nagrana w oknie świata i puszczona w obu oknach A/B.', program: { ...program, nazwa } } }, 'Przejazd „' + nazwa + '” zapisany: jest w wyborze przejazdów.');
+    if (!r || !r.rzecz) return;
+    ab.zapisz.hidden = true;
+    const czekaj = Date.now();
+    // spis dogania przez kanał na żywo; do tego czasu wybór pokazuje stare listy, więc dopisujemy rzecz od razu
+    if (!rzeczy.some((x) => x.id === r.rzecz)) rzeczy.push({ id: r.rzecz, rodzaj: 'przejazd/1', cechy: { nazwa, program: { ...program, nazwa } }, odlozone: false, utworzyl: mojeImie(), zmienil: mojeImie(), wersja: r.wersja || 0, utworzono: new Date(czekaj).toISOString() });
+    rysujWybor('r:' + r.rzecz);
   }
   // „Powtórz mój przejazd”: nagranie z okna, w którym ręka jechała ostatnio (domyślnie A), potem ten program w obu.
   async function powtorzWObu() {
@@ -358,7 +406,9 @@
     const r = await zapytajSwiat(zrodlo, { type: 'record' }, 10000);
     if (!r.ok || !r.program || !Array.isArray(r.program.odcinki) || !r.program.odcinki.length) { ab.stan.textContent = ''; ab.zdanie.textContent = 'Nie ma czego powtórzyć: ' + String(r.error || 'w oknie ' + zrodlo.rola + ' nikt jeszcze nie jechał od startu') + '.'; ab.zdanie.dataset.przejsciowe = '1'; return; }
     const program = { ...r.program, nazwa: r.program.nazwa || 'Twój przejazd z okna ' + zrodlo.rola };
-    await jedzWObu(program, 'Twój przejazd z okna ' + zrodlo.rola + (r.obciete ? ' (ucięty do limitu programu)' : ''));
+    const udalo = await jedzWObu(program, 'Twój przejazd z okna ' + zrodlo.rola + (r.obciete ? ' (ucięty do limitu programu)' : ''));
+    ab.mojPrzejazd = udalo ? program : null;
+    ab.zapisz.hidden = !udalo;
   }
   // Która kolumna próbki jest czasem, a która prędkością: z pola kolumny (przebieg/1), inaczej t i v_kmh na początku.
   const kolumnyAB = (p) => { const k = Array.isArray(p.kolumny) ? p.kolumny : []; const t = k.indexOf('t'), v = k.indexOf('v_kmh'); return { t: t >= 0 ? t : 0, v: v >= 0 ? v : 1 }; };
@@ -1710,6 +1760,8 @@
     if (s.rzeczy.length) {
       const zmienione = new Set(s.rzeczy.map((r) => r.id));
       rzeczy = [...s.rzeczy.filter((r) => !r.odlozone), ...rzeczy.filter((r) => !zmienione.has(r.id))];
+      // nowy albo odłożony przejazd/1 (np. zapisany w drugiej karcie) od razu w wyborze przejazdów pary A/B
+      if (ab.wybor && s.rzeczy.some((r) => r.rodzaj === 'przejazd/1')) rysujWybor();
     }
     // Opis Miejsca jest najdroższym czytaniem, a po każdej zmianie czytała go każda otwarta strona (dowody środowiska,
     // fala 9, punkt D). Od razu czytamy go tylko wtedy, gdy zmieniło się to, na co ręka ma odpowiedzieć, albo to,
