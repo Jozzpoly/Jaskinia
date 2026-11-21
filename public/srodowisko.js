@@ -184,8 +184,11 @@
     // Para A/B pokazuje się i chowa razem: dwa okna obok siebie albo żadne.
     const ten = okna.get(id);
     const para = ten && ten.para && okna.has(ten.para) ? ten.para : null;
+    // Jedno okno naraz tylko na telefonie, gdzie okno zajmuje cały ekran. Na szerokim ekranie okna leżą obok siebie
+    // i da się je przesuwać (okna swobodne, Opus Code, 21 XI 2026: „nie moge ani przesuwać ani nic”).
+    const jedno = !matchMedia('(min-width: 40.01rem)').matches;
     for (const [inne, o] of okna) {
-      const ma = inne === id || inne === para ? widac : (widac ? false : !o.sekcja.hidden);
+      const ma = inne === id || inne === para ? widac : (widac && jedno ? false : !o.sekcja.hidden);
       if (o.sekcja.hidden === !ma) continue;
       o.sekcja.hidden = !ma;
       o.guzik.classList.toggle('widoczne', ma);
