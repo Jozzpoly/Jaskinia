@@ -157,8 +157,12 @@
         el('button', { tekst: 'zwiń', title: 'Zwiń do guzika na dole; okno zostaje załadowane', klik: () => pokaz(id, false) }),
         el('button', { tekst: '×', title: 'Zamknij okno', klik: () => zamknij(id) })),
       ramka);
+    // Mowa świata pod oknem (krok 2 serca domu, Opus czatu, 21 XI 2026): sygnały z małym wykresem i ostatnie
+    // zdarzenie. Pas jest pusty i schowany, dopóki świat nic nie powie, więc nic tu nie udaje życia.
+    const mowa = el('div', { klasa: 'mowa', hidden: true, 'aria-live': 'off' });
+    sekcja.append(mowa);
     const guzik = el('button', { tekst: tytul, klik: () => pokaz(id, sekcja.hidden) });
-    okna.set(id, { klucz, ramka, sekcja, guzik, tyt, mowi, gosc, chce: [], nazwa: tytul, slad: sladOkna, zapisy: 0, propozycje: 0 });
+    okna.set(id, { klucz, ramka, sekcja, guzik, tyt, mowi, gosc, chce: [], nazwa: tytul, slad: sladOkna, zapisy: 0, propozycje: 0, mowa, sygnaly: new Map(), zdarzenia: [], rysujMowe: 0 });
     ramka.addEventListener('load', () => { if (!ramka.contentWindow) return; ramka.contentWindow.postMessage({ jaskinia: 1, type: 'hi', v: 2, umowy: ['okno/2', 'okno/3'], umie: ['look'] }, '*'); powiedzWyglad(okna.get(id)); });
     $('okna').append(sekcja);
     $('dok').append(guzik);
@@ -246,8 +250,62 @@
         dogon().catch(() => {});
       } catch (err) { zle('nie udało się połączyć: ' + String(err && err.message || err).slice(0, 200)); }
     }
-    // signals, event, flag i wszystko nieznane: na razie pomijamy bez błędu (umowa okna, pokolenia 2 i 3)
+    else if (m.type === 'signals') przyjmijSygnaly(o, m.values);
+    else if (m.type === 'event') przyjmijZdarzenie(o, m.text, m.level);
+    else if (m.type === 'flag') przyjmijZdarzenie(o, m.text || m.label || 'znacznik', 'flag');
+    // wszystko nieznane: pomijamy bez błędu (umowa okna, pokolenia 2 i 3)
   });
+  // Mowa świata. Wszystko, co przychodzi z ramki, jest cudzym tekstem: tylko textContent, twarde granice liczby
+  // i długości, a rysowanie najwyżej cztery razy na sekundę, żeby szybki świat nie zjadał ręki.
+  const NAJWIECEJ_SYGNALOW = 8, PROBEK = 90, ZDARZEN = 8;
+  function przyjmijSygnaly(o, wartosci) {
+    if (!wartosci || typeof wartosci !== 'object' || Array.isArray(wartosci)) return;
+    for (const [k0, w] of Object.entries(wartosci)) {
+      const k = String(k0).slice(0, 40);
+      if (!o.sygnaly.has(k) && o.sygnaly.size >= NAJWIECEJ_SYGNALOW) continue;
+      const s = o.sygnaly.get(k) || { probki: [], tekst: null };
+      if (typeof w === 'number' && Number.isFinite(w)) { s.probki.push(w); if (s.probki.length > PROBEK) s.probki.shift(); s.tekst = null; }
+      else if (typeof w === 'string' || typeof w === 'boolean') s.tekst = String(w).slice(0, 40);
+      else continue;
+      o.sygnaly.set(k, s);
+    }
+    zaplanujMowe(o);
+  }
+  function przyjmijZdarzenie(o, tekst, poziom) {
+    if (typeof tekst !== 'string' || !tekst.trim()) return;
+    const p = ['info', 'warn', 'error', 'flag'].includes(poziom) ? poziom : 'info';
+    o.zdarzenia.unshift({ tekst: tekst.trim().slice(0, 160), poziom: p, kiedy: new Date() });
+    o.zdarzenia.length = Math.min(o.zdarzenia.length, ZDARZEN);
+    zaplanujMowe(o);
+  }
+  function zaplanujMowe(o) {
+    if (o.rysujMowe) return;
+    o.rysujMowe = setTimeout(() => { o.rysujMowe = 0; rysujMowe(o); }, 250);
+  }
+  const liczbaPL = (x) => x.toLocaleString('pl-PL', { maximumFractionDigits: Math.abs(x) >= 100 ? 0 : 2 });
+  function wykres(probki) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 64 16'); svg.setAttribute('aria-hidden', 'true');
+    if (probki.length < 2) return svg;
+    const mn = Math.min(...probki), mx = Math.max(...probki), r = mx - mn;
+    const pkt = probki.map((v, i) => `${(i / (probki.length - 1) * 64).toFixed(1)},${(r ? 15 - (v - mn) / r * 14 : 8).toFixed(1)}`).join(' ');
+    const l = document.createElementNS(NS, 'polyline'); l.setAttribute('points', pkt);
+    svg.append(l);
+    return svg;
+  }
+  function rysujMowe(o) {
+    if (!o.mowa.isConnected) return;
+    const syg = [...o.sygnaly].map(([k, s]) => el('span', { klasa: 'syg', title: s.probki.length ? `${k}: ostatnie ${s.probki.length} próbek` : k },
+      el('span', { klasa: 'syg-nazwa', tekst: k }),
+      el('span', { klasa: 'syg-wartosc', tekst: s.tekst !== null ? s.tekst : (s.probki.length ? liczbaPL(s.probki[s.probki.length - 1]) : '–') }),
+      s.tekst === null && s.probki.length > 1 ? wykres(s.probki) : null));
+    const z = o.zdarzenia[0];
+    const zd = z ? el('span', { klasa: 'zdarzenie ' + z.poziom, title: o.zdarzenia.map((x) => `${x.kiedy.toLocaleTimeString('pl-PL')} ${x.tekst}`).join('\n'),
+      tekst: (z.poziom === 'flag' ? '⚑ ' : '') + z.tekst }) : null;
+    o.mowa.replaceChildren(...syg, zd || '');
+    o.mowa.hidden = !syg.length && !zd;
+  }
 
   // --- strona --------------------------------------------------------------------------------------------------
   const lp = (n, a, b, c) => `${n} ${n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c)}`;
