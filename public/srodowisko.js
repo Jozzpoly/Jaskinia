@@ -220,6 +220,27 @@
   // prędkość i przechył, bo szybsze nie znaczy lepsze (pierwszy zrzut A/B pokazał szybsze auto na boku).
   const PROGRAM_AB = { schemat: 'wejscie/1', nazwa: 'Osiadanie, ruszanie, łuk, hamowanie do zatrzymania', odcinki: [{ s: 1 }, { s: 2, gaz: 1 }, { s: 1, gaz: 1, skret: 0.5 }, { s: 3, hamulec: 1 }] };
   const CHWILA_AB = 3, PRZEWROTKA_ST = 60;
+  // Pokrętło nie ma w kształcie osobnej etykiety: deklarujący pisze ludzką nazwę na początku opisu przed dwukropkiem
+  // (tak deklaruje JV: „Moment napędu: …”); bez niej ręka widzi ostatni człon nazwy. Panel i porównanie A/B mówią tym samym.
+  function etykietaPokretla(d) { const m = /^([^:.]{2,40}):\s+(.+)$/s.exec(d.opis || ''); return m ? { nazwa: m[1], opis: m[2] } : { nazwa: d.nazwa.split('.').pop().replace(/_/g, ' '), opis: d.opis || '' }; }
+  // Czym B różni się od A w chwili jazdy: pokrętła, które świat czyta, z wartością w A (świat) i w B (profil na wierzchu).
+  // Bez tego zdanie „B szybsze o 72%” nie mówi, od czego; zrzut i nagranie mają się tłumaczyć same.
+  async function roznicaAB(A, B) {
+    const nazwy = [...new Set([...A.czyta, ...B.czyta])].slice(0, 64);
+    const dla = A.dla || B.dla;
+    if (!nazwy.length || !dla) return null;
+    const q = '/api/srodowisko/ustawienia?deklaracje=tak&nazwy=' + nazwy.map(encodeURIComponent).join(',') + '&dla=' + dla;
+    const [ua, ub] = await Promise.all([czytaj(q), czytaj(q + (B.nakladka ? '&nakladki=' + B.nakladka : ''))]);
+    const dekl = new Map((ua.deklaracje || []).map((d) => [d.nazwa, d]));
+    const rozne = [];
+    for (const n of nazwy) {
+      const va = ((ua.wartosci || {})[n] || {}).wartosc, vb = ((ub.wartosci || {})[n] || {}).wartosc;
+      if (JSON.stringify(va) !== JSON.stringify(vb)) rozne.push({ nazwa: n, etykieta: dekl.has(n) ? etykietaPokretla(dekl.get(n)).nazwa : n, a: va, b: vb });
+    }
+    return rozne;
+  }
+  const wartoscPL = (x) => (typeof x === 'number' && Number.isFinite(x) ? liczbaPL(x) : x === undefined ? 'brak' : typeof x === 'string' ? x : JSON.stringify(x));
+  const zdanieRoznicy = (rozne) => (!rozne ? '' : !rozne.length ? 'B ma te same ustawienia co A.' : 'B różni się od A: ' + rozne.slice(0, 8).map((r) => r.etykieta + ' ' + wartoscPL(r.b) + ' (A: ' + wartoscPL(r.a) + ')').join('; ') + (rozne.length > 8 ? '; i ' + (rozne.length - 8) + ' innych' : '') + '.');
   const ab = { sekcja: null, para: null, trwa: false };
   const sekundyProgramu = (p) => Math.round((p.odcinki || []).reduce((s, x) => s + (Number.isFinite(x.s) ? x.s : (Number(x.kroki) || 0) / 60), 0) * 10) / 10;
   let nrZadaniaAB = 0;
@@ -274,11 +295,12 @@
     if (ab.sekcja) return;
     ab.stan = el('span', { klasa: 'ab-stan', 'aria-live': 'polite' });
     ab.zdanie = el('p', { klasa: 'ab-zdanie', 'aria-live': 'polite' });
+    ab.roznica = el('p', { klasa: 'ab-roznica' });
     ab.wykres = el('div', { klasa: 'ab-wykres' });
     ab.jedz = el('button', { klasa: 'glowny', tekst: 'Jedź tak samo w obu', title: 'Oba auta wracają na start i jadą ten sam program: ' + PROGRAM_AB.nazwa.toLowerCase() + ' (' + liczbaPL(sekundyProgramu(PROGRAM_AB)) + ' s)', klik: () => jedzWObu(PROGRAM_AB) });
     ab.powtorz = el('button', { tekst: 'Powtórz mój przejazd w obu', title: 'Twoja jazda od ostatniego startu w oknie, w którym jechałeś, odtworzona od startu w obu oknach', klik: () => powtorzWObu() });
     ab.sekcja = el('section', { klasa: 'ab', hidden: true, 'aria-label': 'Porównanie okien A i B' },
-      el('div', { klasa: 'ab-guziki' }, ab.jedz, ab.powtorz, ab.stan), ab.zdanie, ab.wykres);
+      el('div', { klasa: 'ab-guziki' }, ab.jedz, ab.powtorz, ab.stan), ab.zdanie, ab.roznica, ab.wykres);
     $('okna').append(ab.sekcja);
   }
   // Para A/B widoczna razem: okna stają obok siebie (na telefonie jedno pod drugim), a pod nimi pas porównania.
@@ -305,12 +327,15 @@
     // okno, które żyje, najwyżej dziesięć długości i minutę (nie dłużej niż kwadrans i nigdy krócej niż zwykły limit)
     const ms = Math.ceil(s * 3000 + 15000);
     const sufit = Math.max(ms, Math.min(15 * 60000, Math.ceil(s * 10000 + 60000)));
+    // ustawienia z chwili startu: ręka może ruszyć suwak w trakcie jazdy, a zdanie ma mówić o tym, co jechało
+    const roznica = await roznicaAB(A, B).catch(() => null);
     const dluzej = (o) => { ab.stan.textContent = 'Okno ' + o.rola + ' jedzie wolniej niż zegar: ten sam przejazd, tylko później. Czekam, póki daje znać, że żyje, najwyżej ' + liczbaPL(Math.round(sufit / 1000)) + ' s od startu…'; };
     const [pa, pb] = await Promise.all([zapytajSwiat(A, { type: 'play', program }, ms, sufit, dluzej), zapytajSwiat(B, { type: 'play', program }, ms, sufit, dluzej)]);
     ab.trwa = false;
     ulozAB();
     if (!pa.ok || !pb.ok || !pa.przebieg || !pb.przebieg) {
       ab.stan.textContent = '';
+      ab.roznica.textContent = '';
       ab.zdanie.textContent = 'Nie wyszło. ' + [!pa.ok || !pa.przebieg ? 'A: ' + String(pa.error || 'brak przebiegu').slice(0, 160) : null, !pb.ok || !pb.przebieg ? 'B: ' + String(pb.error || 'brak przebiegu').slice(0, 160) : null].filter(Boolean).join('; ') + '.';
       ab.wykres.replaceChildren();
       return;
@@ -319,6 +344,7 @@
     ab.stan.textContent = (skad || 'Przejazd: ' + (program.nazwa || 'program')) + ', ' + liczbaPL(s) + ' s.';
     delete ab.zdanie.dataset.przejsciowe;
     ab.zdanie.textContent = zdanieAB(pa.przebieg, pb.przebieg, program);
+    ab.roznica.textContent = zdanieRoznicy(roznica);
     ab.wykres.replaceChildren(wykresAB(pa.przebieg, pb.przebieg));
   }
   // „Powtórz mój przejazd”: nagranie z okna, w którym ręka jechała ostatnio (domyślnie A), potem ten program w obu.
@@ -577,9 +603,7 @@
     const tu = dlaCzego(ogniwo.get(zasieg));
     // w oknie B wartość ustawiona dla świata to po prostu to, co ma okno A
     const skadWyzej = (id) => { const z = ogniwo.get(id); return !z ? 'odziedziczone' : o.rola === 'B' && z.rodzaj === 'gosc/1' ? 'jak w oknie A' : z.ostatnie ? 'wspólne dla całego Miejsca' : z.rodzaj === 'obszar/1' ? 'z obszaru „' + z.nazwa + '”' : 'z „' + z.nazwa + '”'; };
-    // Pokrętło nie ma w kształcie osobnej etykiety: deklarujący pisze ludzką nazwę na początku opisu przed dwukropkiem
-    // (tak deklaruje JV: „Moment napędu: …”); bez niej ręka widzi ostatni człon nazwy.
-    const etykieta = (d) => { const m = /^([^:.]{2,40}):\s+(.+)$/s.exec(d.opis || ''); return m ? { nazwa: m[1], opis: m[2] } : { nazwa: d.nazwa.split('.').pop().replace(/_/g, ' '), opis: d.opis || '' }; };
+    const etykieta = etykietaPokretla;
     // kolejność świata: tak, jak sam pyta o swoje pokrętła (grupy w kolejności pierwszego pokrętła), nie alfabet
     const kolejnosc = new Map(nazwy.map((x, i) => [x, i]));
     const grupy = new Map();
