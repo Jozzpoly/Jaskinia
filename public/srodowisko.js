@@ -143,7 +143,7 @@
       else if (w.powiedz && !powiedzianeOkna.has(o.id + ':' + o.wersja)) { powiedzianeOkna.add(o.id + ':' + o.wersja); komunikat(w.powiedz); if (g) zapamietajOkno({ id: g.id, tytul: g.tytul }, false); }
     }
   }
-  function otworz({ klucz, tytul, adres, piaskownica, gosc = null }) {
+  function otworz({ klucz, tytul, adres, piaskownica, gosc = null, nakladka = null, rola = null }) {
     for (const [id, o] of okna) if (o.klucz === klucz) return pokaz(id, true);
     const id = 'okno-' + ++nrOkna;
     const ramka = el('iframe', { src: adres, title: tytul, referrerpolicy: 'no-referrer', allow: 'fullscreen; gamepad', sandbox: PIASKOWNICE[piaskownica] || PIASKOWNICE.obcy });
@@ -155,12 +155,15 @@
     // z Jaskini, w zasięgu, z którym je czyta. Guzik pojawia się dopiero, gdy świat o coś zapyta.
     const suwaki = el('aside', { klasa: 'suwaki', hidden: true, 'aria-label': 'Suwaki świata' });
     const guzikSuwakow = el('button', { tekst: 'suwaki', hidden: true, 'aria-pressed': 'false', title: 'Pokrętła, które ten świat czyta z Jaskini: strojenie tylko dla niego', klik: () => przelaczSuwaki(id) });
+    // Dwa okna jednego świata (jego słowa z 21 XI 04:43: ten sam input na dwa okna, inne ustawienia). Guzik pojawia się,
+    // gdy świat w hello mówi, że umie odtwarzać programy wejścia (umie: play); okno B go nie ma.
+    const guzikAB = el('button', { tekst: 'A/B', hidden: true, title: 'Drugie okno tego świata obok, z własnymi ustawieniami (profil B), i ten sam przejazd w obu', klik: () => otworzAB(id) });
     suwaki.addEventListener('pointerdown', () => { const o = okna.get(id); if (o) o.trzymaSuwak = true; });
     // wyjście z pola: to, co przyszło w trakcie pisania, rysuje się teraz
     suwaki.addEventListener('focusout', () => setTimeout(() => { const o = okna.get(id); if (o && o.suwakiZalegle && !o.trzymaSuwak && !pisze(o)) { o.suwakiZalegle = false; rysujSuwaki(o); } }, 0));
     const sekcja = el('section', { klasa: 'okno', 'aria-label': tytul },
-      el('div', { klasa: 'pasek' }, tyt, mowi, sladOkna,
-        guzikSuwakow,
+      el('div', { klasa: 'pasek' }, rola ? el('span', { klasa: 'rola', tekst: rola, title: rola === 'B' ? 'Okno B: ustawienia z profilu B nad ustawieniami świata' : 'Okno A: ustawienia świata' }) : null, tyt, mowi, sladOkna,
+        guzikSuwakow, guzikAB,
         el('a', { klasa: 'guzik', href: adres, target: '_blank', rel: 'noopener', tekst: 'nowa karta' }),
         el('button', { tekst: 'zwiń', title: 'Zwiń do guzika na dole; okno zostaje załadowane', klik: () => pokaz(id, false) }),
         el('button', { tekst: '×', title: 'Zamknij okno', klik: () => zamknij(id) })),
@@ -170,15 +173,19 @@
     const mowa = el('div', { klasa: 'mowa', hidden: true, 'aria-live': 'off' });
     sekcja.append(mowa);
     const guzik = el('button', { tekst: tytul, klik: () => pokaz(id, sekcja.hidden) });
-    okna.set(id, { klucz, ramka, sekcja, guzik, tyt, mowi, gosc, chce: [], nazwa: tytul, slad: sladOkna, zapisy: 0, propozycje: 0, mowa, sygnaly: new Map(), zdarzenia: [], rysujMowe: 0, suwaki, guzikSuwakow, czyta: new Set(), dla: null, suwakiNr: 0, trzymaSuwak: false, suwakiZalegle: false, zwiniete: new Set() });
+    okna.set(id, { klucz, ramka, sekcja, guzik, tyt, mowi, gosc, chce: [], nazwa: tytul, slad: sladOkna, zapisy: 0, propozycje: 0, mowa, sygnaly: new Map(), zdarzenia: [], rysujMowe: 0, suwaki, guzikSuwakow, czyta: new Set(), dla: null, suwakiNr: 0, trzymaSuwak: false, suwakiZalegle: false, zwiniete: new Set(),
+      adres, piaskownica, nakladka, rola, para: null, umie: [], oczekuje: new Map(), dotkniete: 0, guzikAB });
     ramka.addEventListener('load', () => { if (!ramka.contentWindow) return; ramka.contentWindow.postMessage({ jaskinia: 1, type: 'hi', v: 2, umowy: ['okno/2', 'okno/3'], umie: ['look'] }, '*'); powiedzWyglad(okna.get(id)); });
     $('okna').append(sekcja);
     $('dok').append(guzik);
     pokaz(id, true);
   }
   function pokaz(id, widac) {
+    // Para A/B pokazuje się i chowa razem: dwa okna obok siebie albo żadne.
+    const ten = okna.get(id);
+    const para = ten && ten.para && okna.has(ten.para) ? ten.para : null;
     for (const [inne, o] of okna) {
-      const ma = inne === id ? widac : (widac ? false : !o.sekcja.hidden);
+      const ma = inne === id || inne === para ? widac : (widac ? false : !o.sekcja.hidden);
       if (o.sekcja.hidden === !ma) continue;
       o.sekcja.hidden = !ma;
       o.guzik.classList.toggle('widoczne', ma);
@@ -186,15 +193,181 @@
     }
     const o = okna.get(id);
     if (o) o.guzik.classList.toggle('widoczne', !o.sekcja.hidden);
+    ulozAB();
     powiedzPrzy();
   }
   function zamknij(id) {
     const o = okna.get(id);
     if (!o) return;
-    if (o.gosc) zapamietajOkno({ id: o.gosc.id, tytul: o.gosc.nazwa }, false);
+    // Okno B nie jest pamiętane (nie wraca po przeładowaniu); zamknięcie A zamyka też jego B.
+    if (o.para && okna.has(o.para)) {
+      const p = okna.get(o.para);
+      p.para = null;
+      if (o.rola === 'A') { zamknij(o.para); } else { p.rola = null; p.sekcja.querySelector('.pasek .rola')?.remove(); p.guzikAB.hidden = !(p.umie.includes('play') && p.gosc); p.guzik.textContent = p.nazwa; }
+    }
+    if (o.gosc && o.rola !== 'B') zapamietajOkno({ id: o.gosc.id, tytul: o.gosc.nazwa }, false);
+    for (const w of o.oczekuje.values()) w({ ok: false, error: 'okno zamknięte' });
     o.sekcja.remove(); o.guzik.remove(); okna.delete(id);
+    ulozAB();
     powiedzPrzy();
   }
+  // --- dwa okna jednego świata (A/B) -----------------------------------------------------------------------------
+  // Jego słowa z 21 XI 04:43: ten sam input na dwa okna, inne ustawienia. Okno B to ten sam świat z profilem
+  // „B: <świat>” jako nakładką: czyta to, co A, a nad tym swoje wartości (A/B na profilach, uzgodnione z Opusem Code).
+  // Porównanie idzie programem wejścia (umowa JV z 21 XI: play/played, record/recorded, format wejscie/1 i przebieg/1):
+  // oba auta wracają na start i jadą krok w krok to samo, więc różnica bierze się tylko z ustawień. Zdanie liczy się
+  // jak w przyrządzie Opusa Code (sprawdz-swiat.mjs, dwaOkna): prędkość po 3 s, odległość na końcu, najwyższa
+  // prędkość i przechył, bo szybsze nie znaczy lepsze (pierwszy zrzut A/B pokazał szybsze auto na boku).
+  const PROGRAM_AB = { schemat: 'wejscie/1', nazwa: 'Osiadanie, ruszanie, łuk, hamowanie do zatrzymania', odcinki: [{ s: 1 }, { s: 2, gaz: 1 }, { s: 1, gaz: 1, skret: 0.5 }, { s: 3, hamulec: 1 }] };
+  const CHWILA_AB = 3, PRZEWROTKA_ST = 60;
+  const ab = { sekcja: null, para: null, trwa: false };
+  const sekundyProgramu = (p) => Math.round((p.odcinki || []).reduce((s, x) => s + (Number.isFinite(x.s) ? x.s : (Number(x.kroki) || 0) / 60), 0) * 10) / 10;
+  let nrZadaniaAB = 0;
+  // Wiadomość do świata w oknie i czekanie na odpowiedź z tym samym id, nie dłużej niż `ms`.
+  function zapytajSwiat(o, wiadomosc, ms) {
+    const id = 'ab-' + Date.now().toString(36) + '-' + ++nrZadaniaAB;
+    return new Promise((res) => {
+      const t = setTimeout(() => { o.oczekuje.delete(id); res({ ok: false, error: 'świat nie odpowiedział w ' + Math.round(ms / 1000) + ' s' }); }, ms);
+      o.oczekuje.set(id, (m) => { clearTimeout(t); res(m); });
+      if (o.ramka.contentWindow) o.ramka.contentWindow.postMessage({ jaskinia: 1, ...wiadomosc, id }, '*');
+    });
+  }
+  async function otworzAB(idA) {
+    const A = okna.get(idA);
+    if (!A || !A.gosc) return;
+    if (A.para && okna.has(A.para)) { pokaz(idA, true); return; }
+    if (!klucz) { komunikat('Okno B ma własne ustawienia, więc najpierw wejdź (guzik „Wejdź” na górze strony).', true); return; }
+    const ja = mojeImie();
+    const nazwaB = 'B: ' + A.gosc.nazwa;
+    // profil B jest jeden na świat i osobę: wraca przy następnym A/B razem ze swoimi wartościami
+    let profil = rzeczy.find((r) => r.rodzaj === 'profil/1' && r.cechy && r.cechy.nazwa === nazwaB && (!ja || r.utworzyl === ja)) || null;
+    if (!profil) {
+      const r = await ruch({ co: 'poloz', rodzaj: 'profil/1', cechy: { nazwa: nazwaB, opis: 'Okno B świata „' + A.gosc.nazwa + '”: wartości, którymi B różni się od A.' } }, 'Profil „' + nazwaB + '” gotowy: suwaki okna B piszą w niego.');
+      if (!r || !r.rzecz) return;
+      profil = { id: r.rzecz };
+    }
+    otworz({ klucz: A.klucz + '#B', tytul: A.nazwa, adres: A.adres, piaskownica: A.piaskownica, gosc: A.gosc, nakladka: profil.id, rola: 'B' });
+    const wpis = [...okna].find(([, o]) => o.klucz === A.klucz + '#B');
+    if (!wpis) return;
+    const [idB, B] = wpis;
+    A.rola = 'A'; A.para = idB; B.para = idA;
+    if (!A.sekcja.querySelector('.pasek .rola')) A.sekcja.querySelector('.pasek').prepend(el('span', { klasa: 'rola', tekst: 'A', title: 'Okno A: ustawienia świata' }));
+    A.guzikAB.hidden = true;
+    A.guzik.textContent = A.nazwa + ' · A'; B.guzik.textContent = B.nazwa + ' · B';
+    pokaz(idA, true);
+  }
+  function zbudujAB() {
+    if (ab.sekcja) return;
+    ab.stan = el('span', { klasa: 'ab-stan', 'aria-live': 'polite' });
+    ab.zdanie = el('p', { klasa: 'ab-zdanie', 'aria-live': 'polite' });
+    ab.wykres = el('div', { klasa: 'ab-wykres' });
+    ab.jedz = el('button', { klasa: 'glowny', tekst: 'Jedź tak samo w obu', title: 'Oba auta wracają na start i jadą ten sam program: ' + PROGRAM_AB.nazwa.toLowerCase() + ' (' + liczbaPL(sekundyProgramu(PROGRAM_AB)) + ' s)', klik: () => jedzWObu(PROGRAM_AB) });
+    ab.powtorz = el('button', { tekst: 'Powtórz mój przejazd w obu', title: 'Twoja jazda od ostatniego startu w oknie, w którym jechałeś, odtworzona od startu w obu oknach', klik: () => powtorzWObu() });
+    ab.sekcja = el('section', { klasa: 'ab', hidden: true, 'aria-label': 'Porównanie okien A i B' },
+      el('div', { klasa: 'ab-guziki' }, ab.jedz, ab.powtorz, ab.stan), ab.zdanie, ab.wykres);
+    $('okna').append(ab.sekcja);
+  }
+  // Para A/B widoczna razem: okna stają obok siebie (na telefonie jedno pod drugim), a pod nimi pas porównania.
+  function ulozAB() {
+    const A = [...okna.values()].find((o) => o.rola === 'A' && o.para && okna.has(o.para)) || null;
+    const B = A ? okna.get(A.para) : null;
+    const obaWidac = !!A && !A.sekcja.hidden && !B.sekcja.hidden;
+    for (const o of okna.values()) { o.sekcja.classList.toggle('ab-a', obaWidac && o === A); o.sekcja.classList.toggle('ab-b', obaWidac && o === B); }
+    if (obaWidac) zbudujAB();
+    if (!ab.sekcja) return;
+    ab.sekcja.hidden = !obaWidac;
+    ab.para = obaWidac ? A : null;
+    if (obaWidac && !ab.trwa) { ab.jedz.disabled = !(A.umie.includes('play') && B.umie.includes('play')); ab.powtorz.disabled = !(A.umie.includes('record') && B.umie.includes('record')); }
+  }
+  async function jedzWObu(program, skad = '') {
+    const A = ab.para, B = A && okna.get(A.para);
+    if (!A || !B || ab.trwa) return;
+    ab.trwa = true; ab.jedz.disabled = true; ab.powtorz.disabled = true;
+    const s = sekundyProgramu(program);
+    ab.stan.textContent = 'Oba auta jadą od startu: ' + (program.nazwa || 'program') + ' (' + liczbaPL(s) + ' s)…';
+    // schowane okno może jechać wolniej, nigdy inaczej: limit to trzy długości programu i start
+    const ms = Math.ceil(s * 3000 + 15000);
+    const [pa, pb] = await Promise.all([zapytajSwiat(A, { type: 'play', program }, ms), zapytajSwiat(B, { type: 'play', program }, ms)]);
+    ab.trwa = false;
+    ulozAB();
+    if (!pa.ok || !pb.ok || !pa.przebieg || !pb.przebieg) {
+      ab.stan.textContent = '';
+      ab.zdanie.textContent = 'Nie wyszło. ' + [!pa.ok || !pa.przebieg ? 'A: ' + String(pa.error || 'brak przebiegu').slice(0, 160) : null, !pb.ok || !pb.przebieg ? 'B: ' + String(pb.error || 'brak przebiegu').slice(0, 160) : null].filter(Boolean).join('; ') + '.';
+      ab.wykres.replaceChildren();
+      return;
+    }
+    ab.stan.textContent = (skad ? skad + ': ' : 'Przejazd: ') + (program.nazwa || 'program') + ', ' + liczbaPL(s) + ' s.';
+    ab.zdanie.textContent = zdanieAB(pa.przebieg, pb.przebieg, program);
+    ab.wykres.replaceChildren(wykresAB(pa.przebieg, pb.przebieg));
+  }
+  // „Powtórz mój przejazd”: nagranie z okna, w którym ręka jechała ostatnio (domyślnie A), potem ten program w obu.
+  async function powtorzWObu() {
+    const A = ab.para, B = A && okna.get(A.para);
+    if (!A || !B || ab.trwa) return;
+    const zrodlo = B.dotkniete > A.dotkniete ? B : A;
+    ab.stan.textContent = 'Biorę Twój przejazd z okna ' + zrodlo.rola + '…';
+    const r = await zapytajSwiat(zrodlo, { type: 'record' }, 10000);
+    if (!r.ok || !r.program || !Array.isArray(r.program.odcinki) || !r.program.odcinki.length) { ab.stan.textContent = ''; ab.zdanie.textContent = 'Nie ma czego powtórzyć: ' + String(r.error || 'w oknie ' + zrodlo.rola + ' nikt jeszcze nie jechał od startu') + '.'; return; }
+    const program = { ...r.program, nazwa: r.program.nazwa || 'Twój przejazd z okna ' + zrodlo.rola };
+    await jedzWObu(program, 'Twój przejazd z okna ' + zrodlo.rola + (r.obciete ? ' (ucięty do limitu programu)' : ''));
+  }
+  // Która kolumna próbki jest czasem, a która prędkością: z pola kolumny (przebieg/1), inaczej t i v_kmh na początku.
+  const kolumnyAB = (p) => { const k = Array.isArray(p.kolumny) ? p.kolumny : []; const t = k.indexOf('t'), v = k.indexOf('v_kmh'); return { t: t >= 0 ? t : 0, v: v >= 0 ? v : 1 }; };
+  const ileAB = (x, m = 1) => (typeof x === 'number' && Number.isFinite(x) ? x.toLocaleString('pl-PL', { maximumFractionDigits: m }) : '?');
+  function zdanieAB(a, b, program) {
+    if (!Array.isArray(a.probki) || !Array.isArray(b.probki) || !a.probki.length || !b.probki.length) return 'Świat oddał przebieg bez próbek, więc nie ma czego porównać.';
+    if (a.skrot && a.skrot === b.skrot) return 'Ustawienia B nie zmieniły tej jazdy: oba okna przejechały „' + (program.nazwa || 'program') + '” bit w bit tak samo.';
+    const ka = kolumnyAB(a), kb = kolumnyAB(b);
+    const wChwili = (p, k) => p.probki.reduce((naj, r) => (Math.abs(r[k.t] - CHWILA_AB) < Math.abs(naj[k.t] - CHWILA_AB) ? r : naj));
+    const ra = wChwili(a, ka), rb = wChwili(b, kb);
+    const va = Math.abs(ra[ka.v]), vb = Math.abs(rb[kb.v]);
+    const procent = va > 0.05 ? (vb / va - 1) * 100 : null;
+    let z = procent === null
+      ? 'Po ' + ileAB(ra[ka.t], 2) + ' s programu B jedzie ' + ileAB(vb) + ' km/h, A stoi.'
+      : 'B ' + (procent >= 0 ? 'szybsze' : 'wolniejsze') + ' o ' + ileAB(Math.abs(procent), 0) + '% po ' + ileAB(ra[ka.t], 2) + ' s programu (' + ileAB(vb) + ' wobec ' + ileAB(va) + ' km/h).';
+    const ea = a.koniec || {}, eb = b.koniec || {};
+    if (Number.isFinite(ea.odleglosc_m) && Number.isFinite(eb.odleglosc_m)) z += ' Na końcu B ' + ileAB(eb.odleglosc_m) + ' m od startu, A ' + ileAB(ea.odleglosc_m) + ' m';
+    if (Number.isFinite(a.vmax_kmh) && Number.isFinite(b.vmax_kmh)) z += (z.endsWith(' m') ? '; najwyżej' : ' Najwyżej') + ' B ' + ileAB(Math.abs(b.vmax_kmh)) + ', A ' + ileAB(Math.abs(a.vmax_kmh)) + ' km/h';
+    if (!z.endsWith('.')) z += '.';
+    const pa = a.przechyl_max_st, pb = b.przechyl_max_st;
+    if (!Number.isFinite(pa) || !Number.isFinite(pb)) return z + ' (Świat nie podaje przechyłu.)';
+    const lezy = [['B', pb, b.t_przechyl_max], ['A', pa, a.t_przechyl_max]].filter((x) => x[1] >= PRZEWROTKA_ST);
+    const opisL = (x) => x[0] + ' ' + ileAB(x[1], 0) + '° po ' + ileAB(x[2], 1) + ' s';
+    if (lezy.length === 2) return z + ' Oba się przewróciły: ' + lezy.map(opisL).join(', ') + '.';
+    if (lezy.length === 1) return z + ' ' + lezy[0][0] + ' się przewróciło (' + opisL(lezy[0]) + '), ' + (lezy[0][0] === 'B' ? 'A' : 'B') + ' nie (najwyżej ' + ileAB(lezy[0][0] === 'B' ? pa : pb, 0) + '°).';
+    return z + ' Przechył najwyżej B ' + ileAB(pb, 0) + '°, A ' + ileAB(pa, 0) + '°.';
+  }
+  // Dwie krzywe prędkości v(t) na jednej skali: A i B podpisane przy końcach linii, więc nie trzeba legendy z kolorów.
+  function wykresAB(a, b) {
+    const NS = 'http://www.w3.org/2000/svg', W = 320, H = 90, L = 28, D = 14;
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('role', 'img');
+    const ka = kolumnyAB(a), kb = kolumnyAB(b);
+    const pkt = (p, k) => p.probki.map((r) => [Number(r[k.t]), Math.abs(Number(r[k.v]))]).filter(([t, v]) => Number.isFinite(t) && Number.isFinite(v));
+    const ta = pkt(a, ka), tb = pkt(b, kb);
+    const tMax = Math.max(1, ...ta.map((x) => x[0]), ...tb.map((x) => x[0]));
+    const vMax = Math.max(1, ...ta.map((x) => x[1]), ...tb.map((x) => x[1]));
+    svg.setAttribute('aria-label', 'Prędkość A i B w czasie programu, najwyżej ' + ileAB(vMax) + ' km/h po ' + ileAB(tMax) + ' s');
+    const x = (t) => L + (t / tMax) * (W - L - 16), y = (v) => H - D - (v / vMax) * (H - D - 6);
+    const linia = (x1, y1, x2, y2, klasa) => { const l = document.createElementNS(NS, 'line'); l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2); l.setAttribute('class', klasa); svg.append(l); };
+    const napis = (tekst, tx, ty, klasa, kotwica = 'start') => { const t = document.createElementNS(NS, 'text'); t.setAttribute('x', tx); t.setAttribute('y', ty); t.setAttribute('class', klasa); t.setAttribute('text-anchor', kotwica); t.textContent = tekst; svg.append(t); };
+    linia(L, H - D, W - 16, H - D, 'os'); linia(L, 6, L, H - D, 'os');
+    // podpis skali wewnątrz wykresu: przy lewej krawędzi „122 km/h” wychodził poza rysunek i zostawało „2 km/h”
+    napis(ileAB(vMax, 0) + ' km/h', L + 3, 12, 'skala'); napis('0', L - 3, H - D, 'skala', 'end');
+    napis(ileAB(tMax, 1) + ' s', W - 16, H - 2, 'skala', 'end'); napis('0 s', L, H - 2, 'skala');
+    for (const [p, k, klasa] of [[ta, 'A', 'krzywa-a'], [tb, 'B', 'krzywa-b']]) {
+      if (p.length < 2) continue;
+      const l = document.createElementNS(NS, 'polyline');
+      l.setAttribute('points', p.map(([t, v]) => x(t).toFixed(1) + ',' + y(v).toFixed(1)).join(' '));
+      l.setAttribute('class', klasa);
+      svg.append(l);
+      const [tk, vk] = p.reduce((naj, r) => (r[1] > naj[1] ? r : naj));
+      napis(k, Math.min(W - 10, x(tk) + 4), Math.max(10, y(vk) - 3), 'podpis ' + klasa);
+    }
+    return svg;
+  }
+  // Gdzie ręka jechała ostatnio: ramka dostaje fokus przy kliknięciu, a strona traci go w tej samej chwili.
+  addEventListener('blur', () => setTimeout(() => { const a = document.activeElement; for (const o of okna.values()) if (o.ramka === a) o.dotkniete = Date.now(); }, 0));
   // Rozmowa z gośćmi. Przyjmujemy wiadomości tylko od ramek, które sami otworzyliśmy.
   addEventListener('message', async (e) => {
     const m = e.data;
@@ -203,8 +376,18 @@
     if (!o) return;
     const odp = (w) => e.source.postMessage({ jaskinia: 1, ...w }, '*');
     if (m.type === 'hello') {
-      if (typeof m.name === 'string' && m.name.trim()) { o.nazwa = m.name.trim().slice(0, 60); o.tyt.textContent = o.nazwa; o.guzik.textContent = o.nazwa; }
+      // w doku para musi się różnić: „Świat · A” i „Świat · B”, inaczej dwa takie same guziki
+      if (typeof m.name === 'string' && m.name.trim()) { o.nazwa = m.name.trim().slice(0, 60); o.tyt.textContent = o.nazwa; o.guzik.textContent = o.nazwa + (o.rola ? ' · ' + o.rola : ''); }
       o.chce = Array.isArray(m.wants) ? m.wants.filter((x) => typeof x === 'string').slice(0, 8) : [];
+      // co świat umie poza umową (JV od 21 XI: play i record, programy wejścia); nieznane pola pomijamy
+      o.umie = Array.isArray(m.umie) ? m.umie.filter((x) => typeof x === 'string').slice(0, 16) : [];
+      o.guzikAB.hidden = !(o.umie.includes('play') && o.gosc && o.rola !== 'B');
+      // okno B przedstawia się później niż powstaje para: dopiero wtedy wiadomo, czy oba umieją jechać programem
+      if (o.para) ulozAB();
+    } else if (m.type === 'played' || m.type === 'recorded') {
+      // odpowiedź na play albo record od gospodarza: czeka na nią porównanie A/B
+      const w = o.oczekuje.get(m.id);
+      if (w) { o.oczekuje.delete(m.id); w(m); }
     } else if (m.type === 'state') {
       o.mowi.textContent = typeof m.text === 'string' ? m.text.slice(0, 240) : '';
     } else if (m.type === 'read') {
@@ -230,7 +413,8 @@
         } else if (m.what === 'ustawienia') {
           // Narzędzie czyta pokrętła po nazwie, także własne: liczy gospodarz, tymi samymi drzwiami co twarz.
           const nazwy = Array.isArray(m.nazwy) ? m.nazwy.filter((n) => typeof n === 'string' && /^[a-z0-9_.]{3,250}$/.test(n)).slice(0, 200) : [];
-          const d = await czytajOknem(o, '/api/srodowisko/ustawienia?nazwy=' + nazwy.join(',') + (typeof m.dla === 'string' && /^[0-9a-z]{26}$/.test(m.dla) ? '&dla=' + m.dla : ''));
+          // okno B czyta przez profil B jako nakładkę: najpierw jego wartości, potem to, co czyta A
+          const d = await czytajOknem(o, '/api/srodowisko/ustawienia?nazwy=' + nazwy.join(',') + (typeof m.dla === 'string' && /^[0-9a-z]{26}$/.test(m.dla) ? '&dla=' + m.dla : '') + (o.nakladka ? '&nakladki=' + o.nakladka : ''));
           dane = { wartosci: d.wartosci, akt: d.akt, format: d.format };
           for (const n of nazwy) if (o.czyta.size < 64) o.czyta.add(n);
           if (typeof m.dla === 'string' && /^[0-9a-z]{26}$/.test(m.dla)) o.dla = m.dla;
@@ -347,18 +531,20 @@
     const nr = ++o.suwakiNr;
     let u;
     // razem z pokrętłami świata: lista zestawów włączonych w jego zasięgu (który preset jest jego)
-    try { u = await czytaj('/api/srodowisko/ustawienia?deklaracje=tak&nazwy=' + [...nazwy, ZESTAWY].join(',') + (o.dla ? '&dla=' + o.dla : '')); }
+    try { u = await czytaj('/api/srodowisko/ustawienia?deklaracje=tak&nazwy=' + [...nazwy, ZESTAWY].join(',') + (o.dla ? '&dla=' + o.dla : '') + (o.nakladka ? '&nakladki=' + o.nakladka : '')); }
     catch (blad) { if (nr === o.suwakiNr) o.suwaki.replaceChildren(el('p', { klasa: 'bok', tekst: 'Nie udało się przeczytać pokręteł: ' + blad.message })); return; }
     if (nr !== o.suwakiNr || o.suwaki.hidden) return;
     if (o.trzymaSuwak || (tlo && pisze(o))) { o.suwakiZalegle = true; return; }
-    const zasieg = o.dla;
+    // okno B stroi swój profil (nakładkę), okno A i każde inne: rzecz, dla której świat czyta
+    const zasieg = o.nakladka || o.dla;
     // Skąd jest wartość, słowami ręki: pierwsze ogniwo łańcucha to zasięg, w którym świat czyta (rzecz gościa albo,
     // gdy świat zacznie czytać dla okna, okno), ostatnie to obszar główny, czyli całe Miejsce.
     const ogniwa = u.lancuch || [];
     const ogniwo = new Map(ogniwa.map((z, i) => [z.id, { ...z, ostatnie: i === ogniwa.length - 1 }]));
-    const dlaCzego = (z) => (z && z.rodzaj === 'okno/1' ? 'tego okna' : z && z.rodzaj === 'gosc/1' ? 'tego świata' : '„' + ((z && z.nazwa) || 'tej rzeczy') + '”');
+    const dlaCzego = (z) => (z && z.rodzaj === 'okno/1' ? 'tego okna' : z && z.rodzaj === 'gosc/1' ? 'tego świata' : z && z.rodzaj === 'profil/1' && o.rola === 'B' ? 'okna B' : '„' + ((z && z.nazwa) || 'tej rzeczy') + '”');
     const tu = dlaCzego(ogniwo.get(zasieg));
-    const skadWyzej = (id) => { const z = ogniwo.get(id); return !z ? 'odziedziczone' : z.ostatnie ? 'wspólne dla całego Miejsca' : z.rodzaj === 'obszar/1' ? 'z obszaru „' + z.nazwa + '”' : 'z „' + z.nazwa + '”'; };
+    // w oknie B wartość ustawiona dla świata to po prostu to, co ma okno A
+    const skadWyzej = (id) => { const z = ogniwo.get(id); return !z ? 'odziedziczone' : o.rola === 'B' && z.rodzaj === 'gosc/1' ? 'jak w oknie A' : z.ostatnie ? 'wspólne dla całego Miejsca' : z.rodzaj === 'obszar/1' ? 'z obszaru „' + z.nazwa + '”' : 'z „' + z.nazwa + '”'; };
     // Pokrętło nie ma w kształcie osobnej etykiety: deklarujący pisze ludzką nazwę na początku opisu przed dwukropkiem
     // (tak deklaruje JV: „Moment napędu: …”); bez niej ręka widzi ostatni człon nazwy.
     const etykieta = (d) => { const m = /^([^:.]{2,40}):\s+(.+)$/s.exec(d.opis || ''); return m ? { nazwa: m[1], opis: m[2] } : { nazwa: d.nazwa.split('.').pop().replace(/_/g, ' '), opis: d.opis || '' }; };
@@ -432,7 +618,7 @@
         el('span', { klasa: 'skad' + (swoja ? ' swoja' : ''), tekst: skad + (x.z ? ', idzie za ' + x.z : '') }),
         pole,
         el('span', { klasa: 'czynnosci' },
-          swoja && klucz ? el('button', { tekst: 'wróć do domyślnego', title: 'Odłóż wartość ustawioną dla ' + tu + ': wraca wspólna albo domyślna', klik: async () => {
+          swoja && klucz ? el('button', { tekst: o.rola === 'B' ? 'wróć do A' : 'wróć do domyślnego', title: o.rola === 'B' ? 'Odłóż wartość okna B: wraca ta, którą ma okno A' : 'Odłóż wartość ustawioną dla ' + tu + ': wraca wspólna albo domyślna', klik: async () => {
             const r = await ruch({ co: 'odloz', rzecz: x.rzecz, wersja: 'dowolna', powod: 'powrót do wartości odziedziczonej' }, 'Wróciło dla „' + o.nazwa + '”: ' + d.nazwa + '.');
             if (r) rysujSuwaki(o);
           } }) : null,
