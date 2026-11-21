@@ -244,6 +244,17 @@ ul.ust { list-style: none; margin: 0; padding: 0; }
 /* czym B różni się od A w tej jeździe: pod zdaniem, cicho; pusta linia nie zajmuje miejsca */
 .ab .ab-roznica { margin: 0; font-size: .8rem; line-height: 1.3; color: var(--ciche); min-width: 0; font-variant-numeric: tabular-nums; }
 .ab .ab-roznica:empty { display: none; }
+/* wynik sprzed zmiany ustawień: przygaszony, a stan mówi, że trzeba jechać jeszcze raz (ślepa ręka, D7) */
+.ab .ab-tekst.nieaktualne .ab-zdanie, .ab .ab-tekst.nieaktualne .ab-roznica { opacity: .5; }
+.ab .ab-tekst.nieaktualne .ab-stan { color: var(--znak); }
+/* próby tej pary obok siebie (ślepa ręka, D9); guzik „Próby” rozciąga pas, żeby tabelę było widać bez przewijania */
+.ab .ab-proby:empty { display: none; }
+.ab .ab-proby { overflow-x: auto; min-width: 0; margin-top: .3rem; }
+.ab .ab-proby table { border-collapse: collapse; width: 100%; font-size: .78rem; font-variant-numeric: tabular-nums; }
+.ab .ab-proby th, .ab .ab-proby td { text-align: left; vertical-align: top; padding: .15rem .45rem .15rem 0; border-top: 1px solid var(--linia); }
+.ab .ab-proby th { color: var(--ciche); font-weight: 600; white-space: nowrap; }
+#okna.ab-duzy .ab { height: min(60vh, 32rem); }
+#okna.ab-duzy .okno.ab-a, #okna.ab-duzy .okno.ab-b { bottom: calc(3.6rem + min(60vh, 32rem) + .5rem); }
 .ab .ab-wykres svg { display: block; width: 100%; height: 100%; }
 .ab svg .os { stroke: var(--linia); stroke-width: 1; }
 .ab svg .skala { fill: var(--ciche); font-size: 8px; }
@@ -265,4 +276,7 @@ ul.ust { list-style: none; margin: 0; padding: 0; }
   .ab .ab-wykres { grid-column: 1; grid-row: 3; }
   /* na telefonie wiersz tekstu rośnie z treścią (min-height: auto), a przewija się cały pas; z min-height: 0 tekst wchodził pod wykres */
   .ab .ab-tekst { overflow: visible; min-height: auto; }
+  /* na telefonie pas i tak się przewija: „Próby” nie rozciąga go i nie rusza okien */
+  #okna.ab-duzy .ab { height: 12rem; }
+  #okna.ab-duzy .okno.ab-a, #okna.ab-duzy .okno.ab-b { bottom: auto; }
 }

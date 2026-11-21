@@ -203,6 +203,7 @@
     if (o.para && okna.has(o.para)) {
       const p = okna.get(o.para);
       p.para = null;
+      wyczyscWynikAB();
       if (o.rola === 'A') { zamknij(o.para); } else { p.rola = null; p.sekcja.querySelector('.pasek .rola')?.remove(); p.guzikAB.hidden = !(p.umie.includes('play') && p.gosc); p.guzik.textContent = p.nazwa; }
     }
     if (o.gosc && o.rola !== 'B') zapamietajOkno({ id: o.gosc.id, tytul: o.gosc.nazwa }, false);
@@ -268,7 +269,7 @@
   // „w suwakach”, bo tyle twarz wie: guzik w samej grze (np. Moc w JV) zmienia jazdę bez słowa do Jaskini (sonda 21 XI:
   // „2×” w grze B dało „B szybsze o 35%”, a suwaki A i B były te same). Co gra ustawiła sama, widać na pasku okna.
   const zdanieRoznicy = (rozne) => (!rozne ? '' : !rozne.length ? 'W suwakach B ma te same ustawienia co A.' : 'B różni się od A w suwakach: ' + rozne.slice(0, 8).map((r) => r.etykieta + ' ' + wartoscPL(r.b) + ' (A: ' + wartoscPL(r.a) + ')').join('; ') + (rozne.length > 8 ? '; i ' + (rozne.length - 8) + ' innych' : '') + '.');
-  const ab = { sekcja: null, para: null, trwa: false };
+  const ab = { sekcja: null, para: null, trwa: false, proby: [], aktualny: false };
   const sekundyProgramu = (p) => Math.round((p.odcinki || []).reduce((s, x) => s + (Number.isFinite(x.s) ? x.s : (Number(x.kroki) || 0) / 60), 0) * 10) / 10;
   let nrZadaniaAB = 0;
   // Ile ciszy znosimy po zwykłym limicie: JV mówi sygnały co 250 ms, a stan co sekundę, gdy się zmienia.
@@ -329,10 +330,13 @@
     ab.jedz = el('button', { klasa: 'glowny', tekst: 'Jedź tak samo w obu', title: 'Oba auta wracają na start i jadą wybrany przejazd', klik: () => jedzWObu(wybranyProgram()) });
     ab.powtorz = el('button', { tekst: 'Powtórz mój przejazd w obu', title: 'Twoja jazda od ostatniego startu w oknie, w którym jechałeś, odtworzona od startu w obu oknach', klik: () => powtorzWObu() });
     ab.zapisz = el('button', { tekst: 'Zapisz ten przejazd', hidden: true, title: 'Twoja jazda zostaje jako przejazd do wyboru, także dla agentów (rzecz przejazd/1)', klik: () => zapiszPrzejazd() });
+    // Próby w tej parze obok siebie (ślepa ręka, D9: każda jazda wymazywała poprzednią); guzik rozciąga pas, żeby było je widać
+    ab.guzikProby = el('button', { tekst: 'Próby', hidden: true, 'aria-expanded': 'false', title: 'Wszystkie próby tej pary obok siebie: przejazd, wynik i czym różniło się B', klik: () => { const t = !$('okna').classList.contains('ab-duzy'); $('okna').classList.toggle('ab-duzy', t); ab.guzikProby.setAttribute('aria-expanded', String(t)); } });
+    ab.tabela = el('div', { klasa: 'ab-proby' });
     ab.sekcja = el('section', { klasa: 'ab', hidden: true, 'aria-label': 'Porównanie okien A i B' },
       // guziki w jednym rzędzie; stan, zdanie i różnica w jednym bloku, który się przewija (z wyborem przejazdu stan
       // zawijał się pod guziki i zjadał miejsce zdaniu)
-      el('div', { klasa: 'ab-guziki' }, ab.wybor, ab.jedz, ab.powtorz, ab.zapisz), el('div', { klasa: 'ab-tekst' }, ab.stan, ab.zdanie, ab.roznica), ab.wykres);
+      el('div', { klasa: 'ab-guziki' }, ab.wybor, ab.jedz, ab.powtorz, ab.zapisz, ab.guzikProby), ab.tekst = el('div', { klasa: 'ab-tekst' }, ab.stan, ab.zdanie, ab.roznica, ab.tabela), ab.wykres);
     $('okna').append(ab.sekcja);
   }
   // Para A/B widoczna razem: okna stają obok siebie (na telefonie jedno pod drugim), a pod nimi pas porównania.
@@ -353,6 +357,7 @@
     const A = ab.para, B = A && okna.get(A.para);
     if (!A || !B || ab.trwa) return;
     ab.trwa = true; ab.jedz.disabled = true; ab.powtorz.disabled = true; ab.zapisz.hidden = true;
+    ab.tekst.classList.remove('nieaktualne'); ab.aktualny = false;
     const s = sekundyProgramu(program);
     ab.stan.textContent = 'Oba auta jadą od startu: ' + (program.nazwa || 'program') + ' (' + liczbaPL(s) + ' s)…';
     // wolne okno jedzie tak samo, tylko później: zwykły limit to trzy długości programu i start; po nim czekamy dalej na
@@ -378,7 +383,44 @@
     ab.zdanie.textContent = zdanieAB(pa.przebieg, pb.przebieg, program);
     ab.roznica.textContent = zdanieRoznicy(roznica);
     ab.wykres.replaceChildren(wykresAB(pa.przebieg, pb.przebieg));
+    dopiszProbe(pa.przebieg, pb.przebieg, program, roznica);
+    ab.aktualny = true;
+    // telefon: pas jest niski i przewija się cały, a wynik stał pod stanem, niewidoczny (ślepa ręka, D8): przewijamy do tekstu
+    ab.tekst.scrollTop = 0;
+    if (ab.sekcja.scrollHeight > ab.sekcja.clientHeight + 4) ab.sekcja.scrollTop = Math.max(0, ab.tekst.offsetTop - 6);
     return true;
+  }
+  // Jedna próba w tabeli: przejazd, prędkość po 3 s, droga na końcu, przechył i czym różniło się B (każdy wiersz mówi
+  // o swoich ustawieniach, więc zmiana suwaka nie robi z niego nieprawdy). Najwyżej dwanaście, najnowsza na górze.
+  function dopiszProbe(a, b, program, roznica) {
+    const ka = kolumnyAB(a), kb = kolumnyAB(b);
+    const blisko = (p, k) => (Array.isArray(p.probki) && p.probki.length ? p.probki.reduce((naj, r) => (Math.abs(r[k.t] - CHWILA_AB) < Math.abs(naj[k.t] - CHWILA_AB) ? r : naj)) : null);
+    const ra = blisko(a, ka), rb = blisko(b, kb);
+    const va = ra ? Math.abs(ra[ka.v]) : NaN, vb = rb ? Math.abs(rb[kb.v]) : NaN;
+    const wynik = a.skrot && a.skrot === b.skrot ? 'tak samo' : !(va > 0.05) ? 'A stoi, B ' + ileAB(vb) + ' km/h' : 'B ' + (vb >= va ? '+' : '−') + ileAB(Math.abs((vb / va - 1) * 100), 0) + '% (' + ileAB(vb) + ' / ' + ileAB(va) + ' km/h)';
+    const ea = a.koniec || {}, eb = b.koniec || {};
+    const stopnie = (x) => (Number.isFinite(x) ? ileAB(x, 0) + '°' + (x >= PRZEWROTKA_ST ? ' (leży)' : '') : '?');
+    ab.proby.unshift({ kiedy: godzinaTeraz(), przejazd: program.nazwa || 'przejazd', wynik, koniec: 'B ' + ileAB(eb.odleglosc_m) + ' · A ' + ileAB(ea.odleglosc_m) + ' m', przechyl: 'B ' + stopnie(b.przechyl_max_st) + ' · A ' + stopnie(a.przechyl_max_st), roznica: !roznica ? '?' : !roznica.length ? 'te same' : roznica.slice(0, 4).map((r) => r.etykieta + ' ' + wartoscPL(r.b) + ' (A: ' + wartoscPL(r.a) + ')').join('; ') });
+    ab.proby.length = Math.min(ab.proby.length, 12);
+    ab.guzikProby.hidden = false;
+    ab.guzikProby.textContent = 'Próby (' + ab.proby.length + ')';
+    const KOL = [['kiedy', 'kiedy'], ['przejazd', 'przejazd'], ['wynik', 'po 3 s'], ['koniec', 'na końcu'], ['przechyl', 'przechył'], ['roznica', 'B różni się w suwakach']];
+    ab.tabela.replaceChildren(el('table', {}, el('thead', {}, el('tr', {}, ...KOL.map(([, n]) => el('th', { tekst: n })))), el('tbody', {}, ...ab.proby.map((w) => el('tr', {}, ...KOL.map(([k]) => el('td', { tekst: w[k] })))))));
+  }
+  // Wynik ostatniej jazdy przestaje być prawdą, gdy zmienią się ustawienia pary (ślepa ręka, D7: po ponownym otwarciu B
+  // pas mówił „te same ustawienia”, a B miało moc 7). Mówimy to i przygaszamy zdanie; tabela prób zostaje, bo każdy
+  // wiersz ma swoje ustawienia.
+  function oznaczNieaktualne() {
+    if (!ab.tekst || !ab.aktualny || ab.trwa) return;
+    ab.aktualny = false;
+    ab.tekst.classList.add('nieaktualne');
+    ab.stan.textContent = 'Ustawienia zmieniły się po tej jeździe: wynik niżej jest sprzed zmiany. Jedź jeszcze raz.';
+  }
+  function wyczyscWynikAB() {
+    if (!ab.tekst) return;
+    ab.aktualny = false; ab.mojPrzejazd = null; ab.zapisz.hidden = true;
+    ab.tekst.classList.remove('nieaktualne');
+    ab.stan.textContent = ''; ab.zdanie.textContent = ''; ab.roznica.textContent = ''; ab.wykres.replaceChildren();
   }
   // Jazda ręki zostaje jako przejazd/1: wraca w wyborze przy następnym porównaniu (też w innych ustawieniach) i agent
   // może ją przeczytać. Nazwa z godziną, jak kopia presetu; długa jazda nie mieści się w jednej rzeczy, więc mówimy to wprost.
@@ -388,7 +430,8 @@
     const program = { schemat: 'wejscie/1', nazwa: p.nazwa, odcinki: p.odcinki };
     const znaki = JSON.stringify(program).length;
     if (znaki > NAJWIEKSZY_PRZEJAZD_ZNAKI) { komunikat('Ten przejazd ma ' + p.odcinki.length + ' odcinków, a jedna rzecz zmieści najwyżej ok. ' + liczbaPL(NAJWIEKSZY_PRZEJAZD_ZNAKI / 1000) + ' tys. znaków. Krótsza jazda się zapisze.', true); return; }
-    const nazwa = 'Mój przejazd, ' + godzinaTeraz() + ' (' + liczbaPL(sekundyProgramu(program)) + ' s)';
+    // bez sekund w nazwie: wybór dopisuje je sam (było „(3 s) (3 s)”, ślepa ręka, trzecie przejście)
+    const nazwa = 'Mój przejazd, ' + godzinaTeraz();
     const r = await ruch({ co: 'poloz', rodzaj: 'przejazd/1', cechy: { nazwa, opis: 'Jazda ręki nagrana w oknie świata i puszczona w obu oknach A/B.', program: { ...program, nazwa } } }, 'Przejazd „' + nazwa + '” zapisany: jest w wyborze przejazdów.');
     if (!r || !r.rzecz) return;
     ab.zapisz.hidden = true;
@@ -749,7 +792,7 @@
     const fokus = o.suwaki.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null;
     // replaceChildren zamienia null na napis "null": puste miejsca odsiewamy jak el()
     o.suwaki.replaceChildren(...[
-      el('p', { klasa: 'bok', tekst: !zasieg ? 'Ten świat czyta pokrętła dla całego Miejsca: stroisz je w panelu ustawień, tu tylko je widać.' : !klucz ? 'Żeby stroić, wejdź (guzik „Wejdź” na górze).' : 'Strojenie tylko dla ' + tu + '. Zapis przy puszczeniu suwaka albo po wpisaniu liczby; liczba może wyjść poza suwak.' }),
+      el('p', { klasa: 'bok', tekst: !zasieg ? 'Ten świat czyta pokrętła dla całego Miejsca: stroisz je w panelu ustawień, tu tylko je widać.' : !klucz ? 'Żeby stroić, wejdź (guzik „Wejdź” na górze).' : (o.rola === 'A' ? 'Strojenie okna A, czyli tego świata: okno B bierze te wartości, jeśli nie ma własnych.' : 'Strojenie tylko dla ' + tu + '.') + ' Zapis przy puszczeniu suwaka albo po wpisaniu liczby; liczba może wyjść poza suwak.' }),
       presety,
       ...[...grupy].map(([g, lista]) => {
         const det = el('details', { klasa: 'grupa', open: o.zwiniete.has(g) ? null : true },
@@ -1762,6 +1805,11 @@
       rzeczy = [...s.rzeczy.filter((r) => !r.odlozone), ...rzeczy.filter((r) => !zmienione.has(r.id))];
       // nowy albo odłożony przejazd/1 (np. zapisany w drugiej karcie) od razu w wyborze przejazdów pary A/B
       if (ab.wybor && s.rzeczy.some((r) => r.rodzaj === 'przejazd/1')) rysujWybor();
+      // pokrętło, które czyta para, albo preset zmienił się po jeździe: wynik jest sprzed zmiany
+      if (ab.aktualny && ab.para) {
+        const A = ab.para, B = okna.get(A.para), czyta = new Set([...A.czyta, ...(B ? B.czyta : [])]);
+        if (s.rzeczy.some((r) => (r.rodzaj === 'wartosc/1' && r.cechy && (czyta.has(r.cechy.pokretlo) || r.cechy.pokretlo === ZESTAWY)) || r.rodzaj === 'zestaw/1')) oznaczNieaktualne();
+      }
     }
     // Opis Miejsca jest najdroższym czytaniem, a po każdej zmianie czytała go każda otwarta strona (dowody środowiska,
     // fala 9, punkt D). Od razu czytamy go tylko wtedy, gdy zmieniło się to, na co ręka ma odpowiedzieć, albo to,
