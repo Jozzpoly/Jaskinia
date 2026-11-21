@@ -31,7 +31,8 @@ export class Miejsce {
     // Każde zapytanie do bazy dolicza swoje wiersze do licznika: z niego jest koszt żądania i suma doby (budzet.mjs).
     this.sql = liczacySql(ctx.storage.sql);
     // Kto jest właścicielem, mówi ustawienie Workera (WLASCICIEL), nie kod.
-    this.rdzen = new Rdzen(this.sql, { wlasciciel: env.WLASCICIEL });
+    // Czynność pisząca wiele wierszy idzie w transakcji obiektu: wyjątek w połowie cofa całą (jądro, wTransakcji).
+    this.rdzen = new Rdzen(this.sql, { wlasciciel: env.WLASCICIEL, transakcja: typeof ctx.storage.transactionSync === 'function' ? (fn) => ctx.storage.transactionSync(fn) : null });
     this.srod = new Srodowisko(this.rdzen);
     // Dobowy limit zapisów tego Miejsca (BUDZET_ZAPISOW_NA_DOBE); bez ustawienia Miejsce tylko liczy.
     this.budzet = new Budzet(this.rdzen, this.sql.licznik, { limit: env.BUDZET_ZAPISOW_NA_DOBE });

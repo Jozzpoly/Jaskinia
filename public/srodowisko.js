@@ -151,14 +151,26 @@
     // ślad pisania: ile razy narzędzie w tym oknie coś zapisało albo zaproponowało (ruch z okna, umowa okno/3)
     const sladOkna = el('span', { klasa: 'slad-okna' });
     const tyt = el('span', { klasa: 'tytul', tekst: tytul });
+    // Suwaki świata obok okna (krok 3 serca domu, Opus czatu, 21 XI 2026): pokrętła, które ten świat sam czyta
+    // z Jaskini, w zasięgu, z którym je czyta. Guzik pojawia się dopiero, gdy świat o coś zapyta.
+    const suwaki = el('aside', { klasa: 'suwaki', hidden: true, 'aria-label': 'Suwaki świata' });
+    const guzikSuwakow = el('button', { tekst: 'suwaki', hidden: true, 'aria-pressed': 'false', title: 'Pokrętła, które ten świat czyta z Jaskini: strojenie tylko dla niego', klik: () => przelaczSuwaki(id) });
+    suwaki.addEventListener('pointerdown', () => { const o = okna.get(id); if (o) o.trzymaSuwak = true; });
+    // wyjście z pola: to, co przyszło w trakcie pisania, rysuje się teraz
+    suwaki.addEventListener('focusout', () => setTimeout(() => { const o = okna.get(id); if (o && o.suwakiZalegle && !o.trzymaSuwak && !pisze(o)) { o.suwakiZalegle = false; rysujSuwaki(o); } }, 0));
     const sekcja = el('section', { klasa: 'okno', 'aria-label': tytul },
       el('div', { klasa: 'pasek' }, tyt, mowi, sladOkna,
+        guzikSuwakow,
         el('a', { klasa: 'guzik', href: adres, target: '_blank', rel: 'noopener', tekst: 'nowa karta' }),
         el('button', { tekst: 'zwiń', title: 'Zwiń do guzika na dole; okno zostaje załadowane', klik: () => pokaz(id, false) }),
         el('button', { tekst: '×', title: 'Zamknij okno', klik: () => zamknij(id) })),
-      ramka);
+      el('div', { klasa: 'tresc' }, ramka, suwaki));
+    // Mowa świata pod oknem (krok 2 serca domu, Opus czatu, 21 XI 2026): sygnały z małym wykresem i ostatnie
+    // zdarzenie. Pas jest pusty i schowany, dopóki świat nic nie powie, więc nic tu nie udaje życia.
+    const mowa = el('div', { klasa: 'mowa', hidden: true, 'aria-live': 'off' });
+    sekcja.append(mowa);
     const guzik = el('button', { tekst: tytul, klik: () => pokaz(id, sekcja.hidden) });
-    okna.set(id, { klucz, ramka, sekcja, guzik, tyt, mowi, gosc, chce: [], nazwa: tytul, slad: sladOkna, zapisy: 0, propozycje: 0 });
+    okna.set(id, { klucz, ramka, sekcja, guzik, tyt, mowi, gosc, chce: [], nazwa: tytul, slad: sladOkna, zapisy: 0, propozycje: 0, mowa, sygnaly: new Map(), zdarzenia: [], rysujMowe: 0, suwaki, guzikSuwakow, czyta: new Set(), dla: null, suwakiNr: 0, trzymaSuwak: false, suwakiZalegle: false, zwiniete: new Set() });
     ramka.addEventListener('load', () => { if (!ramka.contentWindow) return; ramka.contentWindow.postMessage({ jaskinia: 1, type: 'hi', v: 2, umowy: ['okno/2', 'okno/3'], umie: ['look'] }, '*'); powiedzWyglad(okna.get(id)); });
     $('okna').append(sekcja);
     $('dok').append(guzik);
@@ -220,6 +232,9 @@
           const nazwy = Array.isArray(m.nazwy) ? m.nazwy.filter((n) => typeof n === 'string' && /^[a-z0-9_.]{3,250}$/.test(n)).slice(0, 200) : [];
           const d = await czytajOknem(o, '/api/srodowisko/ustawienia?nazwy=' + nazwy.join(',') + (typeof m.dla === 'string' && /^[0-9a-z]{26}$/.test(m.dla) ? '&dla=' + m.dla : ''));
           dane = { wartosci: d.wartosci, akt: d.akt, format: d.format };
+          for (const n of nazwy) if (o.czyta.size < 64) o.czyta.add(n);
+          if (typeof m.dla === 'string' && /^[0-9a-z]{26}$/.test(m.dla)) o.dla = m.dla;
+          if (o.czyta.size) o.guzikSuwakow.hidden = false;
         } else throw new Error('nie znam takiego czytania: ' + String(m.what) + '; znane: spis, rzecz, ksztalty, ja, ustawienia');
         odp({ type: 'result', id: m.id, ok: true, data: dane });
       } catch (blad) { odp({ type: 'result', id: m.id, ok: false, error: String(blad && blad.message || blad).slice(0, 300) }); }
@@ -246,8 +261,341 @@
         dogon().catch(() => {});
       } catch (err) { zle('nie udało się połączyć: ' + String(err && err.message || err).slice(0, 200)); }
     }
-    // signals, event, flag i wszystko nieznane: na razie pomijamy bez błędu (umowa okna, pokolenia 2 i 3)
+    else if (m.type === 'signals') przyjmijSygnaly(o, m.values);
+    else if (m.type === 'event') przyjmijZdarzenie(o, m.text, m.level);
+    else if (m.type === 'flag') przyjmijZdarzenie(o, m.text || m.label || 'znacznik', 'flag');
+    // wszystko nieznane: pomijamy bez błędu (umowa okna, pokolenia 2 i 3)
   });
+  // Mowa świata. Wszystko, co przychodzi z ramki, jest cudzym tekstem: tylko textContent, twarde granice liczby
+  // i długości, a rysowanie najwyżej cztery razy na sekundę, żeby szybki świat nie zjadał ręki.
+  const NAJWIECEJ_SYGNALOW = 8, PROBEK = 90, ZDARZEN = 8;
+  function przyjmijSygnaly(o, wartosci) {
+    if (!wartosci || typeof wartosci !== 'object' || Array.isArray(wartosci)) return;
+    for (const [k0, w] of Object.entries(wartosci)) {
+      const k = String(k0).slice(0, 40);
+      if (!o.sygnaly.has(k) && o.sygnaly.size >= NAJWIECEJ_SYGNALOW) continue;
+      const s = o.sygnaly.get(k) || { probki: [], tekst: null };
+      if (typeof w === 'number' && Number.isFinite(w)) { s.probki.push(w); if (s.probki.length > PROBEK) s.probki.shift(); s.tekst = null; }
+      else if (typeof w === 'string' || typeof w === 'boolean') s.tekst = String(w).slice(0, 40);
+      else continue;
+      o.sygnaly.set(k, s);
+    }
+    zaplanujMowe(o);
+  }
+  function przyjmijZdarzenie(o, tekst, poziom) {
+    if (typeof tekst !== 'string' || !tekst.trim()) return;
+    // Umowa okna mówi info, uwaga, blad (tak mówi JV); przyrząd starej Jaskini mówił warn i error. Oba znaczą to samo.
+    const p = { info: 'info', uwaga: 'warn', warn: 'warn', blad: 'error', error: 'error', flag: 'flag' }[poziom] || 'info';
+    o.zdarzenia.unshift({ tekst: tekst.trim().slice(0, 160), poziom: p, kiedy: new Date() });
+    o.zdarzenia.length = Math.min(o.zdarzenia.length, ZDARZEN);
+    zaplanujMowe(o);
+  }
+  function zaplanujMowe(o) {
+    if (o.rysujMowe) return;
+    o.rysujMowe = setTimeout(() => { o.rysujMowe = 0; rysujMowe(o); }, 250);
+  }
+  const liczbaPL = (x) => x.toLocaleString('pl-PL', { maximumFractionDigits: Math.abs(x) >= 100 ? 0 : 2 });
+  function wykres(probki) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 64 16'); svg.setAttribute('aria-hidden', 'true');
+    if (probki.length < 2) return svg;
+    const mn = Math.min(...probki), mx = Math.max(...probki), r = mx - mn;
+    const pkt = probki.map((v, i) => `${(i / (probki.length - 1) * 64).toFixed(1)},${(r ? 15 - (v - mn) / r * 14 : 8).toFixed(1)}`).join(' ');
+    const l = document.createElementNS(NS, 'polyline'); l.setAttribute('points', pkt);
+    svg.append(l);
+    return svg;
+  }
+  function rysujMowe(o) {
+    if (!o.mowa.isConnected) return;
+    const syg = [...o.sygnaly].map(([k, s]) => el('span', { klasa: 'syg', title: s.probki.length ? `${k}: ostatnie ${s.probki.length} próbek` : k },
+      el('span', { klasa: 'syg-nazwa', tekst: k }),
+      el('span', { klasa: 'syg-wartosc', tekst: s.tekst !== null ? s.tekst : (s.probki.length ? liczbaPL(s.probki[s.probki.length - 1]) : '–') }),
+      s.tekst === null && s.probki.length > 1 ? wykres(s.probki) : null));
+    const z = o.zdarzenia[0];
+    const zd = z ? el('span', { klasa: 'zdarzenie ' + z.poziom, title: o.zdarzenia.map((x) => `${x.kiedy.toLocaleTimeString('pl-PL')} ${x.tekst}`).join('\n'),
+      tekst: (z.poziom === 'flag' ? '⚑ ' : '') + z.tekst }) : null;
+    o.mowa.replaceChildren(...syg, zd || '');
+    o.mowa.hidden = !syg.length && !zd;
+  }
+  // Suwaki świata: pokrętła, które świat sam czyta (read ustawienia), w zasięgu, z którym je czyta (dla: zwykle jego
+  // własna rzecz gościa), więc strojenie dotyczy tylko tego świata. Pole to samo co w panelu ustawień (suwak i liczba:
+  // zakres suwaka nie jest granicą, reguła właściciela z JV, 9 VII), zapis przy puszczeniu. Świat słyszy "changed"
+  // (dogon po zapisie mówi to gościom, którzy chcą rzeczy) i sam czyta nowe wartości.
+  function przelaczSuwaki(id) {
+    const o = okna.get(id);
+    if (!o) return;
+    o.suwaki.hidden = !o.suwaki.hidden;
+    o.guzikSuwakow.classList.toggle('widoczne', !o.suwaki.hidden);
+    o.guzikSuwakow.setAttribute('aria-pressed', String(!o.suwaki.hidden));
+    if (!o.suwaki.hidden) rysujSuwaki(o);
+  }
+  // Ustawienia w Miejscu zmieniły się gdzie indziej (inna karta, agent, zestaw): otwarte suwaki czytają od nowa.
+  const odswiezSuwaki = () => { for (const o of okna.values()) if (!o.suwaki.hidden) rysujSuwaki(o, { tlo: true }); };
+  // Ręka pisze w polu panelu (liczba, nazwa presetu, wybór): odświeżenie z tła czeka, aż wyjdzie z pola, żeby nie
+  // zgubić tego, co wpisuje (ślepa ręka i próby 21 XI: panel przerysowany w trakcie pisania gubił wpisane znaki).
+  const pisze = (o) => { const a = document.activeElement; return !!a && o.suwaki.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && a.type !== 'range'; };
+  // Puszczenie suwaka gdziekolwiek (także poza ramką panelu): to, co przyszło w trakcie, rysuje się teraz.
+  const puscSuwaki = () => { for (const o of okna.values()) if (o.trzymaSuwak) { o.trzymaSuwak = false; if (o.suwakiZalegle) { o.suwakiZalegle = false; rysujSuwaki(o); } } };
+  addEventListener('pointerup', puscSuwaki);
+  addEventListener('pointercancel', puscSuwaki);
+  async function rysujSuwaki(o, { tlo = false } = {}) {
+    const nazwy = [...o.czyta];
+    if (!nazwy.length || o.suwaki.hidden) return;
+    // ręka trzyma suwak: nie podmieniamy go pod palcem, tylko rysujemy po puszczeniu
+    if (o.trzymaSuwak || (tlo && pisze(o))) { o.suwakiZalegle = true; return; }
+    const nr = ++o.suwakiNr;
+    let u;
+    // razem z pokrętłami świata: lista zestawów włączonych w jego zasięgu (który preset jest jego)
+    try { u = await czytaj('/api/srodowisko/ustawienia?deklaracje=tak&nazwy=' + [...nazwy, ZESTAWY].join(',') + (o.dla ? '&dla=' + o.dla : '')); }
+    catch (blad) { if (nr === o.suwakiNr) o.suwaki.replaceChildren(el('p', { klasa: 'bok', tekst: 'Nie udało się przeczytać pokręteł: ' + blad.message })); return; }
+    if (nr !== o.suwakiNr || o.suwaki.hidden) return;
+    if (o.trzymaSuwak || (tlo && pisze(o))) { o.suwakiZalegle = true; return; }
+    const zasieg = o.dla;
+    // Skąd jest wartość, słowami ręki: pierwsze ogniwo łańcucha to zasięg, w którym świat czyta (rzecz gościa albo,
+    // gdy świat zacznie czytać dla okna, okno), ostatnie to obszar główny, czyli całe Miejsce.
+    const ogniwa = u.lancuch || [];
+    const ogniwo = new Map(ogniwa.map((z, i) => [z.id, { ...z, ostatnie: i === ogniwa.length - 1 }]));
+    const dlaCzego = (z) => (z && z.rodzaj === 'okno/1' ? 'tego okna' : z && z.rodzaj === 'gosc/1' ? 'tego świata' : '„' + ((z && z.nazwa) || 'tej rzeczy') + '”');
+    const tu = dlaCzego(ogniwo.get(zasieg));
+    const skadWyzej = (id) => { const z = ogniwo.get(id); return !z ? 'odziedziczone' : z.ostatnie ? 'wspólne dla całego Miejsca' : z.rodzaj === 'obszar/1' ? 'z obszaru „' + z.nazwa + '”' : 'z „' + z.nazwa + '”'; };
+    // Pokrętło nie ma w kształcie osobnej etykiety: deklarujący pisze ludzką nazwę na początku opisu przed dwukropkiem
+    // (tak deklaruje JV: „Moment napędu: …”); bez niej ręka widzi ostatni człon nazwy.
+    const etykieta = (d) => { const m = /^([^:.]{2,40}):\s+(.+)$/s.exec(d.opis || ''); return m ? { nazwa: m[1], opis: m[2] } : { nazwa: d.nazwa.split('.').pop().replace(/_/g, ' '), opis: d.opis || '' }; };
+    // kolejność świata: tak, jak sam pyta o swoje pokrętła (grupy w kolejności pierwszego pokrętła), nie alfabet
+    const kolejnosc = new Map(nazwy.map((x, i) => [x, i]));
+    const grupy = new Map();
+    for (const d of [...(u.deklaracje || [])].filter((d) => o.czyta.has(d.nazwa)).sort((a, b) => (kolejnosc.get(a.nazwa) ?? 1e9) - (kolejnosc.get(b.nazwa) ?? 1e9))) { const g = d.grupa || 'Inne'; if (!grupy.has(g)) grupy.set(g, []); grupy.get(g).push(d); }
+    // Preset świata (jego droga z 18 XI: bierze domyślny, kopiuje, nazywa, psuje, zapisuje punkt, wraca): zestaw włączony
+    // wprost w zasięgu świata; ostatni na liście wygrywa. Gdy jest, suwaki piszą w niego, a nie w wartość świata.
+    const zs = (u.wartosci || {})[ZESTAWY];
+    const wlasnaLista = zs && zs.skad === 'wartosc' && zs.zasieg === zasieg && Array.isArray(zs.wartosc) ? zs.wartosc : [];
+    const aktywnyId = wlasnaLista.length ? wlasnaLista[wlasnaLista.length - 1] : null;
+    const aktywny = aktywnyId ? rzeczy.find((r) => r.id === aktywnyId && r.rodzaj === 'zestaw/1') || null : null;
+    const wiersz = (d) => {
+      const x = (u.wartosci || {})[d.nazwa] || { wartosc: d.domyslna, skad: 'domyslna' };
+      const swoja = !!zasieg && x.skad === 'wartosc' && x.zasieg === zasieg;
+      const wPresecie = !!aktywny && !!aktywny.cechy.wartosci && Object.hasOwn(aktywny.cechy.wartosci, d.nazwa);
+      const skad = (swoja ? 'ustawione dla ' + tu + (wPresecie ? ' (ważniejsze niż preset)' : '')
+        : x.skad === 'wartosc' ? skadWyzej(x.zasieg)
+          : x.skad === 'zestaw' ? 'z presetu „' + x.zestaw + '”' : x.skad === 'brak' ? 'brak wartości' : 'domyślne')
+        // ile wynosi domyślna, żeby „wróć do domyślnego” nie było skokiem w nieznane (ślepa ręka, 21 XI: C6)
+        + (x.skad === 'domyslna' ? '' : ' · domyślnie ' + pokazWartosc(d.domyslna, d.jednostka));
+      const e = etykieta(d);
+      // Z aktywnym presetem suwak pisze w preset (nowa wersja zestawu z tą jedną zmianą), chyba że świat ma tu własną
+      // wartość: ta jest ważniejsza niż preset, więc pisanie w preset nic by nie zmieniło.
+      const doPresetu = aktywny && !swoja ? async (w) => {
+        const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
+        return ruch({ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, wartosci: { ...p.cechy.wartosci, [d.nazwa]: w } } }, 'Zmienione w presecie „' + p.cechy.nazwa + '”: ' + d.nazwa + '.');
+      } : null;
+      // ten sam zapis co suwak (w preset albo w wartość świata), dla powrotu do wartości z historii
+      const ustawTo = async (w) => { const r = doPresetu ? await doPresetu(w) : await ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, zasieg, wartosc: w } }, 'Ustawione dla „' + o.nazwa + '”: ' + d.nazwa + '.'); if (r) rysujSuwaki(o); return r; };
+      const pole = PROSTE.includes(d.typ) && zasieg
+        ? poleUstawienia(d, x, { zasieg, zapis: doPresetu, potem: () => rysujSuwaki(o), zdanie: 'Ustawione dla „' + o.nazwa + '”: ' + d.nazwa + '.' })
+        : el('span', { klasa: 'bok', tekst: zasieg ? 'typ ' + d.typ + ': zmiana ruchem, opis pod /ustawienia' : String(x.wartosc) });
+      const wyjmij = wPresecie && klucz && !swoja ? el('button', { tekst: 'wyjmij z presetu', title: 'Preset przestaje ustawiać to pokrętło: wraca wartość spoza presetu', klik: async () => {
+        const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
+        const reszta = { ...p.cechy.wartosci };
+        delete reszta[d.nazwa];
+        const r = await ruch({ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, wartosci: reszta } }, 'Wyjęte z presetu „' + p.cechy.nazwa + '”: ' + d.nazwa + '.');
+        if (r) rysujSuwaki(o);
+      } }) : null;
+      return el('li', { klasa: 'suwak', title: d.nazwa + (d.opis ? '\n' + d.opis : '') },
+        el('span', { klasa: 'nazwa', tekst: e.nazwa }),
+        e.opis ? el('span', { klasa: 'opis', tekst: e.opis, tabindex: '0', title: 'Dotknij, żeby zobaczyć cały opis', klik: (ev) => ev.currentTarget.classList.toggle('caly') }) : null,
+        el('span', { klasa: 'skad' + (swoja ? ' swoja' : ''), tekst: skad + (x.z ? ', idzie za ' + x.z : '') }),
+        pole,
+        el('span', { klasa: 'czynnosci' },
+          swoja && klucz ? el('button', { tekst: 'wróć do domyślnego', title: 'Odłóż wartość ustawioną dla ' + tu + ': wraca wspólna albo domyślna', klik: async () => {
+            const r = await ruch({ co: 'odloz', rzecz: x.rzecz, wersja: 'dowolna', powod: 'powrót do wartości odziedziczonej' }, 'Wróciło dla „' + o.nazwa + '”: ' + d.nazwa + '.');
+            if (r) rysujSuwaki(o);
+          } }) : null,
+          wyjmij,
+          x.rzecz ? el('button', { klasa: 'historia', tekst: 'historia', 'aria-expanded': 'false', title: 'Ostatnie wartości: ile, kto i kiedy; do każdej da się wrócić', klik: (ev) => przelaczHistorie(ev.currentTarget, x.rzecz, d, zasieg && klucz && PROSTE.includes(d.typ) ? ustawTo : null) }) : null),
+        el('div', { klasa: 'historia-lista', hidden: true }));
+    };
+    const presety = zasieg ? sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, wartosci: u.wartosci || {}, deklaracje: (u.deklaracje || []).filter((d) => o.czyta.has(d.nazwa)) }) : null;
+    const fokus = o.suwaki.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null;
+    // replaceChildren zamienia null na napis "null": puste miejsca odsiewamy jak el()
+    o.suwaki.replaceChildren(...[
+      el('p', { klasa: 'bok', tekst: !zasieg ? 'Ten świat czyta pokrętła dla całego Miejsca: stroisz je w panelu ustawień, tu tylko je widać.' : !klucz ? 'Żeby stroić, wejdź (guzik „Wejdź” na górze).' : 'Strojenie tylko dla ' + tu + '. Zapis przy puszczeniu suwaka albo po wpisaniu liczby; liczba może wyjść poza suwak.' }),
+      presety,
+      ...[...grupy].map(([g, lista]) => {
+        const det = el('details', { klasa: 'grupa', open: o.zwiniete.has(g) ? null : true },
+          el('summary', {}, el('span', { klasa: 'g', tekst: g }), ' ', el('span', { klasa: 'ile', tekst: String(lista.length) })),
+          el('ul', {}, lista.map(wiersz)));
+        det.addEventListener('toggle', () => { if (det.open) o.zwiniete.delete(g); else o.zwiniete.add(g); });
+        return det;
+      }),
+      (u.deklaracje || []).length ? null : el('p', { klasa: 'bok', tekst: 'Świat czyta pokrętła, których Miejsce nie zna: ' + nazwy.join(', ') + '.' })].filter(Boolean));
+    if (fokus) { const e = [...o.suwaki.querySelectorAll('[aria-label]')].find((x) => x.getAttribute('aria-label') === fokus); if (e) e.focus(); }
+  }
+  // Sekcja presetu w panelu świata. Wszystko na ruchach, które grunt już ma: zestaw/1 (preset), srodowisko.zestawy
+  // w zasięgu świata (który jest włączony), kopiuj (z pochodzeniem), punkt/1 i wroc-do-punktu, domyslny (wróć do źródła).
+  // Czynność z kilku ruchów idzie jednym gestem, a guzik „cofnij” w sekcji presetu cofa ją całą (co: cofnij-gest).
+  const ZESTAWY = 'srodowisko.zestawy';
+  const POCZATEK = 'początek presetu';
+  const pokazWartosc = (w, jednostka) => (typeof w === 'number' ? liczbaPL(w) : String(w)) + (jednostka ? ' ' + jednostka : '');
+  // Kilka ruchów jako jeden gest ręki (cofają się razem: co: cofnij-gest). Idą po kolei tymi samymi drzwiami; element
+  // listy może być funkcją wyników poprzednich (np. identyfikator nowego presetu). Pierwsza odmowa zatrzymuje resztę.
+  async function ruchyGestem(lista, dobrze, o = null, opisCzynnosci = '') {
+    if (!klucz) { komunikat('Żeby coś zmienić, najpierw wejdź: guzik "Wejdź" na górze strony.', true); return null; }
+    const gest = 'reka-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const wyniki = [];
+    for (const krok of lista) {
+      const cialo = typeof krok === 'function' ? await krok(wyniki) : krok;
+      if (!cialo) continue;
+      let d = null;
+      try {
+        const o = await fetch('/api/srodowisko/ruch', { method: 'POST', headers: naglowki({ 'content-type': 'application/json', 'x-cialo': 'strona gospodarza' }), body: JSON.stringify({ op: nowyOp(), gest, ...cialo }) });
+        d = await o.json().catch(() => null);
+        if (!o.ok || !d || d.ok === false) { komunikat(((d && d.blad) || 'Drzwi odpowiedziały: ' + o.status) + (wyniki.length ? ' (to, co zdążyło się zapisać, cofa guzik „cofnij” w sekcji presetu)' : ''), true); d = null; }
+      } catch (blad) { komunikat('Nie udało się połączyć: ' + blad.message, true); }
+      if (!d) { if (o && wyniki.length) o.ostatniGest = { gest, opis: (opisCzynnosci || dobrze) + ' (przerwane)' }; try { await dogon(); } catch { /* strona dogoni przy następnej zmianie */ } return null; }
+      wyniki.push(d);
+    }
+    // ostatnia czynność z wielu ruchów w tym oknie da się cofnąć w całości guzikiem w sekcji presetu
+    if (o) o.ostatniGest = { gest, opis: opisCzynnosci || dobrze };
+    try { await dogon(); if (kr.id) await odswiezKarte(); } catch { /* jak wyżej */ }
+    komunikat(dobrze);
+    return wyniki;
+  }
+  // Historia jednej wartości w miejscu: ostatnie pięć wersji, ile, kto i kiedy (zamiast gołej strony rzeczy).
+  // godzina zamiast „przed chwilą”: przy kilku wpisach z jednej minuty względny czas nic nie mówi (ślepa ręka 2, C6)
+  const zegar = (iso) => { const t = new Date(iso); if (!Number.isFinite(t.getTime())) return ''; const dzis = new Date().toDateString() === t.toDateString(); return (dzis ? '' : t.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) + ' ') + t.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
+  async function przelaczHistorie(guzik, rzeczId, d, ustawTo = null) {
+    const lista = guzik.closest('li.suwak').querySelector('.historia-lista');
+    if (!lista.hidden) { lista.hidden = true; guzik.setAttribute('aria-expanded', 'false'); return; }
+    lista.hidden = false; guzik.setAttribute('aria-expanded', 'true');
+    lista.replaceChildren(el('p', { klasa: 'bok', tekst: 'czytam…' }));
+    try {
+      const r = await czytaj('/api/srodowisko/rzecz?id=' + rzeczId);
+      // Wersja presetu zmienia się też wtedy, gdy rusza się inne pokrętło albo nazwa: pokazujemy tylko te wersje, w których
+      // zmieniło się TO pokrętło (przeglądamy najwyżej 12 ostatnich wersji, żeby jedno dotknięcie nie było drogie).
+      const ost = (r.historia || []).slice(-12);
+      const wart = await Promise.all(ost.map(async (h) => {
+        try { const v = await czytaj('/api/srodowisko/wersja?id=' + rzeczId + '&akt=' + h.akt); const c = v.wersja && v.wersja.cechy; return c ? (c.wartosci && typeof c.wartosci === 'object' ? c.wartosci[d.nazwa] : c.wartosc) : undefined; } catch { return undefined; }
+      }));
+      const zmiany = [];
+      for (let i = ost.length - 1; i >= 0 && zmiany.length < 5; i--) if (i === 0 || JSON.stringify(wart[i]) !== JSON.stringify(wart[i - 1])) zmiany.push({ h: ost[i], w: wart[i] });
+      const wiersze = zmiany.map(({ h, w }, i) => el('li', {},
+        el('span', { klasa: 'w', tekst: w === undefined ? (r.rzecz.rodzaj === 'zestaw/1' ? 'bez tego pokrętła' : '—') : pokazWartosc(w, d.jednostka) }),
+        el('span', { klasa: 'kto', tekst: h.kto + ' · ' + zegar(h.kiedy) }),
+        // do każdej wcześniejszej wartości wraca się jednym dotknięciem (tym samym zapisem co suwak)
+        i > 0 && ustawTo && w !== undefined ? el('button', { klasa: 'ustaw', tekst: 'wróć do tej', title: 'Ustaw znowu ' + pokazWartosc(w, d.jednostka), klik: () => ustawTo(w) }) : null));
+      lista.replaceChildren(el('ul', {}, wiersze), el('a', { href: '/rzecz/' + rzeczId, target: '_blank', rel: 'noopener', tekst: 'cała historia (strona dla agentów)' }));
+    } catch (blad) { lista.replaceChildren(el('p', { klasa: 'bok', tekst: 'Nie udało się przeczytać historii: ' + blad.message })); }
+  }
+  function sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, wartosci, deklaracje }) {
+    const odswiez = (r) => { if (r) rysujSuwaki(o); return r; };
+    const wlacz = (id) => ({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: ZESTAWY, zasieg, wartosc: [id] } });
+    const wersjaRzeczy = async (id) => (await czytaj('/api/srodowisko/rzecz?id=' + id)).rzecz.wersja;
+    const poczatek = (n) => async (w) => ({ co: 'poloz', rodzaj: 'punkt/1', cechy: { nazwa: n + ': początek', opis: POCZATEK, czego: w[0].rzecz, wersja: w[0].wersja ?? await wersjaRzeczy(w[0].rzecz) } });
+    // wartości ustawione wprost dla świata: ważniejsze niż preset, więc przy presecie suwak zmieniałby je, a nie preset
+    const wlasne = [...o.czyta].filter((k) => { const x = wartosci[k]; return x && x.skad === 'wartosc' && x.zasieg === zasieg && x.rzecz; });
+    const odlozWlasne = (powod) => wlasne.map((k) => ({ co: 'odloz', rzecz: wartosci[k].rzecz, wersja: 'dowolna', powod }));
+    // zdanie po zmianie presetu mówi, gdy świat i tak tego nie zobaczy (wartość świata ważniejsza), zamiast cicho kłamać
+    // zielonym komunikatem (ślepa ręka 2, pkt 2: „wróć do początku” bez zmiany w świecie)
+    const ostrzezenie = (klucze) => { const n = wlasne.filter((k) => klucze.includes(k)).length; return n ? ' Uwaga: ' + lp(n, 'pokrętło ma', 'pokrętła mają', 'pokręteł ma') + ' wartość ustawioną dla ' + tu + ', ważniejszą niż preset (ramka pod wyborem).' : ''; };
+    const kluczePresetu = (p) => (p && p.cechy && p.cechy.wartosci && typeof p.cechy.wartosci === 'object' ? Object.keys(p.cechy.wartosci) : []);
+    // presety tego świata: zestawy, które ustawiają choć jedno z jego pokręteł
+    const swoje = rzeczy.filter((r) => r.rodzaj === 'zestaw/1' && r.cechy && r.cechy.wartosci && typeof r.cechy.wartosci === 'object' && Object.keys(r.cechy.wartosci).some((n) => o.czyta.has(n)))
+      .sort((a, b) => String(a.cechy.nazwa).localeCompare(String(b.cechy.nazwa), 'pl'));
+    const wybor = el('select', { 'aria-label': 'Preset dla ' + tu, disabled: klucz ? null : true },
+      // domyślne pokrętła to też układ, który się bierze i kopiuje (jego słowa z 18 XI), więc ma tu swoje imię
+      el('option', { value: '', tekst: 'domyślne (bez presetu)' }),
+      swoje.map((r) => el('option', { value: r.id, tekst: r.cechy.nazwa, selected: aktywny && r.id === aktywny.id ? true : null })));
+    wybor.addEventListener('change', async () => {
+      const id = wybor.value;
+      if (!id) { if (zs && zs.rzecz && wlasnaLista.length) odswiez(await ruch({ co: 'odloz', rzecz: zs.rzecz, wersja: 'dowolna', powod: 'bez presetu' }, 'Bez presetu dla „' + o.nazwa + '”.')); return; }
+      const wybrany = swoje.find((r) => r.id === id) || { cechy: { nazwa: id } };
+      odswiez(await ruch(wlacz(id), 'Preset „' + wybrany.cechy.nazwa + '” dla „' + o.nazwa + '”.' + ostrzezenie(kluczePresetu(wybrany))));
+    });
+    const nazwa = el('input', { type: 'text', maxlength: '60', placeholder: aktywny ? 'nazwa: kopii, punktu albo nowa' : 'nazwa nowego presetu', 'aria-label': 'Nazwa presetu', disabled: klucz ? null : true });
+    const wezNazwe = () => { const n = nazwa.value.trim(); if (!n) { komunikat('Najpierw nazwa presetu.', true); nazwa.focus(); } return n; };
+    // Nowy preset z tego, co świat ma teraz, razem z wartościami ustawionymi wprost dla świata: te wchodzą do presetu
+    // i są odkładane, bo inaczej byłyby ważniejsze niż preset i suwak zmieniałby je zamiast presetu (ślepa ręka, 21 XI).
+    const nowy = el('button', { tekst: 'nowy z obecnych', title: 'Nowy preset z wartości, które świat ma teraz; od razu włączony, z punktem „początek”', klik: async () => {
+      const n = wezNazwe(); if (!n) return;
+      const teraz = {};
+      for (const k of o.czyta) { const x = wartosci[k]; if (x && x.wartosc !== undefined && x.wartosc !== null && x.skad !== 'brak') teraz[k] = x.wartosc; }
+      odswiez(await ruchyGestem([
+        { co: 'poloz', rodzaj: 'zestaw/1', cechy: { nazwa: n, po_co: 'preset', opis: 'Preset świata „' + o.nazwa + '”.', wartosci: teraz } },
+        (w) => wlacz(w[0].rzecz), poczatek(n), ...odlozWlasne('wartość weszła do presetu „' + n + '”'),
+      ], 'Nowy preset „' + n + '”, włączony dla „' + o.nazwa + '”.', o, 'nowy preset „' + n + '”'));
+    } });
+    // „weź default, skopiuj, nazwij swoim” (18 XI): preset z wartości domyślnych pokręteł świata, bez tego, co ktoś zmienił
+    const kopiujDomyslne = !aktywny ? el('button', { tekst: 'kopiuj domyślne', title: 'Nowy preset z wartości domyślnych pokręteł tego świata; od razu włączony, z punktem „początek”', klik: async () => {
+      const n = wezNazwe(); if (!n) return;
+      const dom = Object.fromEntries((deklaracje || []).filter((d) => d.domyslna !== undefined && d.domyslna !== null).map((d) => [d.nazwa, d.domyslna]));
+      odswiez(await ruchyGestem([
+        { co: 'poloz', rodzaj: 'zestaw/1', cechy: { nazwa: n, po_co: 'preset', opis: 'Preset świata „' + o.nazwa + '” z wartości domyślnych.', wartosci: dom } },
+        (w) => wlacz(w[0].rzecz), poczatek(n),
+      ], 'Nowy preset „' + n + '” z wartości domyślnych, włączony dla „' + o.nazwa + '”.' + ostrzezenie(Object.keys(dom)), o, 'kopia domyślnych jako „' + n + '”'));
+    } }) : null;
+    const kopiuj = aktywny ? el('button', { tekst: 'kopiuj', title: 'Kopia włączonego presetu pod nową nazwą; pamięta źródło, a „początek” to jej stan z chwili kopiowania', klik: async () => {
+      const n = wezNazwe(); if (!n) return;
+      odswiez(await ruchyGestem([{ co: 'kopiuj', rzecz: aktywny.id, nazwa: n }, (w) => wlacz(w[0].rzecz), poczatek(n)], 'Skopiowane jako „' + n + '”, włączone dla „' + o.nazwa + '”.', o, 'kopia „' + n + '”'));
+    } }) : null;
+    const zmienNazwe = aktywny ? el('button', { tekst: 'zmień nazwę', title: 'Nadaj włączonemu presetowi nazwę wpisaną obok', klik: async () => {
+      const n = wezNazwe(); if (!n) return;
+      const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
+      odswiez(await ruch({ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, nazwa: n } }, 'Preset „' + p.cechy.nazwa + '” nazywa się teraz „' + n + '”.'));
+    } }) : null;
+    const wszystkiePunkty = aktywny ? rzeczy.filter((r) => r.rodzaj === 'punkt/1' && r.cechy && r.cechy.czego === aktywny.id) : [];
+    const start = wszystkiePunkty.filter((r) => r.cechy.opis === POCZATEK).sort((a, b) => String(a.utworzono || '').localeCompare(String(b.utworzono || '')))[0] || null;
+    const punkty = wszystkiePunkty.filter((r) => r !== start).sort((a, b) => String(b.utworzono || '').localeCompare(String(a.utworzono || ''))).slice(0, 5);
+    const pochodzenie = aktywny ? rzeczy.find((r) => r.rodzaj === 'pochodzenie/1' && r.cechy && r.cechy.kopia === aktywny.id) : null;
+    const zrodlo = pochodzenie ? rzeczy.find((r) => r.id === pochodzenie.cechy.z) : null;
+    const godzina = () => new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+    // „wróć” do punktu, w którym preset już jest, drzwi odrzucają („nie ma czego cofać”): guzik mówi to zawczasu
+    const juzTu = (pk) => !!aktywny && aktywny.wersja === pk.cechy.wersja;
+    const wrocDo = (pk, tekst) => el('button', { tekst, disabled: juzTu(pk) ? true : null, title: juzTu(pk) ? 'Preset jest teraz dokładnie w tym punkcie' : 'Preset wraca do tego punktu', klik: async () => odswiez(await ruch({ co: 'wroc-do-punktu', punkt: pk.id }, 'Preset wrócił do „' + pk.cechy.nazwa + '”.' + ostrzezenie(kluczePresetu(aktywny)))) });
+    // usunięcie: dwa dotknięcia (bez okna dialogowego, tym samym guzikiem co reszta strony); preset włączony gdzie
+    // indziej zostaje, a strona mówi, ile takich miejsc jest
+    const usun = aktywny && klucz ? dwaDotkniecia('usuń preset', 'Na pewno usunąć?', '„' + aktywny.cechy.nazwa + '”', async () => {
+      const gdzieIndziej = rzeczy.filter((r) => r.rodzaj === 'wartosc/1' && r.cechy && r.cechy.pokretlo === ZESTAWY && Array.isArray(r.cechy.wartosc) && r.cechy.wartosc.includes(aktywny.id) && r.cechy.zasieg !== zasieg);
+      if (gdzieIndziej.length) { komunikat('Preset „' + aktywny.cechy.nazwa + '” jest włączony jeszcze w ' + gdzieIndziej.length + ' innych miejscach; najpierw wyłącz go tam.', true); return; }
+      odswiez(await ruchyGestem([
+        zs && zs.rzecz && wlasnaLista.includes(aktywny.id) ? { co: 'odloz', rzecz: zs.rzecz, wersja: 'dowolna', powod: 'preset usunięty' } : null,
+        { co: 'odloz', rzecz: aktywny.id, wersja: 'dowolna', powod: 'usunięty z okna świata „' + o.nazwa + '”' },
+      ], 'Preset „' + aktywny.cechy.nazwa + '” usunięty; guzik „cofnij” w tej sekcji przywróci go.', o, 'usunięcie presetu „' + aktywny.cechy.nazwa + '”'));
+    }) : null;
+    return el('section', { klasa: 'presety' },
+      el('h3', { tekst: 'Preset dla ' + tu }),
+      wybor,
+      // ostrzeżenie zaraz pod wyborem, w ramce: na komputerze przeoczone pod niżej (ślepa ręka 2, pkt 6)
+      aktywny && wlasne.length && klucz ? el('div', { klasa: 'nad-presetem', role: 'status' },
+        el('span', { tekst: (wlasne.length === 1 ? 'Jedno pokrętło ma' : lp(wlasne.length, 'pokrętło ma', 'pokrętła mają', 'pokręteł ma')) + ' wartość ustawioną dla ' + tu + '; suwak zmienia wtedy ją, a nie preset.' }),
+        el('button', { tekst: 'przenieś do presetu', title: 'Te wartości wchodzą do presetu, a ustawione dla świata są odkładane', klik: async () => {
+          const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
+          const dodaj = Object.fromEntries(wlasne.map((k) => [k, wartosci[k].wartosc]));
+          odswiez(await ruchyGestem([{ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, wartosci: { ...p.cechy.wartosci, ...dodaj } } }, ...odlozWlasne('wartość weszła do presetu „' + p.cechy.nazwa + '”')], 'Przeniesione do presetu „' + p.cechy.nazwa + '”.', o, 'przeniesienie do presetu'));
+        } }),
+        el('button', { tekst: 'odłóż je', title: 'Wartości ustawione dla świata znikają; działa preset', klik: async () => odswiez(await ruchyGestem(odlozWlasne('niech działa preset'), 'Odłożone; działa preset „' + aktywny.cechy.nazwa + '”.', o, 'odłożenie wartości świata')) })) : null,
+      el('div', { klasa: 'nowy' }, nazwa, aktywny ? kopiuj : kopiujDomyslne, aktywny ? zmienNazwe : nowy),
+      aktywny && klucz ? el('div', { klasa: 'czynnosci' },
+        el('button', { tekst: 'zapisz punkt', title: 'Zapamiętaj ten układ presetu; potem wrócisz do niego jednym ruchem', klik: async () => {
+          const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
+          // nazwa punktu z pola obok, gdy coś w nim jest; inaczej nazwa presetu z godziną (ślepa ręka 2, pkt 3)
+          const wlasnaNazwa = nazwa.value.trim();
+          const np = wlasnaNazwa || p.cechy.nazwa + ', ' + godzina();
+          const r = await ruch({ co: 'poloz', rodzaj: 'punkt/1', cechy: { nazwa: np, czego: p.id, wersja: p.wersja } }, 'Punkt zapisany: „' + np + '”.');
+          if (r && wlasnaNazwa) nazwa.value = '';
+          odswiez(r);
+        } }),
+        start ? wrocDo(start, 'wróć do początku') : null,
+        pochodzenie ? el('button', { tekst: 'wróć do źródła' + (zrodlo ? ' „' + zrodlo.cechy.nazwa + '”' : ''), title: 'Preset wraca do dzisiejszej treści źródła, z którego go skopiowano; nazwa zostaje, a Twoje wersje zostają w historii', klik: async () => odswiez(await ruch({ co: 'domyslny', rzecz: aktywny.id }, 'Preset „' + aktywny.cechy.nazwa + '” wrócił do źródła.' + ostrzezenie(kluczePresetu(aktywny)))) }) : null,
+        usun) : null,
+      o.ostatniGest && klucz ? el('div', { klasa: 'cofnij' }, el('button', { tekst: 'cofnij: ' + o.ostatniGest.opis, title: 'Cofa całą ostatnią czynność z tego okna (wszystkie jej ruchy razem)', klik: async () => {
+        const g = o.ostatniGest;
+        const r = await ruch({ co: 'cofnij-gest', cofany: g.gest }, 'Cofnięte: ' + g.opis + '.');
+        if (r) { o.ostatniGest = null; rysujSuwaki(o); }
+      } })) : null,
+      punkty.length ? el('ul', { klasa: 'punkty' }, punkty.map((pk) => el('li', {},
+        el('span', { tekst: pk.cechy.nazwa }),
+        klucz ? wrocDo(pk, 'wróć') : null))) : null);
+  }
 
   // --- strona --------------------------------------------------------------------------------------------------
   const lp = (n, a, b, c) => `${n} ${n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? b : c)}`;
@@ -894,6 +1242,7 @@
         if (!pelneKiedy) { odciskUstawien = odcisk; pelneOdRazu = true; zaplanujPelne(); break; }
         const u = await czytaj('/api/srodowisko/ustawienia?nazwy=' + P.nazwy());
         odciskUstawien = odcisk;
+        odswiezSuwaki();
         if (!bezpiecznie) P.przyjmij(u);
         zaplanujPelne();
       }
@@ -927,10 +1276,18 @@
   // idzie przy puszczeniu suwaka albo zatwierdzeniu pola (jedna zmiana to jeden zapis), a "wróć" odkłada wartość,
   // czyli oddaje odziedziczoną.
   const PROSTE = ['kolor', 'liczba', 'czas', 'wybor', 'tak-nie', 'tekst', 'cien', 'kroj', 'sprezyna'];
-  function poleUstawienia(d, x) {
+  // opcje.zasieg: wartość tylko dla jednej rzeczy (suwaki świata obok jego okna); wtedy bez podglądu wyglądu strony,
+  // bo pokrętło świata nie jest wyglądem gospodarza, a po zapisie woła opcje.potem.
+  function poleUstawienia(d, x, opcje = {}) {
     const nieczynne = klucz ? null : true;
-    const podejrzyj = (w) => { if (bezpiecznie) return; P.podejrzyj(d.nazwa, w); if (podglad) podglad.nadaj(d.nazwa, w); };
+    const podejrzyj = opcje.zasieg ? () => {} : (w) => { if (bezpiecznie) return; P.podejrzyj(d.nazwa, w); if (podglad) podglad.nadaj(d.nazwa, w); };
     const ustaw = async (w) => {
+      if (opcje.zapis) { const o = await opcje.zapis(w); if (opcje.potem) opcje.potem(o); return; }
+      if (opcje.zasieg) {
+        const o = await ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, zasieg: opcje.zasieg, wartosc: w } }, opcje.zdanie || 'Ustawione: ' + d.nazwa + '.');
+        if (opcje.potem) opcje.potem(o);
+        return;
+      }
       pelneOdRazu = true;
       const o = await ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, wartosc: w } }, 'Ustawione: ' + d.nazwa + '.');
       // Zapis ze skutkiem: podgląd gaśnie sam, gdy ta sama wartość przyjdzie z Miejsca. Propozycja albo odmowa: gaśnie od razu.
