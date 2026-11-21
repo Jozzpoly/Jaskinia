@@ -78,6 +78,8 @@ details > div { padding: 0 .65rem .5rem; }
 .okno .suwaki .nad-presetem { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .8rem; color: var(--znak); border: 1px solid var(--znak); border-radius: .4rem; padding: .45rem .55rem; }
 .okno .suwak .historia-lista button.ustaw { font-size: .72rem; padding: .1rem .4rem; min-height: 0; }
 .okno .suwaki .presety button.usun { color: var(--znak); }
+/* cudzy preset (prowadzi go ktoś inny): jedno zdanie zamiast guzików zmiany, ta sama barwa znaku co ostrzeżenie nad presetem */
+.okno .suwaki .presety .cudzy { margin: 0; padding-left: .55rem; border-left: 3px solid var(--znak); font-size: .8rem; }
 .okno .suwak .skad { color: var(--ciche); font-size: .74rem; }
 .okno .suwak .skad.swoja { color: var(--akcent); }
 .okno .suwak .ust-para { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
