@@ -372,6 +372,33 @@
     const wlasnaLista = zs && zs.skad === 'wartosc' && zs.zasieg === zasieg && Array.isArray(zs.wartosc) ? zs.wartosc : [];
     const aktywnyId = wlasnaLista.length ? wlasnaLista[wlasnaLista.length - 1] : null;
     const aktywny = aktywnyId ? rzeczy.find((r) => r.id === aktywnyId && r.rodzaj === 'zestaw/1') || null : null;
+    // Cudzy preset (utworzył go ktoś inny niż czytający, np. „JV Web: domyślny” prowadzony przez agentów) nie zmienia się
+    // z panelu. Jego droga z 18 XI: „wziąść default przygotowany i zarzadzany przez was, skopiować, nazwać swoim”; druga
+    // linia Opusa Code na 85. Pierwsza zmiana robi więc kopię czytającego, włącza ją i zmienia kopię, jednym gestem, który
+    // „cofnij” cofa w całości. Działa w obie strony: agent w panelu nie zmieni presetu właściciela.
+    const ja = mojeImie();
+    const cudzy = !!aktywny && !!ja && typeof aktywny.utworzyl === 'string' && aktywny.utworzyl !== ja;
+    // Zmiana włączonego presetu: we własnym zapis w miejscu (z `dalej`: jednym gestem), w cudzym kopia z punktem
+    // „początek” (stan sprzed zmiany) i ta sama zmiana w kopii.
+    const zmienPreset = async (zmiana, { zdanie, co }, dalej = []) => {
+      const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
+      if (!cudzy) {
+        const zapis = { co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: zmiana(p.cechy) };
+        return dalej.length ? ruchyGestem([zapis, ...dalej], zdanie(p.cechy.nazwa), o, co) : ruch(zapis, zdanie(p.cechy.nazwa));
+      }
+      const pole = o.suwaki.querySelector('input[aria-label="Nazwa presetu"]');
+      const wpisana = pole ? pole.value.trim() : '';
+      const n = wpisana || p.cechy.nazwa + ' (moja, ' + godzinaTeraz() + ')';
+      const r = await ruchyGestem([
+        { co: 'kopiuj', rzecz: p.id, nazwa: n },
+        (w) => wlaczZestaw(zasieg, w[0].rzecz),
+        poczatekPresetu(n),
+        async (w) => { const k = (await czytaj('/api/srodowisko/rzecz?id=' + w[0].rzecz)).rzecz; return { co: 'poloz', rzecz: k.id, wersja: k.wersja, rodzaj: 'zestaw/1', cechy: zmiana(k.cechy) }; },
+        ...dalej,
+      ], 'Preset „' + p.cechy.nazwa + '” prowadzi ' + p.utworzyl + ', więc się nie zmienia. Zmiana (' + co + ') poszła do Twojej kopii „' + n + '”, włączonej dla „' + o.nazwa + '”.' + (wpisana ? '' : ' Nazwij ją po swojemu: wpisz nazwę obok i „zmień nazwę”.'), o, 'kopia „' + n + '” (' + co + ')');
+      if (r && wpisana && pole) pole.value = '';
+      return r;
+    };
     const wiersz = (d) => {
       const x = (u.wartosci || {})[d.nazwa] || { wartosc: d.domyslna, skad: 'domyslna' };
       const swoja = !!zasieg && x.skad === 'wartosc' && x.zasieg === zasieg;
@@ -384,20 +411,19 @@
       const e = etykieta(d);
       // Z aktywnym presetem suwak pisze w preset (nowa wersja zestawu z tą jedną zmianą), chyba że świat ma tu własną
       // wartość: ta jest ważniejsza niż preset, więc pisanie w preset nic by nie zmieniło.
-      const doPresetu = aktywny && !swoja ? async (w) => {
-        const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
-        return ruch({ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, wartosci: { ...p.cechy.wartosci, [d.nazwa]: w } } }, 'Zmienione w presecie „' + p.cechy.nazwa + '”: ' + d.nazwa + '.');
-      } : null;
+      const doPresetu = aktywny && !swoja ? (w) => zmienPreset((c) => ({ ...c, wartosci: { ...c.wartosci, [d.nazwa]: w } }), { zdanie: (n) => 'Zmienione w presecie „' + n + '”: ' + d.nazwa + '.', co: d.nazwa }) : null;
       // ten sam zapis co suwak (w preset albo w wartość świata), dla powrotu do wartości z historii
       const ustawTo = async (w) => { const r = doPresetu ? await doPresetu(w) : await ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, zasieg, wartosc: w } }, 'Ustawione dla „' + o.nazwa + '”: ' + d.nazwa + '.'); if (r) rysujSuwaki(o); return r; };
       const pole = PROSTE.includes(d.typ) && zasieg
         ? poleUstawienia(d, x, { zasieg, zapis: doPresetu, potem: () => rysujSuwaki(o), zdanie: 'Ustawione dla „' + o.nazwa + '”: ' + d.nazwa + '.' })
         : el('span', { klasa: 'bok', tekst: zasieg ? 'typ ' + d.typ + ': zmiana ruchem, opis pod /ustawienia' : String(x.wartosc) });
-      const wyjmij = wPresecie && klucz && !swoja ? el('button', { tekst: 'wyjmij z presetu', title: 'Preset przestaje ustawiać to pokrętło: wraca wartość spoza presetu', klik: async () => {
-        const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
-        const reszta = { ...p.cechy.wartosci };
-        delete reszta[d.nazwa];
-        const r = await ruch({ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, wartosci: reszta } }, 'Wyjęte z presetu „' + p.cechy.nazwa + '”: ' + d.nazwa + '.');
+      const wyjmij = wPresecie && klucz && !swoja ? el('button', { tekst: 'wyjmij z presetu', title: cudzy ? 'Ten preset prowadzi ' + aktywny.utworzyl + ': powstanie Twoja kopia bez tego pokrętła' : 'Preset przestaje ustawiać to pokrętło: wraca wartość spoza presetu', klik: async () => {
+        const bezTego = (c) => {
+          const reszta = { ...c.wartosci };
+          delete reszta[d.nazwa];
+          return { ...c, wartosci: reszta };
+        };
+        const r = await zmienPreset(bezTego, { zdanie: (n) => 'Wyjęte z presetu „' + n + '”: ' + d.nazwa + '.', co: 'bez ' + d.nazwa });
         if (r) rysujSuwaki(o);
       } }) : null;
       return el('li', { klasa: 'suwak', title: d.nazwa + (d.opis ? '\n' + d.opis : '') },
@@ -414,7 +440,7 @@
           x.rzecz ? el('button', { klasa: 'historia', tekst: 'historia', 'aria-expanded': 'false', title: 'Ostatnie wartości: ile, kto i kiedy; do każdej da się wrócić', klik: (ev) => przelaczHistorie(ev.currentTarget, x.rzecz, d, zasieg && klucz && PROSTE.includes(d.typ) ? ustawTo : null) }) : null),
         el('div', { klasa: 'historia-lista', hidden: true }));
     };
-    const presety = zasieg ? sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, wartosci: u.wartosci || {}, deklaracje: (u.deklaracje || []).filter((d) => o.czyta.has(d.nazwa)) }) : null;
+    const presety = zasieg ? sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, cudzy, zmienPreset, wartosci: u.wartosci || {}, deklaracje: (u.deklaracje || []).filter((d) => o.czyta.has(d.nazwa)) }) : null;
     const fokus = o.suwaki.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null;
     // replaceChildren zamienia null na napis "null": puste miejsca odsiewamy jak el()
     o.suwaki.replaceChildren(...[
@@ -435,6 +461,12 @@
   // Czynność z kilku ruchów idzie jednym gestem, a guzik „cofnij” w sekcji presetu cofa ją całą (co: cofnij-gest).
   const ZESTAWY = 'srodowisko.zestawy';
   const POCZATEK = 'początek presetu';
+  // włączenie presetu w zasięgu świata, punkt „początek” nowego presetu i godzina do nazw: wspólne dla sekcji presetu
+  // i dla kopii cudzego presetu przy pierwszej zmianie
+  const wlaczZestaw = (zasieg, id) => ({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: ZESTAWY, zasieg, wartosc: [id] } });
+  const wersjaRzeczy = async (id) => (await czytaj('/api/srodowisko/rzecz?id=' + id)).rzecz.wersja;
+  const poczatekPresetu = (n) => async (w) => ({ co: 'poloz', rodzaj: 'punkt/1', cechy: { nazwa: n + ': początek', opis: POCZATEK, czego: w[0].rzecz, wersja: w[0].wersja ?? await wersjaRzeczy(w[0].rzecz) } });
+  const godzinaTeraz = () => new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
   const pokazWartosc = (w, jednostka) => (typeof w === 'number' ? liczbaPL(w) : String(w)) + (jednostka ? ' ' + jednostka : '');
   // Kilka ruchów jako jeden gest ręki (cofają się razem: co: cofnij-gest). Idą po kolei tymi samymi drzwiami; element
   // listy może być funkcją wyników poprzednich (np. identyfikator nowego presetu). Pierwsza odmowa zatrzymuje resztę.
@@ -486,11 +518,10 @@
       lista.replaceChildren(el('ul', {}, wiersze), el('a', { href: '/rzecz/' + rzeczId, target: '_blank', rel: 'noopener', tekst: 'cała historia (strona dla agentów)' }));
     } catch (blad) { lista.replaceChildren(el('p', { klasa: 'bok', tekst: 'Nie udało się przeczytać historii: ' + blad.message })); }
   }
-  function sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, wartosci, deklaracje }) {
+  function sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, cudzy, zmienPreset, wartosci, deklaracje }) {
     const odswiez = (r) => { if (r) rysujSuwaki(o); return r; };
-    const wlacz = (id) => ({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: ZESTAWY, zasieg, wartosc: [id] } });
-    const wersjaRzeczy = async (id) => (await czytaj('/api/srodowisko/rzecz?id=' + id)).rzecz.wersja;
-    const poczatek = (n) => async (w) => ({ co: 'poloz', rodzaj: 'punkt/1', cechy: { nazwa: n + ': początek', opis: POCZATEK, czego: w[0].rzecz, wersja: w[0].wersja ?? await wersjaRzeczy(w[0].rzecz) } });
+    const wlacz = (id) => wlaczZestaw(zasieg, id);
+    const poczatek = poczatekPresetu;
     // wartości ustawione wprost dla świata: ważniejsze niż preset, więc przy presecie suwak zmieniałby je, a nie preset
     const wlasne = [...o.czyta].filter((k) => { const x = wartosci[k]; return x && x.skad === 'wartosc' && x.zasieg === zasieg && x.rzecz; });
     const odlozWlasne = (powod) => wlasne.map((k) => ({ co: 'odloz', rzecz: wartosci[k].rzecz, wersja: 'dowolna', powod }));
@@ -547,7 +578,7 @@
     const punkty = wszystkiePunkty.filter((r) => r !== start).sort((a, b) => String(b.utworzono || '').localeCompare(String(a.utworzono || ''))).slice(0, 5);
     const pochodzenie = aktywny ? rzeczy.find((r) => r.rodzaj === 'pochodzenie/1' && r.cechy && r.cechy.kopia === aktywny.id) : null;
     const zrodlo = pochodzenie ? rzeczy.find((r) => r.id === pochodzenie.cechy.z) : null;
-    const godzina = () => new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+    const godzina = godzinaTeraz;
     // „wróć” do punktu, w którym preset już jest, drzwi odrzucają („nie ma czego cofać”): guzik mówi to zawczasu
     const juzTu = (pk) => !!aktywny && aktywny.wersja === pk.cechy.wersja;
     const wrocDo = (pk, tekst) => el('button', { tekst, disabled: juzTu(pk) ? true : null, title: juzTu(pk) ? 'Preset jest teraz dokładnie w tym punkcie' : 'Preset wraca do tego punktu', klik: async () => odswiez(await ruch({ co: 'wroc-do-punktu', punkt: pk.id }, 'Preset wrócił do „' + pk.cechy.nazwa + '”.' + ostrzezenie(kluczePresetu(aktywny)))) });
@@ -567,14 +598,15 @@
       // ostrzeżenie zaraz pod wyborem, w ramce: na komputerze przeoczone pod niżej (ślepa ręka 2, pkt 6)
       aktywny && wlasne.length && klucz ? el('div', { klasa: 'nad-presetem', role: 'status' },
         el('span', { tekst: (wlasne.length === 1 ? 'Jedno pokrętło ma' : lp(wlasne.length, 'pokrętło ma', 'pokrętła mają', 'pokręteł ma')) + ' wartość ustawioną dla ' + tu + '; suwak zmienia wtedy ją, a nie preset.' }),
-        el('button', { tekst: 'przenieś do presetu', title: 'Te wartości wchodzą do presetu, a ustawione dla świata są odkładane', klik: async () => {
-          const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
+        el('button', { tekst: 'przenieś do presetu', title: cudzy ? 'Ten preset prowadzi ' + aktywny.utworzyl + ': wartości wejdą do Twojej kopii, a ustawione dla świata zostaną odłożone' : 'Te wartości wchodzą do presetu, a ustawione dla świata są odkładane', klik: async () => {
           const dodaj = Object.fromEntries(wlasne.map((k) => [k, wartosci[k].wartosc]));
-          odswiez(await ruchyGestem([{ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, wartosci: { ...p.cechy.wartosci, ...dodaj } } }, ...odlozWlasne('wartość weszła do presetu „' + p.cechy.nazwa + '”')], 'Przeniesione do presetu „' + p.cechy.nazwa + '”.', o, 'przeniesienie do presetu'));
+          odswiez(await zmienPreset((c) => ({ ...c, wartosci: { ...c.wartosci, ...dodaj } }), { zdanie: (n) => 'Przeniesione do presetu „' + n + '”.', co: 'przeniesienie do presetu' }, odlozWlasne('wartość weszła do presetu „' + aktywny.cechy.nazwa + '”')));
         } }),
         el('button', { tekst: 'odłóż je', title: 'Wartości ustawione dla świata znikają; działa preset', klik: async () => odswiez(await ruchyGestem(odlozWlasne('niech działa preset'), 'Odłożone; działa preset „' + aktywny.cechy.nazwa + '”.', o, 'odłożenie wartości świata')) })) : null,
-      el('div', { klasa: 'nowy' }, nazwa, aktywny ? kopiuj : kopiujDomyslne, aktywny ? zmienNazwe : nowy),
-      aktywny && klucz ? el('div', { klasa: 'czynnosci' },
+      // cudzy preset: zamiast nazwy, punktów, powrotów i usuwania jedno zdanie, co się stanie przy pierwszej zmianie
+      cudzy && klucz ? el('p', { klasa: 'bok cudzy', tekst: 'Ten preset prowadzi ' + aktywny.utworzyl + ', więc się nie zmienia. Pierwsza zmiana suwaka zrobi Twoją kopię i ją włączy; nazwa z pola obok albo „' + aktywny.cechy.nazwa + ' (moja, godzina)”.' }) : null,
+      el('div', { klasa: 'nowy' }, nazwa, aktywny ? kopiuj : kopiujDomyslne, aktywny ? (cudzy ? null : zmienNazwe) : nowy),
+      aktywny && klucz && !cudzy ? el('div', { klasa: 'czynnosci' },
         el('button', { tekst: 'zapisz punkt', title: 'Zapamiętaj ten układ presetu; potem wrócisz do niego jednym ruchem', klik: async () => {
           const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
           // nazwa punktu z pola obok, gdy coś w nim jest; inaczej nazwa presetu z godziną (ślepa ręka 2, pkt 3)
@@ -592,7 +624,7 @@
         const r = await ruch({ co: 'cofnij-gest', cofany: g.gest }, 'Cofnięte: ' + g.opis + '.');
         if (r) { o.ostatniGest = null; rysujSuwaki(o); }
       } })) : null,
-      punkty.length ? el('ul', { klasa: 'punkty' }, punkty.map((pk) => el('li', {},
+      punkty.length && !cudzy ? el('ul', { klasa: 'punkty' }, punkty.map((pk) => el('li', {},
         el('span', { tekst: pk.cechy.nazwa }),
         klucz ? wrocDo(pk, 'wróć') : null))) : null);
   }
