@@ -388,6 +388,8 @@
         const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
         return ruch({ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, wartosci: { ...p.cechy.wartosci, [d.nazwa]: w } } }, 'Zmienione w presecie „' + p.cechy.nazwa + '”: ' + d.nazwa + '.');
       } : null;
+      // ten sam zapis co suwak (w preset albo w wartość świata), dla powrotu do wartości z historii
+      const ustawTo = async (w) => { const r = doPresetu ? await doPresetu(w) : await ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, zasieg, wartosc: w } }, 'Ustawione dla „' + o.nazwa + '”: ' + d.nazwa + '.'); if (r) rysujSuwaki(o); return r; };
       const pole = PROSTE.includes(d.typ) && zasieg
         ? poleUstawienia(d, x, { zasieg, zapis: doPresetu, potem: () => rysujSuwaki(o), zdanie: 'Ustawione dla „' + o.nazwa + '”: ' + d.nazwa + '.' })
         : el('span', { klasa: 'bok', tekst: zasieg ? 'typ ' + d.typ + ': zmiana ruchem, opis pod /ustawienia' : String(x.wartosc) });
@@ -409,10 +411,10 @@
             if (r) rysujSuwaki(o);
           } }) : null,
           wyjmij,
-          x.rzecz ? el('button', { klasa: 'historia', tekst: 'historia', 'aria-expanded': 'false', title: 'Ostatnie wartości: ile, kto i kiedy', klik: (ev) => przelaczHistorie(ev.currentTarget, x.rzecz, d) }) : null),
+          x.rzecz ? el('button', { klasa: 'historia', tekst: 'historia', 'aria-expanded': 'false', title: 'Ostatnie wartości: ile, kto i kiedy; do każdej da się wrócić', klik: (ev) => przelaczHistorie(ev.currentTarget, x.rzecz, d, zasieg && klucz && PROSTE.includes(d.typ) ? ustawTo : null) }) : null),
         el('div', { klasa: 'historia-lista', hidden: true }));
     };
-    const presety = zasieg ? sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, wartosci: u.wartosci || {} }) : null;
+    const presety = zasieg ? sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, wartosci: u.wartosci || {}, deklaracje: (u.deklaracje || []).filter((d) => o.czyta.has(d.nazwa)) }) : null;
     const fokus = o.suwaki.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null;
     // replaceChildren zamienia null na napis "null": puste miejsca odsiewamy jak el()
     o.suwaki.replaceChildren(...[
@@ -459,7 +461,9 @@
     return wyniki;
   }
   // Historia jednej wartości w miejscu: ostatnie pięć wersji, ile, kto i kiedy (zamiast gołej strony rzeczy).
-  async function przelaczHistorie(guzik, rzeczId, d) {
+  // godzina zamiast „przed chwilą”: przy kilku wpisach z jednej minuty względny czas nic nie mówi (ślepa ręka 2, C6)
+  const zegar = (iso) => { const t = new Date(iso); if (!Number.isFinite(t.getTime())) return ''; const dzis = new Date().toDateString() === t.toDateString(); return (dzis ? '' : t.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) + ' ') + t.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
+  async function przelaczHistorie(guzik, rzeczId, d, ustawTo = null) {
     const lista = guzik.closest('li.suwak').querySelector('.historia-lista');
     if (!lista.hidden) { lista.hidden = true; guzik.setAttribute('aria-expanded', 'false'); return; }
     lista.hidden = false; guzik.setAttribute('aria-expanded', 'true');
@@ -474,11 +478,15 @@
       }));
       const zmiany = [];
       for (let i = ost.length - 1; i >= 0 && zmiany.length < 5; i--) if (i === 0 || JSON.stringify(wart[i]) !== JSON.stringify(wart[i - 1])) zmiany.push({ h: ost[i], w: wart[i] });
-      const wiersze = zmiany.map(({ h, w }) => el('li', {}, el('span', { klasa: 'w', tekst: w === undefined ? (r.rzecz.rodzaj === 'zestaw/1' ? 'bez tego pokrętła' : '—') : pokazWartosc(w, d.jednostka) }), el('span', { klasa: 'kto', tekst: h.kto + ' · ' + kiedy(h.kiedy) })));
+      const wiersze = zmiany.map(({ h, w }, i) => el('li', {},
+        el('span', { klasa: 'w', tekst: w === undefined ? (r.rzecz.rodzaj === 'zestaw/1' ? 'bez tego pokrętła' : '—') : pokazWartosc(w, d.jednostka) }),
+        el('span', { klasa: 'kto', tekst: h.kto + ' · ' + zegar(h.kiedy) }),
+        // do każdej wcześniejszej wartości wraca się jednym dotknięciem (tym samym zapisem co suwak)
+        i > 0 && ustawTo && w !== undefined ? el('button', { klasa: 'ustaw', tekst: 'wróć do tej', title: 'Ustaw znowu ' + pokazWartosc(w, d.jednostka), klik: () => ustawTo(w) }) : null));
       lista.replaceChildren(el('ul', {}, wiersze), el('a', { href: '/rzecz/' + rzeczId, target: '_blank', rel: 'noopener', tekst: 'cała historia (strona dla agentów)' }));
     } catch (blad) { lista.replaceChildren(el('p', { klasa: 'bok', tekst: 'Nie udało się przeczytać historii: ' + blad.message })); }
   }
-  function sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, wartosci }) {
+  function sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, wartosci, deklaracje }) {
     const odswiez = (r) => { if (r) rysujSuwaki(o); return r; };
     const wlacz = (id) => ({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: ZESTAWY, zasieg, wartosc: [id] } });
     const wersjaRzeczy = async (id) => (await czytaj('/api/srodowisko/rzecz?id=' + id)).rzecz.wersja;
@@ -486,18 +494,24 @@
     // wartości ustawione wprost dla świata: ważniejsze niż preset, więc przy presecie suwak zmieniałby je, a nie preset
     const wlasne = [...o.czyta].filter((k) => { const x = wartosci[k]; return x && x.skad === 'wartosc' && x.zasieg === zasieg && x.rzecz; });
     const odlozWlasne = (powod) => wlasne.map((k) => ({ co: 'odloz', rzecz: wartosci[k].rzecz, wersja: 'dowolna', powod }));
+    // zdanie po zmianie presetu mówi, gdy świat i tak tego nie zobaczy (wartość świata ważniejsza), zamiast cicho kłamać
+    // zielonym komunikatem (ślepa ręka 2, pkt 2: „wróć do początku” bez zmiany w świecie)
+    const ostrzezenie = (klucze) => { const n = wlasne.filter((k) => klucze.includes(k)).length; return n ? ' Uwaga: ' + lp(n, 'pokrętło ma', 'pokrętła mają', 'pokręteł ma') + ' wartość ustawioną dla ' + tu + ', ważniejszą niż preset (ramka pod wyborem).' : ''; };
+    const kluczePresetu = (p) => (p && p.cechy && p.cechy.wartosci && typeof p.cechy.wartosci === 'object' ? Object.keys(p.cechy.wartosci) : []);
     // presety tego świata: zestawy, które ustawiają choć jedno z jego pokręteł
     const swoje = rzeczy.filter((r) => r.rodzaj === 'zestaw/1' && r.cechy && r.cechy.wartosci && typeof r.cechy.wartosci === 'object' && Object.keys(r.cechy.wartosci).some((n) => o.czyta.has(n)))
       .sort((a, b) => String(a.cechy.nazwa).localeCompare(String(b.cechy.nazwa), 'pl'));
     const wybor = el('select', { 'aria-label': 'Preset dla ' + tu, disabled: klucz ? null : true },
-      el('option', { value: '', tekst: '— bez presetu —' }),
+      // domyślne pokrętła to też układ, który się bierze i kopiuje (jego słowa z 18 XI), więc ma tu swoje imię
+      el('option', { value: '', tekst: 'domyślne (bez presetu)' }),
       swoje.map((r) => el('option', { value: r.id, tekst: r.cechy.nazwa, selected: aktywny && r.id === aktywny.id ? true : null })));
     wybor.addEventListener('change', async () => {
       const id = wybor.value;
       if (!id) { if (zs && zs.rzecz && wlasnaLista.length) odswiez(await ruch({ co: 'odloz', rzecz: zs.rzecz, wersja: 'dowolna', powod: 'bez presetu' }, 'Bez presetu dla „' + o.nazwa + '”.')); return; }
-      odswiez(await ruch(wlacz(id), 'Preset „' + (swoje.find((r) => r.id === id) || { cechy: { nazwa: id } }).cechy.nazwa + '” dla „' + o.nazwa + '”.'));
+      const wybrany = swoje.find((r) => r.id === id) || { cechy: { nazwa: id } };
+      odswiez(await ruch(wlacz(id), 'Preset „' + wybrany.cechy.nazwa + '” dla „' + o.nazwa + '”.' + ostrzezenie(kluczePresetu(wybrany))));
     });
-    const nazwa = el('input', { type: 'text', maxlength: '60', placeholder: aktywny ? 'nowa nazwa albo nazwa kopii' : 'nazwa nowego presetu', 'aria-label': 'Nazwa presetu', disabled: klucz ? null : true });
+    const nazwa = el('input', { type: 'text', maxlength: '60', placeholder: aktywny ? 'nazwa: kopii, punktu albo nowa' : 'nazwa nowego presetu', 'aria-label': 'Nazwa presetu', disabled: klucz ? null : true });
     const wezNazwe = () => { const n = nazwa.value.trim(); if (!n) { komunikat('Najpierw nazwa presetu.', true); nazwa.focus(); } return n; };
     // Nowy preset z tego, co świat ma teraz, razem z wartościami ustawionymi wprost dla świata: te wchodzą do presetu
     // i są odkładane, bo inaczej byłyby ważniejsze niż preset i suwak zmieniałby je zamiast presetu (ślepa ręka, 21 XI).
@@ -510,6 +524,15 @@
         (w) => wlacz(w[0].rzecz), poczatek(n), ...odlozWlasne('wartość weszła do presetu „' + n + '”'),
       ], 'Nowy preset „' + n + '”, włączony dla „' + o.nazwa + '”.', o, 'nowy preset „' + n + '”'));
     } });
+    // „weź default, skopiuj, nazwij swoim” (18 XI): preset z wartości domyślnych pokręteł świata, bez tego, co ktoś zmienił
+    const kopiujDomyslne = !aktywny ? el('button', { tekst: 'kopiuj domyślne', title: 'Nowy preset z wartości domyślnych pokręteł tego świata; od razu włączony, z punktem „początek”', klik: async () => {
+      const n = wezNazwe(); if (!n) return;
+      const dom = Object.fromEntries((deklaracje || []).filter((d) => d.domyslna !== undefined && d.domyslna !== null).map((d) => [d.nazwa, d.domyslna]));
+      odswiez(await ruchyGestem([
+        { co: 'poloz', rodzaj: 'zestaw/1', cechy: { nazwa: n, po_co: 'preset', opis: 'Preset świata „' + o.nazwa + '” z wartości domyślnych.', wartosci: dom } },
+        (w) => wlacz(w[0].rzecz), poczatek(n),
+      ], 'Nowy preset „' + n + '” z wartości domyślnych, włączony dla „' + o.nazwa + '”.' + ostrzezenie(Object.keys(dom)), o, 'kopia domyślnych jako „' + n + '”'));
+    } }) : null;
     const kopiuj = aktywny ? el('button', { tekst: 'kopiuj', title: 'Kopia włączonego presetu pod nową nazwą; pamięta źródło, a „początek” to jej stan z chwili kopiowania', klik: async () => {
       const n = wezNazwe(); if (!n) return;
       odswiez(await ruchyGestem([{ co: 'kopiuj', rzecz: aktywny.id, nazwa: n }, (w) => wlacz(w[0].rzecz), poczatek(n)], 'Skopiowane jako „' + n + '”, włączone dla „' + o.nazwa + '”.', o, 'kopia „' + n + '”'));
@@ -527,7 +550,7 @@
     const godzina = () => new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
     // „wróć” do punktu, w którym preset już jest, drzwi odrzucają („nie ma czego cofać”): guzik mówi to zawczasu
     const juzTu = (pk) => !!aktywny && aktywny.wersja === pk.cechy.wersja;
-    const wrocDo = (pk, tekst) => el('button', { tekst, disabled: juzTu(pk) ? true : null, title: juzTu(pk) ? 'Preset jest teraz dokładnie w tym punkcie' : 'Preset wraca do tego punktu', klik: async () => odswiez(await ruch({ co: 'wroc-do-punktu', punkt: pk.id }, 'Preset wrócił do „' + pk.cechy.nazwa + '”.')) });
+    const wrocDo = (pk, tekst) => el('button', { tekst, disabled: juzTu(pk) ? true : null, title: juzTu(pk) ? 'Preset jest teraz dokładnie w tym punkcie' : 'Preset wraca do tego punktu', klik: async () => odswiez(await ruch({ co: 'wroc-do-punktu', punkt: pk.id }, 'Preset wrócił do „' + pk.cechy.nazwa + '”.' + ostrzezenie(kluczePresetu(aktywny)))) });
     // usunięcie: dwa dotknięcia (bez okna dialogowego, tym samym guzikiem co reszta strony); preset włączony gdzie
     // indziej zostaje, a strona mówi, ile takich miejsc jest
     const usun = aktywny && klucz ? dwaDotkniecia('usuń preset', 'Na pewno usunąć?', '„' + aktywny.cechy.nazwa + '”', async () => {
@@ -541,8 +564,8 @@
     return el('section', { klasa: 'presety' },
       el('h3', { tekst: 'Preset dla ' + tu }),
       wybor,
-      el('div', { klasa: 'nowy' }, nazwa, aktywny ? kopiuj : nowy, zmienNazwe),
-      aktywny && wlasne.length && klucz ? el('div', { klasa: 'nad-presetem' },
+      // ostrzeżenie zaraz pod wyborem, w ramce: na komputerze przeoczone pod niżej (ślepa ręka 2, pkt 6)
+      aktywny && wlasne.length && klucz ? el('div', { klasa: 'nad-presetem', role: 'status' },
         el('span', { tekst: (wlasne.length === 1 ? 'Jedno pokrętło ma' : lp(wlasne.length, 'pokrętło ma', 'pokrętła mają', 'pokręteł ma')) + ' wartość ustawioną dla ' + tu + '; suwak zmienia wtedy ją, a nie preset.' }),
         el('button', { tekst: 'przenieś do presetu', title: 'Te wartości wchodzą do presetu, a ustawione dla świata są odkładane', klik: async () => {
           const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
@@ -550,13 +573,19 @@
           odswiez(await ruchyGestem([{ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, wartosci: { ...p.cechy.wartosci, ...dodaj } } }, ...odlozWlasne('wartość weszła do presetu „' + p.cechy.nazwa + '”')], 'Przeniesione do presetu „' + p.cechy.nazwa + '”.', o, 'przeniesienie do presetu'));
         } }),
         el('button', { tekst: 'odłóż je', title: 'Wartości ustawione dla świata znikają; działa preset', klik: async () => odswiez(await ruchyGestem(odlozWlasne('niech działa preset'), 'Odłożone; działa preset „' + aktywny.cechy.nazwa + '”.', o, 'odłożenie wartości świata')) })) : null,
+      el('div', { klasa: 'nowy' }, nazwa, aktywny ? kopiuj : kopiujDomyslne, aktywny ? zmienNazwe : nowy),
       aktywny && klucz ? el('div', { klasa: 'czynnosci' },
         el('button', { tekst: 'zapisz punkt', title: 'Zapamiętaj ten układ presetu; potem wrócisz do niego jednym ruchem', klik: async () => {
           const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
-          odswiez(await ruch({ co: 'poloz', rodzaj: 'punkt/1', cechy: { nazwa: p.cechy.nazwa + ', ' + godzina(), czego: p.id, wersja: p.wersja } }, 'Punkt zapisany: „' + p.cechy.nazwa + '”, ' + godzina() + '.'));
+          // nazwa punktu z pola obok, gdy coś w nim jest; inaczej nazwa presetu z godziną (ślepa ręka 2, pkt 3)
+          const wlasnaNazwa = nazwa.value.trim();
+          const np = wlasnaNazwa || p.cechy.nazwa + ', ' + godzina();
+          const r = await ruch({ co: 'poloz', rodzaj: 'punkt/1', cechy: { nazwa: np, czego: p.id, wersja: p.wersja } }, 'Punkt zapisany: „' + np + '”.');
+          if (r && wlasnaNazwa) nazwa.value = '';
+          odswiez(r);
         } }),
         start ? wrocDo(start, 'wróć do początku') : null,
-        pochodzenie ? el('button', { tekst: 'wróć do źródła' + (zrodlo ? ' „' + zrodlo.cechy.nazwa + '”' : ''), title: 'Preset wraca do dzisiejszej treści źródła, z którego go skopiowano; nazwa zostaje, a Twoje wersje zostają w historii', klik: async () => odswiez(await ruch({ co: 'domyslny', rzecz: aktywny.id }, 'Preset „' + aktywny.cechy.nazwa + '” wrócił do źródła.')) }) : null,
+        pochodzenie ? el('button', { tekst: 'wróć do źródła' + (zrodlo ? ' „' + zrodlo.cechy.nazwa + '”' : ''), title: 'Preset wraca do dzisiejszej treści źródła, z którego go skopiowano; nazwa zostaje, a Twoje wersje zostają w historii', klik: async () => odswiez(await ruch({ co: 'domyslny', rzecz: aktywny.id }, 'Preset „' + aktywny.cechy.nazwa + '” wrócił do źródła.' + ostrzezenie(kluczePresetu(aktywny)))) }) : null,
         usun) : null,
       o.ostatniGest && klucz ? el('div', { klasa: 'cofnij' }, el('button', { tekst: 'cofnij: ' + o.ostatniGest.opis, title: 'Cofa całą ostatnią czynność z tego okna (wszystkie jej ruchy razem)', klik: async () => {
         const g = o.ostatniGest;
