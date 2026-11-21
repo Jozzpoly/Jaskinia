@@ -256,9 +256,16 @@ test('umowa okna opisuje program wejścia: play i record od gospodarza, played i
   ma('{schemat: "wejscie/1"');
   ma('format przebieg/1');
   ma('równe skróty z dwóch okien znaczą przejazd bit w bit taki sam');
-  // przykład z umowy jest programem, który da się przeczytać (klucze bez cudzysłowów, jak w tekście umowy)
-  const linia = u.split('\n').find((l) => l.startsWith('Przykład: {type: "play"'));
-  const przyklad = JSON.parse(linia.slice('Przykład: '.length).replace(/([{,]\s*)([a-z_]+):/g, '$1"$2":'));
+  // druga linia Opusa czatu na 89: przechył, z którego gospodarz mówi o przewrotce, granice programu, nagranie bez pokręteł
+  ma('przechyl_max_st, t_przechyl_max');
+  ma('0 stoi, 90 na boku, 180 na dachu');
+  ma('Granice: najwyżej 5 minut (18 000 kroków), 20 000 odcinków, nazwa do 80 znaków');
+  ma('nie pokrętła: puszczone przez play jedzie dokładnie tak samo przy tych samych pokrętłach');
+  ma('nowy poprawny play przerywa');
+  // przykład z umowy to cała wiadomość, z polem jaskinia (bez niego świat milczy), i program, który da się przeczytać
+  const linia = u.split('\n').find((l) => l.startsWith('Przykład') && l.includes('type: "play"'));
+  const przyklad = JSON.parse(linia.slice(linia.indexOf('{')).replace(/([{,]\s*)([a-z_]+):/g, '$1"$2":'));
+  assert.equal(przyklad.jaskinia, 1, 'przykład skopiowany dosłownie dostaje odpowiedź');
   assert.equal(przyklad.program.schemat, 'wejscie/1');
   assert.ok(przyklad.program.odcinki.length >= 2);
 });
