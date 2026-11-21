@@ -650,3 +650,20 @@ test('U25. pełne liczenie czyta wartości tylko z zasięgów na drodze: wartoś
   assert.equal(policzUstawienia(s.dla('jozz'), { dla: jeden.id }).wartosci['wyglad.karta.rog'].wartosc, 1);
   assert.equal(policzUstawienia(s.dla('jozz')).wartosci['wyglad.paleta.jasna.akcent'].wartosc, '#102030');
 });
+
+test('U27. nakładka, której czytający nie widzi, mówi w pominiete, a nie znika po cichu (warunek A/B, 21 XI 2026)', async () => {
+  const { s, ok, wartosc, licz } = await swiat();
+  const T = ok(await s.ruch('jozz', { op: 'ust-u27-tajne', co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Tajne', widzi: 'wlasciciel', ile_wolno: 'prowadzic' } })).rzecz;
+  const profil = ok(await s.ruch('jozz', { op: 'ust-u27-profil', co: 'poloz', rodzaj: 'profil/1', obszar: T, cechy: { nazwa: 'B' } })).rzecz;
+  ok(await wartosc('jozz', 'ust-u27-wartosc', 'odczucie.reka.prog_przeciagania', 14, { zasieg: profil }));
+  const wlasciciel = licz('jozz', { nakladki: [profil] });
+  assert.equal(wlasciciel.wartosci['odczucie.reka.prog_przeciagania'].wartosc, 14, 'kontrola: właściciel widzi profil i dostaje jego wartość');
+  assert.ok(!(wlasciciel.pominiete || []).some((p) => p.nakladka === profil), 'kontrola: widoczna nakładka nie jest pominięta');
+  const agent = licz('agent-a', { nakladki: [profil] });
+  assert.notEqual(agent.wartosci['odczucie.reka.prog_przeciagania'].wartosc, 14, 'agent nie dostaje wartości z profilu, którego nie widzi');
+  const p = (agent.pominiete || []).find((x) => x.nakladka === profil);
+  assert.ok(p, 'i słyszy, że nakładkę pominięto: ' + JSON.stringify(agent.pominiete));
+  assert.match(p.dlaczego, /nie widać/);
+  const brak = '0'.repeat(26);
+  assert.ok((licz('jozz', { nakladki: [brak] }).pominiete || []).some((x) => x.nakladka === brak), 'nieistniejąca nakładka też mówi');
+});

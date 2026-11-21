@@ -246,10 +246,16 @@ export function sprawdzUstawienie(s, rodzaj, cechy, widzi, obszar = undefined) {
 }
 
 // Zasięgi od najbliższego: nakładki, rzecz `dla`, obszar, w którym leży, obszary w górę, na końcu obszar główny (Miejsce).
-export function lancuchZasiegow(w, dla = null, nakladki = []) {
+export function lancuchZasiegow(w, dla = null, nakladki = [], pominiete = null) {
   const lancuch = [];
   const dodaj = (rz) => { if (rz && !lancuch.some((x) => x.id === rz.id)) lancuch.push({ id: rz.id, rodzaj: rz.rodzaj, nazwa: w.tytul(rz) }); };
-  for (const id of nakladki) dodaj(w.rzecz(id));
+  for (const id of nakladki) {
+    const rz = w.rzecz(id);
+    if (rz) dodaj(rz);
+    // Nakładka, której czytający nie widzi albo której nie ma, nie znika po cichu (warunek A/B Opusa czatu, 21 XI 2026):
+    // przy `dla` ta sama sytuacja daje 404, a tu mówi przynajmniej w `pominiete`, inaczej dwa profile dałyby te same liczby bez słowa.
+    else if (pominiete) pominiete.push({ nakladka: id, dlaczego: 'nakładki nie widać temu, kto czyta (albo jej nie ma), więc jej wartości się nie liczą' });
+  }
   const start = dla ? w.rzecz(dla) : null;
   if (dla && !start) return null;
   if (start) {
@@ -281,7 +287,8 @@ function zestawyWZasiegach(w, lancuch, wart) {
 export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = false, zrodlo = null } = {}) {
   if (dla !== null && !(typeof dla === 'string' && ID.test(dla))) return { ok: false, status: 400, blad: 'dla: identyfikator rzeczy, dla której liczyć ustawienia (26 znaków); bez niego liczy się dla całego Miejsca' };
   const nakl = (Array.isArray(nakladki) ? nakladki : []).filter((x) => typeof x === 'string' && ID.test(x)).slice(0, 4);
-  const lancuch = zrodlo ? zrodlo.lancuch : lancuchZasiegow(w, dla, nakl);
+  const pominieteNakladki = [];
+  const lancuch = zrodlo ? zrodlo.lancuch : lancuchZasiegow(w, dla, nakl, pominieteNakladki);
   if (lancuch === null) return { ok: false, status: 404, blad: `nie ma rzeczy ${dla}` };
   const dekl = zrodlo ? zrodlo.dekl : w.pamietaj('ustawienia:deklaracje', () => { const m = new Map(); for (const d of w.wszystkie({ rodzaj: 'pokretlo/1' })) if (typeof d.cechy.nazwa === 'string' && !m.has(d.cechy.nazwa)) m.set(d.cechy.nazwa, d); return m; });
   // Wartości tylko z zasięgów na drodze: każdy zasięg wie, które wartości go wskazują (spis odniesień). Czytanie wszystkich
@@ -289,7 +296,7 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
   // (niezależny atak, 18 XI 2026).
   const wart = zrodlo ? zrodlo.wart : new Map(lancuch.flatMap((z) => w.pamietaj('ustawienia:wartosci:' + z.id, () => w._wartosciZasiegu(z.id).map((id) => w.rzecz(id)).filter((x) => x && x.rodzaj === 'wartosc/1' && !x.odlozone)).map((x) => [x.cechy.pokretlo + '|' + z.id, x])));
   const zestawyW = zrodlo && zrodlo.zestawy ? zrodlo.zestawy : (dekl.has(POKRETLO_ZESTAWOW) ? zestawyWZasiegach(w, lancuch, wart) : new Map(lancuch.map((z) => [z.id, []])));
-  const pominiete = [];
+  const pominiete = [...pominieteNakladki];
   const maRzecz = (id) => w.rzecz(id);
 
   // Zaufanie odwołań: ustawienie, które obowiązuje tam, gdzie zmiana wymaga zgody, nie idzie za pokrętłem zadeklarowanym
@@ -470,7 +477,7 @@ export function stronaUstawien(w, { dla = null, origin = '' } = {}) {
     wiersze.push(`  ${d.nazwa} = ${pokaz(x.wartosc)}   [${d.typ}${d.jednostka ? ', ' + d.jednostka : ''}; ${skad}${x.z ? '; idzie za ' + x.z : ''}]`);
     wiersze.push(`      ${d.opis}${d.zakres ? ` Zakres suwaka: ${d.zakres.od} do ${d.zakres.do}.` : ''}${d.typ === 'wybor' ? ` Wartości: ${d.wartosci.join(', ')}.` : ''}${Array.isArray(d.dotyczy) ? ` Dotyczy: ${d.dotyczy.join(', ')}.` : ''}`);
   }
-  if (u.pominiete) wiersze.push('', 'POMINIĘTE (wartość nie przechodzi dzisiejszej deklaracji albo jej odwołanie nie ma dokąd iść, więc nie dochodzi do twarzy):', ...u.pominiete.map((p) => `  ${p.pokretlo}: ${p.dlaczego}${p.rzecz ? ' -> /rzecz/' + p.rzecz : ''}`));
+  if (u.pominiete) wiersze.push('', 'POMINIĘTE (wartość nie przechodzi dzisiejszej deklaracji albo jej odwołanie nie ma dokąd iść, więc nie dochodzi do twarzy):', ...u.pominiete.map((p) => p.nakladka ? `  nakładka ${p.nakladka}: ${p.dlaczego}` : `  ${p.pokretlo}: ${p.dlaczego}${p.rzecz ? ' -> /rzecz/' + p.rzecz : ''}`));
   wiersze.push('',
     'JAK ZMIENIĆ (ten sam ruch co każdy inny; skutek albo propozycja zależy od obszaru, w którym leży zasięg):',
     `  POST ${origin}/api/srodowisko/ruch`,
