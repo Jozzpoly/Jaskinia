@@ -736,4 +736,11 @@ test('U28. nakładka mówi na każdej drodze: wprost, po nazwach (tą czyta okno
   const tekst = await (await pytanie(`/ustawienia?nakladki=${profil}`, 'agent-a')).text();
   assert.match(tekst, new RegExp(`nakładka ${profil}: `), 'strona tekstowa przyjmuje nakładki i mówi o pominiętej');
   assert.doesNotMatch(await (await pytanie(`/ustawienia?nakladki=${profil}`, 'jozz')).text(), new RegExp(`nakładka ${profil}: `), 'kontrola: właścicielowi strona nie mówi o pominięciu');
+  // echo złego kształtu bez znaków sterujących: nowa linia nie dopisuje na stronie tekstowej własnego wiersza (sonda Opusa czatu)
+  const falszywa = 'x\n  nakładka FALSZYWA';
+  const echo = await pytanie(`/ustawienia?nakladki=${encodeURIComponent(falszywa)}`, 'agent-a');
+  assert.doesNotMatch(await echo.text(), /\n {2}nakładka FALSZYWA/, 'znak nowej linii z adresu nie robi nowego wiersza');
+  const jakoDane = await json(`/api/srodowisko/ustawienia?nakladki=${encodeURIComponent(falszywa)}`, 'agent-a');
+  assert.equal(jakoDane.pominiete.find((x) => /FALSZYWA/.test(x.nakladka))?.nakladka, 'x?  nakładka FALSZYWA', 'w danych echo ma znak zapytania w miejscu znaku sterującego');
+  assert.equal((await json(`/api/srodowisko/ustawienia?nakladki=zly-ksztalt`, 'agent-a')).pominiete[0].nakladka, 'zly-ksztalt', 'kontrola: zwykły zły kształt wraca bez zmian');
 });
