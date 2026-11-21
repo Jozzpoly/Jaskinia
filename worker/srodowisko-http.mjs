@@ -98,7 +98,7 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     }
     if (sciezka === '/co-tu-jest') return tekst(coTuJest(w, opcje));
     if (sciezka === '/umowa-okna') return tekst(umowaOkna());
-    if (sciezka === '/ustawienia') return tekst(stronaUstawien(w, { dla: p.get('dla') || null, origin }));
+    if (sciezka === '/ustawienia') return tekst(stronaUstawien(w, { dla: p.get('dla') || null, nakladki: (p.get('nakladki') || '').split(',').filter(Boolean), origin }));
     if (sciezka === '/rodzaje') return tekst(listaRodzajow(w));
     if (sciezka.startsWith('/rodzaj/')) {
       let rodzaj = null;
