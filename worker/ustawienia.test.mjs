@@ -743,4 +743,8 @@ test('U28. nakładka mówi na każdej drodze: wprost, po nazwach (tą czyta okno
   const jakoDane = await json(`/api/srodowisko/ustawienia?nakladki=${encodeURIComponent(falszywa)}`, 'agent-a');
   assert.equal(jakoDane.pominiete.find((x) => /FALSZYWA/.test(x.nakladka))?.nakladka, 'x?  nakładka FALSZYWA', 'w danych echo ma znak zapytania w miejscu znaku sterującego');
   assert.equal((await json(`/api/srodowisko/ustawienia?nakladki=zly-ksztalt`, 'agent-a')).pominiete[0].nakladka, 'zly-ksztalt', 'kontrola: zwykły zły kształt wraca bez zmian');
+  // CR też robi wiersz w przeglądarce; NEL, U+2028 i U+2029 dzielą wiersze u agentów (druga linia Opusa czatu na 90)
+  const kazdy = 'a\rb\u0085c\u2028d\u2029e';
+  assert.equal((await json(`/api/srodowisko/ustawienia?nakladki=${encodeURIComponent(kazdy)}`, 'agent-a')).pominiete[0].nakladka, 'a?b?c?d?e', 'CR, NEL, U+2028 i U+2029 też idą na znak zapytania');
+  assert.doesNotMatch(await (await pytanie(`/ustawienia?nakladki=${encodeURIComponent('y\r  nakładka FALSZYWA2')}`, 'agent-a')).text(), /\r {2}nakładka FALSZYWA2/, 'powrót karetki z adresu nie robi nowego wiersza');
 });
