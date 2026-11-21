@@ -60,6 +60,7 @@ details > div { padding: 0 .65rem .5rem; }
 .okno .pasek .mowi { color: var(--ciche); font-size: .8rem; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .okno .pasek .slad-okna { color: var(--akcent); font-size: .8rem; white-space: nowrap; }
 .okno .pasek .slad-okna:empty { display: none; }
+.okno .pasek .nowa-karta .krotki { display: none; }
 .okno iframe { flex: 1; width: 100%; border: 0; background: #fff; }
 /* Suwaki świata obok okna (krok 3 serca domu, 21 XI 2026): pokrętła, które świat czyta, strojone tylko dla niego. */
 .okno .tresc { flex: 1; display: flex; min-height: 0; overflow: hidden; }
@@ -276,6 +277,9 @@ ul.ust { list-style: none; margin: 0; padding: 0; }
   .ab .ab-wykres { grid-column: 1; grid-row: 3; }
   /* na telefonie wiersz tekstu rośnie z treścią (min-height: auto), a przewija się cały pas; z min-height: 0 tekst wchodził pod wykres */
   .ab .ab-tekst { overflow: visible; min-height: auto; }
+  /* pasek okna na telefonie: „nowa karta” jako strzałka, żeby tytuł świata się mieścił, a guziki nie łamały się na dwa wiersze */
+  .okno .pasek .nowa-karta .pelny { display: none; }
+  .okno .pasek .nowa-karta .krotki { display: inline; }
   /* na telefonie pas i tak się przewija: „Próby” nie rozciąga go i nie rusza okien */
   #okna.ab-duzy .ab { height: 12rem; }
   #okna.ab-duzy .okno.ab-a, #okna.ab-duzy .okno.ab-b { bottom: auto; }

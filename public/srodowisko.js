@@ -164,7 +164,8 @@
     const sekcja = el('section', { klasa: 'okno', 'aria-label': tytul },
       el('div', { klasa: 'pasek' }, rola ? el('span', { klasa: 'rola', tekst: rola, title: rola === 'B' ? 'Okno B: ustawienia z profilu B nad ustawieniami świata' : 'Okno A: ustawienia świata' }) : null, tyt, mowi, sladOkna,
         guzikSuwakow, guzikAB,
-        el('a', { klasa: 'guzik', href: adres, target: '_blank', rel: 'noopener', tekst: 'nowa karta' }),
+        // na telefonie „nowa karta” łamała się na dwa wiersze i spychała tytuł do „JV …” (druga linia Opusa Code na 91): tam strzałka
+        el('a', { klasa: 'guzik nowa-karta', href: adres, target: '_blank', rel: 'noopener', title: 'Otwórz ten świat w nowej karcie', 'aria-label': 'nowa karta' }, el('span', { klasa: 'pelny', tekst: 'nowa karta' }), el('span', { klasa: 'krotki', tekst: '↗', 'aria-hidden': 'true' })),
         el('button', { tekst: 'zwiń', title: 'Zwiń do guzika na dole; okno zostaje załadowane', klik: () => pokaz(id, false) }),
         el('button', { tekst: '×', title: 'Zamknij okno', klik: () => zamknij(id) })),
       el('div', { klasa: 'tresc' }, ramka, suwaki));
