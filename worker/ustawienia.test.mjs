@@ -651,6 +651,42 @@ test('U25. pełne liczenie czyta wartości tylko z zasięgów na drodze: wartoś
   assert.equal(policzUstawienia(s.dla('jozz')).wartosci['wyglad.paleta.jasna.akcent'].wartosc, '#102030');
 });
 
+// --- suwaki świata obok jego okna (krok 3 serca domu, 21 XI 2026, Opus czatu) ------------------------------------------
+
+test('U26. świat czyta swoje pokrętła dla własnej rzeczy gościa: pytanie po nazwach niesie deklaracje tylko tych pokręteł, a wartość w zasięgu gościa nie zmienia Miejsca', async () => {
+  const { s, ok, wartosc } = await swiat();
+  const swiatGosc = s.spis({ rodzaj: 'gosc/1', limit: 20 })[0];
+  assert.ok(swiatGosc, 'zasiew ma przykładowego gościa');
+  // świat (tu: agent w jego imieniu) deklaruje dwa własne pokrętła; jedno idzie domyślnie za drugim (odwołanie dociągane po drodze)
+  ok(await s.ruch('agent-a', { op: 'ust-u26-moc', co: 'poloz', rodzaj: 'pokretlo/1', cechy: { nazwa: 'swiat.probny.moc', typ: 'liczba', domyslna: 1, zakres: { od: 0, do: 3, krok: 0.1 }, jednostka: '×', grupa: 'Świat próbny / Napęd', opis: 'Mnożnik mocy.' } }));
+  ok(await s.ruch('agent-a', { op: 'ust-u26-ham', co: 'poloz', rodzaj: 'pokretlo/1', cechy: { nazwa: 'swiat.probny.hamulec', typ: 'liczba', domyslna: 1, zakres: { od: 0, do: 3, krok: 0.1 }, jednostka: '×', grupa: 'Świat próbny / Napęd', opis: 'Mnożnik hamulca.' } }));
+  const nazwy = ['swiat.probny.moc', 'swiat.probny.hamulec', 'nie.ma.takiego'];
+  const pytanie = (sciezka, kto = 'jozz') => obsluzSrodowisko(s, new Request('https://proba.example' + sciezka, { headers: { 'x-kto': kto } }));
+  const zDeklaracjami = async (dla) => (await pytanie('/api/srodowisko/ustawienia?nazwy=' + nazwy.join(',') + '&deklaracje=tak' + (dla ? '&dla=' + dla : ''))).json();
+  let d = await zDeklaracjami(swiatGosc.id);
+  assert.equal(d.ok, true, JSON.stringify(d));
+  assert.deepEqual(d.deklaracje.map((x) => x.nazwa).sort(), ['swiat.probny.hamulec', 'swiat.probny.moc'], 'deklaracje tylko pytanych i istniejących pokręteł, bez pokrętła zestawów');
+  const moc = d.deklaracje.find((x) => x.nazwa === 'swiat.probny.moc');
+  assert.deepEqual([moc.typ, moc.zakres.do, moc.jednostka, moc.grupa], ['liczba', 3, '×', 'Świat próbny / Napęd']);
+  assert.ok(/^[0-9a-z]{26}$/.test(moc.rzecz), 'deklaracja niesie swoją rzecz');
+  assert.equal(d.wartosci['swiat.probny.moc'].skad, 'domyslna');
+  assert.equal((await (await pytanie('/api/srodowisko/ustawienia?nazwy=' + nazwy.join(','))).json()).deklaracje, undefined, 'bez deklaracje=tak odpowiedź jest taka jak przedtem');
+  // właściciel stroi świat: wartość w zasięgu jego rzeczy gościa (tak pisze panel suwaków), także poza zakresem suwaka
+  ok(await wartosc('jozz', 'ust-u26-strojenie', 'swiat.probny.moc', 7.5, { zasieg: swiatGosc.id }));
+  d = await zDeklaracjami(swiatGosc.id);
+  assert.deepEqual([d.wartosci['swiat.probny.moc'].wartosc, d.wartosci['swiat.probny.moc'].skad, d.wartosci['swiat.probny.moc'].zasieg], [7.5, 'wartosc', swiatGosc.id], 'zakres suwaka nie jest granicą (reguła właściciela z JV, 9 VII)');
+  assert.equal((await zDeklaracjami(null)).wartosci['swiat.probny.moc'].wartosc, 1, 'całe Miejsce zostaje przy domyślnej');
+  // wartość dla całego Miejsca świat dziedziczy, dopóki nie ma własnej
+  ok(await wartosc('jozz', 'ust-u26-miejsce', 'swiat.probny.hamulec', 2));
+  d = await zDeklaracjami(swiatGosc.id);
+  assert.equal(d.wartosci['swiat.probny.hamulec'].wartosc, 2);
+  assert.notEqual(d.wartosci['swiat.probny.hamulec'].zasieg, swiatGosc.id, 'odziedziczona leży wyżej niż gość');
+  assert.ok(d.lancuch.some((z) => z.id === d.wartosci['swiat.probny.hamulec'].zasieg), 'zasięg odziedziczonej jest w łańcuchu, więc twarz nazwie, skąd przyszła');
+  // „wróć do domyślnego”: odłożenie wartości gościa oddaje odziedziczoną (tu: domyślną)
+  ok(await s.ruch('jozz', { op: 'ust-u26-wroc', co: 'odloz', rzecz: (await zDeklaracjami(swiatGosc.id)).wartosci['swiat.probny.moc'].rzecz, wersja: 'dowolna', powod: 'powrót do wartości odziedziczonej' }));
+  assert.equal((await zDeklaracjami(swiatGosc.id)).wartosci['swiat.probny.moc'].wartosc, 1);
+});
+
 test('U27. nakładka, której czytający nie widzi, mówi w pominiete, a nie znika po cichu (warunek A/B, 21 XI 2026)', async () => {
   const { s, ok, wartosc, licz } = await swiat();
   const T = ok(await s.ruch('jozz', { op: 'ust-u27-tajne', co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Tajne', widzi: 'wlasciciel', ile_wolno: 'prowadzic' } })).rzecz;
