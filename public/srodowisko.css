@@ -78,6 +78,13 @@ details > div { padding: 0 .65rem .5rem; }
 .okno .suwak select, .okno .suwak input[type=text] { min-width: 0; max-width: 100%; }
 .okno .suwak .czynnosci { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; font-size: .74rem; }
 .okno .suwak .czynnosci:empty { display: none; }
+.okno .suwaki .presety { display: flex; flex-direction: column; gap: .4rem; padding-bottom: .6rem; border-bottom: 1px solid var(--linia); }
+.okno .suwaki .presety select { font: inherit; min-height: 2.4rem; }
+.okno .suwaki .presety .nowy { display: flex; gap: .4rem; }
+.okno .suwaki .presety .nowy input { min-width: 0; flex: 1; }
+.okno .suwaki .presety .czynnosci, .okno .suwaki .punkty li { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; font-size: .78rem; }
+.okno .suwaki .punkty { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
+.okno .suwaki .punkty li span { flex: 1; min-width: 0; color: var(--ciche); }
 .okno .pasek button.widoczne { background: var(--akcent); color: var(--plyta); border-color: var(--akcent); }
 @media (max-width: 40rem) { .okno .tresc { flex-direction: column; } .okno .suwaki { width: auto; max-height: 45%; border-left: 0; border-top: 1px solid var(--linia); } }
 /* Mowa świata pod oknem: sygnały z małym wykresem i ostatnie zdarzenie (krok 2 serca domu, 21 XI 2026). */

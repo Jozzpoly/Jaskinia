@@ -341,7 +341,8 @@
     if (o.trzymaSuwak) { o.suwakiZalegle = true; return; }
     const nr = ++o.suwakiNr;
     let u;
-    try { u = await czytaj('/api/srodowisko/ustawienia?deklaracje=tak&nazwy=' + nazwy.join(',') + (o.dla ? '&dla=' + o.dla : '')); }
+    // razem z pokrętłami świata: lista zestawów włączonych w jego zasięgu (który preset jest jego)
+    try { u = await czytaj('/api/srodowisko/ustawienia?deklaracje=tak&nazwy=' + [...nazwy, ZESTAWY].join(',') + (o.dla ? '&dla=' + o.dla : '')); }
     catch (blad) { if (nr === o.suwakiNr) o.suwaki.replaceChildren(el('p', { klasa: 'bok', tekst: 'Nie udało się przeczytać pokręteł: ' + blad.message })); return; }
     if (nr !== o.suwakiNr || o.suwaki.hidden) return;
     if (o.trzymaSuwak) { o.suwakiZalegle = true; return; }
@@ -359,17 +360,37 @@
     // kolejność świata: tak, jak sam pyta o swoje pokrętła (grupy w kolejności pierwszego pokrętła), nie alfabet
     const kolejnosc = new Map(nazwy.map((x, i) => [x, i]));
     const grupy = new Map();
-    for (const d of [...(u.deklaracje || [])].sort((a, b) => (kolejnosc.get(a.nazwa) ?? 1e9) - (kolejnosc.get(b.nazwa) ?? 1e9))) { const g = d.grupa || 'Inne'; if (!grupy.has(g)) grupy.set(g, []); grupy.get(g).push(d); }
+    for (const d of [...(u.deklaracje || [])].filter((d) => o.czyta.has(d.nazwa)).sort((a, b) => (kolejnosc.get(a.nazwa) ?? 1e9) - (kolejnosc.get(b.nazwa) ?? 1e9))) { const g = d.grupa || 'Inne'; if (!grupy.has(g)) grupy.set(g, []); grupy.get(g).push(d); }
+    // Preset świata (jego droga z 18 XI: bierze domyślny, kopiuje, nazywa, psuje, zapisuje punkt, wraca): zestaw włączony
+    // wprost w zasięgu świata; ostatni na liście wygrywa. Gdy jest, suwaki piszą w niego, a nie w wartość świata.
+    const zs = (u.wartosci || {})[ZESTAWY];
+    const wlasnaLista = zs && zs.skad === 'wartosc' && zs.zasieg === zasieg && Array.isArray(zs.wartosc) ? zs.wartosc : [];
+    const aktywnyId = wlasnaLista.length ? wlasnaLista[wlasnaLista.length - 1] : null;
+    const aktywny = aktywnyId ? rzeczy.find((r) => r.id === aktywnyId && r.rodzaj === 'zestaw/1') || null : null;
     const wiersz = (d) => {
       const x = (u.wartosci || {})[d.nazwa] || { wartosc: d.domyslna, skad: 'domyslna' };
       const swoja = !!zasieg && x.skad === 'wartosc' && x.zasieg === zasieg;
-      const skad = swoja ? 'ustawione dla ' + tu
+      const wPresecie = !!aktywny && !!aktywny.cechy.wartosci && Object.hasOwn(aktywny.cechy.wartosci, d.nazwa);
+      const skad = swoja ? 'ustawione dla ' + tu + (wPresecie ? ' (ważniejsze niż preset)' : '')
         : x.skad === 'wartosc' ? skadWyzej(x.zasieg)
-          : x.skad === 'zestaw' ? 'z zestawu „' + x.zestaw + '”' : x.skad === 'brak' ? 'brak wartości' : 'domyślne';
+          : x.skad === 'zestaw' ? 'z presetu „' + x.zestaw + '”' : x.skad === 'brak' ? 'brak wartości' : 'domyślne';
       const e = etykieta(d);
+      // Z aktywnym presetem suwak pisze w preset (nowa wersja zestawu z tą jedną zmianą), chyba że świat ma tu własną
+      // wartość: ta jest ważniejsza niż preset, więc pisanie w preset nic by nie zmieniło.
+      const doPresetu = aktywny && !swoja ? async (w) => {
+        const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
+        return ruch({ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, wartosci: { ...p.cechy.wartosci, [d.nazwa]: w } } }, 'Zmienione w presecie „' + p.cechy.nazwa + '”: ' + d.nazwa + '.');
+      } : null;
       const pole = PROSTE.includes(d.typ) && zasieg
-        ? poleUstawienia(d, x, { zasieg, potem: () => rysujSuwaki(o), zdanie: 'Ustawione dla „' + o.nazwa + '”: ' + d.nazwa + '.' })
+        ? poleUstawienia(d, x, { zasieg, zapis: doPresetu, potem: () => rysujSuwaki(o), zdanie: 'Ustawione dla „' + o.nazwa + '”: ' + d.nazwa + '.' })
         : el('span', { klasa: 'bok', tekst: zasieg ? 'typ ' + d.typ + ': zmiana ruchem, opis pod /ustawienia' : String(x.wartosc) });
+      const wyjmij = wPresecie && klucz && !swoja ? el('button', { tekst: 'wyjmij z presetu', title: 'Preset przestaje ustawiać to pokrętło: wraca wartość spoza presetu', klik: async () => {
+        const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
+        const reszta = { ...p.cechy.wartosci };
+        delete reszta[d.nazwa];
+        const r = await ruch({ co: 'poloz', rzecz: p.id, wersja: p.wersja, rodzaj: 'zestaw/1', cechy: { ...p.cechy, wartosci: reszta } }, 'Wyjęte z presetu „' + p.cechy.nazwa + '”: ' + d.nazwa + '.');
+        if (r) rysujSuwaki(o);
+      } }) : null;
       return el('li', { klasa: 'suwak', title: d.nazwa + (d.opis ? '\n' + d.opis : '') },
         el('span', { klasa: 'nazwa', tekst: e.nazwa }),
         e.opis ? el('span', { klasa: 'opis', tekst: e.opis }) : null,
@@ -380,15 +401,67 @@
             const r = await ruch({ co: 'odloz', rzecz: x.rzecz, wersja: 'dowolna', powod: 'powrót do wartości odziedziczonej' }, 'Wróciło dla „' + o.nazwa + '”: ' + d.nazwa + '.');
             if (r) rysujSuwaki(o);
           } }) : null,
+          wyjmij,
           x.rzecz ? el('a', { href: '/rzecz/' + x.rzecz, target: '_blank', rel: 'noopener', tekst: 'historia', title: 'Kto, kiedy i na ile to ustawił' }) : null));
     };
+    const presety = zasieg ? sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, wartosci: u.wartosci || {} }) : null;
     const fokus = o.suwaki.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null;
     // replaceChildren zamienia null na napis "null": puste miejsca odsiewamy jak el()
     o.suwaki.replaceChildren(...[
       el('p', { klasa: 'bok', tekst: !zasieg ? 'Ten świat czyta pokrętła dla całego Miejsca: stroisz je w panelu ustawień, tu tylko je widać.' : !klucz ? 'Żeby stroić, wejdź (guzik „Wejdź” na górze).' : 'Strojenie tylko dla ' + tu + '. Zapis przy puszczeniu suwaka albo po wpisaniu liczby; liczba może wyjść poza suwak.' }),
+      presety,
       ...[...grupy].map(([g, lista]) => el('section', {}, el('h3', { tekst: g }), el('ul', {}, lista.map(wiersz)))),
       (u.deklaracje || []).length ? null : el('p', { klasa: 'bok', tekst: 'Świat czyta pokrętła, których Miejsce nie zna: ' + nazwy.join(', ') + '.' })].filter(Boolean));
     if (fokus) { const e = [...o.suwaki.querySelectorAll('[aria-label]')].find((x) => x.getAttribute('aria-label') === fokus); if (e) e.focus(); }
+  }
+  // Sekcja presetu w panelu świata. Wszystko na ruchach, które grunt już ma: zestaw/1 (preset), srodowisko.zestawy
+  // w zasięgu świata (który jest włączony), kopiuj (z pochodzeniem), punkt/1 i wroc-do-punktu, domyslny (wróć do źródła).
+  const ZESTAWY = 'srodowisko.zestawy';
+  function sekcjaPresetu(o, { zasieg, tu, zs, wlasnaLista, aktywny, wartosci }) {
+    const wlacz = (lista, zdanie) => ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: ZESTAWY, zasieg, wartosc: lista } }, zdanie);
+    const odswiez = (r) => { if (r) rysujSuwaki(o); return r; };
+    // presety tego świata: zestawy, które ustawiają choć jedno z jego pokręteł
+    const swoje = rzeczy.filter((r) => r.rodzaj === 'zestaw/1' && r.cechy && r.cechy.wartosci && typeof r.cechy.wartosci === 'object' && Object.keys(r.cechy.wartosci).some((n) => o.czyta.has(n)))
+      .sort((a, b) => String(a.cechy.nazwa).localeCompare(String(b.cechy.nazwa), 'pl'));
+    const wybor = el('select', { 'aria-label': 'Preset dla ' + tu, disabled: klucz ? null : true },
+      el('option', { value: '', tekst: '— bez presetu —' }),
+      swoje.map((r) => el('option', { value: r.id, tekst: r.cechy.nazwa, selected: aktywny && r.id === aktywny.id ? true : null })));
+    wybor.addEventListener('change', async () => {
+      const id = wybor.value;
+      if (!id) { if (zs && zs.rzecz && wlasnaLista.length) odswiez(await ruch({ co: 'odloz', rzecz: zs.rzecz, wersja: 'dowolna', powod: 'bez presetu' }, 'Bez presetu dla „' + o.nazwa + '”.')); return; }
+      odswiez(await wlacz([id], 'Preset „' + (swoje.find((r) => r.id === id) || { cechy: { nazwa: id } }).cechy.nazwa + '” dla „' + o.nazwa + '”.'));
+    });
+    const nazwa = el('input', { type: 'text', maxlength: '60', placeholder: aktywny ? 'nazwa kopii' : 'nazwa nowego presetu', 'aria-label': 'Nazwa presetu', disabled: klucz ? null : true });
+    const utworz = el('button', { tekst: aktywny ? 'kopiuj' : 'nowy z obecnych', title: aktywny ? 'Kopia aktywnego presetu pod nową nazwą; kopia pamięta źródło, więc potem wraca do niego jednym ruchem' : 'Nowy preset z wartości, które świat ma teraz', klik: async () => {
+      const n = nazwa.value.trim();
+      if (!n) { komunikat('Najpierw nazwa presetu.', true); nazwa.focus(); return; }
+      let r;
+      if (aktywny) r = await ruch({ co: 'kopiuj', rzecz: aktywny.id, nazwa: n }, 'Skopiowane jako „' + n + '”.');
+      else {
+        const teraz = {};
+        for (const k of o.czyta) { const x = wartosci[k]; if (x && x.wartosc !== undefined && x.wartosc !== null && x.skad !== 'brak') teraz[k] = x.wartosc; }
+        r = await ruch({ co: 'poloz', rodzaj: 'zestaw/1', cechy: { nazwa: n, po_co: 'preset', opis: 'Preset świata „' + o.nazwa + '”.', wartosci: teraz } }, 'Nowy preset „' + n + '”.');
+      }
+      if (!r || !r.rzecz || r.skutek === 'propozycja') return odswiez(r);
+      odswiez(await wlacz([r.rzecz], 'Preset „' + n + '” dla „' + o.nazwa + '”.'));
+    } });
+    const punkty = aktywny ? rzeczy.filter((r) => r.rodzaj === 'punkt/1' && r.cechy && r.cechy.czego === aktywny.id).sort((a, b) => String(b.utworzono || '').localeCompare(String(a.utworzono || ''))).slice(0, 5) : [];
+    const pochodzenie = aktywny ? rzeczy.find((r) => r.rodzaj === 'pochodzenie/1' && r.cechy && r.cechy.kopia === aktywny.id) : null;
+    const zrodlo = pochodzenie ? rzeczy.find((r) => r.id === pochodzenie.cechy.z) : null;
+    const godzina = () => new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+    return el('section', { klasa: 'presety' },
+      el('h3', { tekst: 'Preset dla ' + tu }),
+      wybor,
+      el('div', { klasa: 'nowy' }, nazwa, utworz),
+      aktywny && klucz ? el('div', { klasa: 'czynnosci' },
+        el('button', { tekst: 'zapisz punkt', title: 'Zapamiętaj ten układ presetu; potem wrócisz do niego jednym ruchem', klik: async () => {
+          const p = rzeczy.find((r) => r.id === aktywny.id) || aktywny;
+          odswiez(await ruch({ co: 'poloz', rodzaj: 'punkt/1', cechy: { nazwa: p.cechy.nazwa + ', ' + godzina(), czego: p.id, wersja: p.wersja } }, 'Punkt zapisany: „' + p.cechy.nazwa + '”, ' + godzina() + '.'));
+        } }),
+        pochodzenie ? el('button', { tekst: 'wróć do źródła' + (zrodlo ? ' „' + zrodlo.cechy.nazwa + '”' : ''), title: 'Preset wraca do dzisiejszej treści źródła, z którego go skopiowano; nazwa zostaje, a Twoje wersje zostają w historii', klik: async () => odswiez(await ruch({ co: 'domyslny', rzecz: aktywny.id }, 'Preset „' + aktywny.cechy.nazwa + '” wrócił do źródła.')) }) : null) : null,
+      punkty.length ? el('ul', { klasa: 'punkty' }, punkty.map((pk) => el('li', {},
+        el('span', { tekst: pk.cechy.nazwa }),
+        klucz ? el('button', { tekst: 'wróć', title: 'Preset wraca do tego punktu', klik: async () => odswiez(await ruch({ co: 'wroc-do-punktu', punkt: pk.id }, 'Preset wrócił do punktu „' + pk.cechy.nazwa + '”.')) }) : null))) : null);
   }
 
   // --- strona --------------------------------------------------------------------------------------------------
@@ -1076,6 +1149,7 @@
     const nieczynne = klucz ? null : true;
     const podejrzyj = opcje.zasieg ? () => {} : (w) => { if (bezpiecznie) return; P.podejrzyj(d.nazwa, w); if (podglad) podglad.nadaj(d.nazwa, w); };
     const ustaw = async (w) => {
+      if (opcje.zapis) { const o = await opcje.zapis(w); if (opcje.potem) opcje.potem(o); return; }
       if (opcje.zasieg) {
         const o = await ruch({ co: 'poloz', rodzaj: 'wartosc/1', wersja: 'dowolna', cechy: { pokretlo: d.nazwa, zasieg: opcje.zasieg, wartosc: w } }, opcje.zdanie || 'Ustawione: ' + d.nazwa + '.');
         if (opcje.potem) opcje.potem(o);
