@@ -388,7 +388,12 @@
       }
       const pole = o.suwaki.querySelector('input[aria-label="Nazwa presetu"]');
       const wpisana = pole ? pole.value.trim() : '';
-      const n = wpisana || p.cechy.nazwa + ' (moja, ' + godzinaTeraz() + ')';
+      // Nazwa sama z siebie jest wolna: dwie kopie z jednej minuty (powrót do cudzego presetu i druga zmiana) stały
+      // na liście jako dwie takie same pozycje (druga linia Opusa Code na 87, A1). Nazwę wpisaną ręką zostawiamy, jaka jest.
+      const zajeta = (x) => rzeczy.some((r) => r.rodzaj === 'zestaw/1' && r.cechy && r.cechy.nazwa === x);
+      const podstawa = p.cechy.nazwa + ' (moja, ' + godzinaTeraz();
+      let n = wpisana || podstawa + ')';
+      for (let i = 2; !wpisana && zajeta(n) && i < 100; i++) n = podstawa + ', ' + i + ')';
       const r = await ruchyGestem([
         { co: 'kopiuj', rzecz: p.id, nazwa: n },
         (w) => wlaczZestaw(zasieg, w[0].rzecz),
