@@ -286,7 +286,10 @@ export const NAJWIECEJ_NAKLADEK = 4;
 function nakladkiDoLancucha(nakladki, pominiete) {
   const nakl = [];
   for (const x of Array.isArray(nakladki) ? nakladki : []) {
-    if (typeof x !== 'string' || !ID.test(x)) pominiete.push({ nakladka: String(x).slice(0, 40), dlaczego: 'to nie identyfikator rzeczy (26 znaków: cyfry i małe litery)' });
+    // echo tego, co przyszło, bez znaków sterujących: nowa linia (LF albo CR) dopisywałaby na stronie tekstowej własny
+    // wiersz (druga linia Opusa czatu na 86); NEL, U+2028 i U+2029 dzielą wiersze u agentów (splitlines w Pythonie,
+    // wyrażenie regularne z flagą m), więc też idą na znak zapytania (druga linia na 90)
+    if (typeof x !== 'string' || !ID.test(x)) pominiete.push({ nakladka: String(x).slice(0, 40).replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]/g, '?'), dlaczego: 'to nie identyfikator rzeczy (26 znaków: cyfry i małe litery)' });
     else if (nakl.length >= NAJWIECEJ_NAKLADEK) pominiete.push({ nakladka: x, dlaczego: `najwyżej ${NAJWIECEJ_NAKLADEK} nakładki w jednym pytaniu, ta jest dalsza` });
     else nakl.push(x);
   }
