@@ -79,7 +79,7 @@ const INDEKSY = [
 const blad = (status, tekst, extra = {}) => ({ ok: false, status, blad: tekst, ...extra });
 
 export class Rdzen {
-  constructor(sql, { teraz = () => Date.now(), wlasciciel = WLASCICIEL } = {}) {
+  constructor(sql, { teraz = () => Date.now(), wlasciciel = WLASCICIEL, transakcja = null } = {}) {
     // Numer ostatniego aktu jest pamiętany (ostatniNr), bo pyta o niego prawie każde czytanie, a bez pamięci każde
     // pytanie to wiersz bazy (zmierzone 17 XI: spis 636 rzeczy pytał o niego 636 razy). Każde zapytanie, które zmienia
     // tabelę aktów, kasuje tę pamięć, więc jest zawsze prawdziwa. Założenie: jedno jądro na jedną bazę (tak jest
@@ -89,6 +89,12 @@ export class Rdzen {
       exec: (zapytanie, ...p) => { if (ZMIENIA_AKTY.test(zapytanie)) this._nr = null; return sql.exec(zapytanie, ...p); },
       get databaseSize() { return sql.databaseSize; },
     };
+    // Wszystko albo nic (21 XI 2026). Durable Object łączy zapisy bez `await` w jeden atomowy zapis na dysk, więc awaria
+    // maszyny nie zostawia połowy czynności. Wyjątek w połowie (błąd magazynu, przekroczony limit, błąd w kodzie spisu)
+    // zostawia jednak zapisy sprzed niego; cofa je dopiero ctx.storage.transactionSync, a w Node punkt zapisu
+    // (sql-node.mjs). Bez żadnej z nich czynność idzie jak dotąd, bez tej gwarancji.
+    this._transakcja = typeof transakcja === 'function' ? transakcja : typeof sql.transakcja === 'function' ? (fn) => sql.transakcja(fn) : null;
+    this._glebokosc = 0;
     this.teraz = teraz;
     // Kto jest właścicielem, przychodzi z ustawienia Workera, a nie z kodu; `jozz` jest tylko wartością domyślną.
     this.wlasciciel = poprawneImie(wlasciciel) ? wlasciciel : WLASCICIEL;
@@ -174,6 +180,16 @@ export class Rdzen {
     return { ok: true, powtorzone: false, glowa, zapis: na, wersja: akt.nr, akt: this.opisAktu(akt) };
   }
 
+  // Czynność w transakcji; zagnieżdżona idzie w zewnętrznej. Po wycofaniu kasujemy pamięć numeru aktu, bo mogła
+  // zapamiętać akt, którego już nie ma.
+  wTransakcji(fn) {
+    if (!this._transakcja || this._glebokosc > 0) return fn();
+    this._glebokosc++;
+    try { return this._transakcja(fn); }
+    catch (e) { this._nr = null; throw e; }
+    finally { this._glebokosc--; }
+  }
+
   ostatniAkt() { return this.q(`SELECT * FROM akty ORDER BY nr DESC LIMIT 1`)[0]; }
   ostatniNr() {
     if (this._nr === null) this._nr = this.q(`SELECT COALESCE(MAX(nr), 0) AS nr FROM akty`)[0].nr;
@@ -195,7 +211,9 @@ export class Rdzen {
     return { ok: true, op, rodzaj, tresc, rozmiar: z.rozmiar, id: z.id, glowa, wersja, odciskZ, odciskP };
   }
 
-  zatwierdzPolozenia(kto, lista, { slad = null } = {}) {
+  zatwierdzPolozenia(kto, lista, opcje = {}) { return this.wTransakcji(() => this._zatwierdzPolozenia(kto, lista, opcje)); }
+
+  _zatwierdzPolozenia(kto, lista, { slad = null } = {}) {
     if (!poprawneImie(kto)) return blad(401, 'nieznany wykonawca');
     const cialo = typeof slad === 'string' && CIALO.test(slad) ? slad : null;
     // 1. powtórzenie tej samej czynności: wszystkie akty już są, z tym samym odciskiem
@@ -393,14 +411,19 @@ export class Rdzen {
     for (const g of e.glowy) if (!GLOWA.test(g.nazwa) || !ids.has(g.zapis) || !nry.has(g.akt)) return blad(422, `głowa ${g.nazwa} wskazuje coś, czego nie ma`);
     const meta = Array.isArray(e.meta) ? e.meta : [];
     for (const m of meta) if (!m || typeof m.klucz !== 'string' || typeof m.wartosc !== 'string' || m.klucz.length > 200 || m.wartosc.length > 4000) return blad(422, 'meta: każdy wpis ma mieć napisy klucz i wartosc');
-    // od tej linii nic nie może się nie udać z powodu danych: wszystko sprawdzone
+    // Od tej linii nic nie może się nie udać z powodu danych: wszystko sprawdzone. Z innego powodu może (magazyn, limit),
+    // a połowa wwozu zostawiłaby Miejsce niepuste, więc drugiego wwozu już by nie przyjęło (21 XI 2026): stąd transakcja.
+    this.wTransakcji(() => this._wwiez(e, meta));
+    return { ok: true, zapisy: e.zapisy.length, akty: e.akty.length, glowy: e.glowy.length, meta: meta.length };
+  }
+
+  _wwiez(e, meta) {
     for (const z of e.zapisy) this.sql.exec(`INSERT INTO zapisy (id, rodzaj, tresc, rozmiar) VALUES (?, ?, ?, ?)`, z.id, z.rodzaj, z.tresc, enc.encode(z.tresc).length);
     for (const a of e.akty) this.sql.exec(`INSERT INTO akty (nr, op, odcisk, kto, kiedy, co, zapis, glowa, z_zapisu, nowy, prywatne, cialo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       a.nr, a.op, String(a.odcisk || ''), a.kto, Number(a.kiedy), a.co, a.zapis, a.glowa ?? null, a.z_zapisu ?? null, a.nowy ?? null, a.prywatne ? 1 : 0, typeof a.cialo === 'string' && CIALO.test(a.cialo) ? a.cialo : null);
     for (const g of e.glowy) this.sql.exec(`INSERT INTO glowy (nazwa, zapis, akt) VALUES (?, ?, ?)`, g.nazwa, g.zapis, g.akt);
     for (const o of e.odczyty) if (poprawneImie(o.kto) && Number.isInteger(o.nr)) this.sql.exec(`INSERT INTO odczyty (kto, nr, kiedy) VALUES (?, ?, ?)`, o.kto, o.nr, Number(o.kiedy) || this.teraz());
     for (const m of meta) if (m.klucz !== 'schemat') this.ustawMeta(m.klucz, m.wartosc);
-    return { ok: true, zapisy: e.zapisy.length, akty: e.akty.length, glowy: e.glowy.length, meta: meta.length };
   }
 }
 
