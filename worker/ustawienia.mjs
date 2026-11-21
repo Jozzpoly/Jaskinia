@@ -394,7 +394,7 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
 // każdej zmianie ustawień i w każdej otwartej twarzy: kto dokładał pokrętła tam, gdzie prowadzi, podnosił koszt wszystkim
 // (niezależny atak, 17 XI 2026; limit wierszy jest wspólny dla całego konta).
 // Pokrętła, za którymi idą wartości pochodne, dociąga samo (najwyżej tyle obiegów, ile wynosi głębokość odwołań).
-export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], nazwy = [] } = {}) {
+export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], nazwy = [], deklaracje = false } = {}) {
   if (dla !== null && !(typeof dla === 'string' && ID.test(dla))) return policzUstawienia(w, { dla });
   const lista = [...new Set((Array.isArray(nazwy) ? nazwy : []).filter((n) => typeof n === 'string' && NAZWA.test(n)))];
   if (lista.length > NAJWIECEJ_NAZW) return { ok: false, status: 400, blad: `nazwy: najwyżej ${NAJWIECEJ_NAZW} nazw pokręteł w jednym pytaniu` };
@@ -438,8 +438,14 @@ export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], na
     }
     kolejka = nastepne;
   }
-  const u = policzUstawienia(w, { dla, nakladki: nakl, zrodlo: { dekl, wart, lancuch, zestawy } });
-  if (u.ok) u.wartosci = Object.fromEntries(Object.entries(u.wartosci).filter(([n]) => lista.includes(n)));
+  const u = policzUstawienia(w, { dla, nakladki: nakl, deklaracje, zrodlo: { dekl, wart, lancuch, zestawy } });
+  if (u.ok) {
+    const pytane = new Set(lista);
+    u.wartosci = Object.fromEntries(Object.entries(u.wartosci).filter(([n]) => pytane.has(n)));
+    // Deklaracje tylko pytanych pokręteł (suwaki świata obok jego okna potrzebują typu, zakresu i grupy tego, co świat
+    // czyta), bez pokręteł dociągniętych po drodze: zestawów i celów odwołań.
+    if (u.deklaracje) u.deklaracje = u.deklaracje.filter((d) => pytane.has(d.nazwa));
+  }
   return u;
 }
 
