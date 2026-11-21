@@ -156,6 +156,8 @@
     const suwaki = el('aside', { klasa: 'suwaki', hidden: true, 'aria-label': 'Suwaki świata' });
     const guzikSuwakow = el('button', { tekst: 'suwaki', hidden: true, 'aria-pressed': 'false', title: 'Pokrętła, które ten świat czyta z Jaskini: strojenie tylko dla niego', klik: () => przelaczSuwaki(id) });
     suwaki.addEventListener('pointerdown', () => { const o = okna.get(id); if (o) o.trzymaSuwak = true; });
+    // wyjście z pola: to, co przyszło w trakcie pisania, rysuje się teraz
+    suwaki.addEventListener('focusout', () => setTimeout(() => { const o = okna.get(id); if (o && o.suwakiZalegle && !o.trzymaSuwak && !pisze(o)) { o.suwakiZalegle = false; rysujSuwaki(o); } }, 0));
     const sekcja = el('section', { klasa: 'okno', 'aria-label': tytul },
       el('div', { klasa: 'pasek' }, tyt, mowi, sladOkna,
         guzikSuwakow,
@@ -329,23 +331,26 @@
     if (!o.suwaki.hidden) rysujSuwaki(o);
   }
   // Ustawienia w Miejscu zmieniły się gdzie indziej (inna karta, agent, zestaw): otwarte suwaki czytają od nowa.
-  const odswiezSuwaki = () => { for (const o of okna.values()) if (!o.suwaki.hidden) rysujSuwaki(o); };
+  const odswiezSuwaki = () => { for (const o of okna.values()) if (!o.suwaki.hidden) rysujSuwaki(o, { tlo: true }); };
+  // Ręka pisze w polu panelu (liczba, nazwa presetu, wybór): odświeżenie z tła czeka, aż wyjdzie z pola, żeby nie
+  // zgubić tego, co wpisuje (ślepa ręka i próby 21 XI: panel przerysowany w trakcie pisania gubił wpisane znaki).
+  const pisze = (o) => { const a = document.activeElement; return !!a && o.suwaki.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && a.type !== 'range'; };
   // Puszczenie suwaka gdziekolwiek (także poza ramką panelu): to, co przyszło w trakcie, rysuje się teraz.
   const puscSuwaki = () => { for (const o of okna.values()) if (o.trzymaSuwak) { o.trzymaSuwak = false; if (o.suwakiZalegle) { o.suwakiZalegle = false; rysujSuwaki(o); } } };
   addEventListener('pointerup', puscSuwaki);
   addEventListener('pointercancel', puscSuwaki);
-  async function rysujSuwaki(o) {
+  async function rysujSuwaki(o, { tlo = false } = {}) {
     const nazwy = [...o.czyta];
     if (!nazwy.length || o.suwaki.hidden) return;
     // ręka trzyma suwak: nie podmieniamy go pod palcem, tylko rysujemy po puszczeniu
-    if (o.trzymaSuwak) { o.suwakiZalegle = true; return; }
+    if (o.trzymaSuwak || (tlo && pisze(o))) { o.suwakiZalegle = true; return; }
     const nr = ++o.suwakiNr;
     let u;
     // razem z pokrętłami świata: lista zestawów włączonych w jego zasięgu (który preset jest jego)
     try { u = await czytaj('/api/srodowisko/ustawienia?deklaracje=tak&nazwy=' + [...nazwy, ZESTAWY].join(',') + (o.dla ? '&dla=' + o.dla : '')); }
     catch (blad) { if (nr === o.suwakiNr) o.suwaki.replaceChildren(el('p', { klasa: 'bok', tekst: 'Nie udało się przeczytać pokręteł: ' + blad.message })); return; }
     if (nr !== o.suwakiNr || o.suwaki.hidden) return;
-    if (o.trzymaSuwak) { o.suwakiZalegle = true; return; }
+    if (o.trzymaSuwak || (tlo && pisze(o))) { o.suwakiZalegle = true; return; }
     const zasieg = o.dla;
     // Skąd jest wartość, słowami ręki: pierwsze ogniwo łańcucha to zasięg, w którym świat czyta (rzecz gościa albo,
     // gdy świat zacznie czytać dla okna, okno), ostatnie to obszar główny, czyli całe Miejsce.
