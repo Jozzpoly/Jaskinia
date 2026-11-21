@@ -223,12 +223,26 @@
   const ab = { sekcja: null, para: null, trwa: false };
   const sekundyProgramu = (p) => Math.round((p.odcinki || []).reduce((s, x) => s + (Number.isFinite(x.s) ? x.s : (Number(x.kroki) || 0) / 60), 0) * 10) / 10;
   let nrZadaniaAB = 0;
-  // Wiadomość do świata w oknie i czekanie na odpowiedź z tym samym id, nie dłużej niż `ms`.
-  function zapytajSwiat(o, wiadomosc, ms) {
+  // Ile ciszy znosimy po zwykłym limicie: JV mówi sygnały co 250 ms, a stan co sekundę, gdy się zmienia.
+  const CISZA_AB_MS = 15000;
+  // Wiadomość do świata w oknie i czekanie na odpowiedź z tym samym id. Do `ms` zawsze. Po nim dalej, ale tylko na
+  // okno, które daje znać, że żyje (każda jego wiadomość), i najwyżej do `sufit`. Wolne okno jedzie te same kroki fizyki,
+  // tylko później (nagranie 21 XI: dwa JV na SwiftShaderze, 1–3 klatki na sekundę, a JV robi najwyżej 8 kroków na klatkę).
+  function zapytajSwiat(o, wiadomosc, ms, sufit = ms, poLimicie = null) {
     const id = 'ab-' + Date.now().toString(36) + '-' + ++nrZadaniaAB;
+    const od = Date.now();
     return new Promise((res) => {
-      const t = setTimeout(() => { o.oczekuje.delete(id); res({ ok: false, error: 'świat nie odpowiedział w ' + Math.round(ms / 1000) + ' s' }); }, ms);
-      o.oczekuje.set(id, (m) => { clearTimeout(t); res(m); });
+      let powiedziane = false;
+      const t = setInterval(() => {
+        const minelo = Date.now() - od, cisza = Date.now() - (o.zyje || 0);
+        if (minelo < ms) return;
+        if (minelo >= sufit || cisza > CISZA_AB_MS) {
+          clearInterval(t); o.oczekuje.delete(id);
+          const s = (x) => Math.round(x / 1000);
+          res({ ok: false, error: minelo >= sufit && sufit > ms ? 'świat nie skończył w ' + s(sufit) + ' s, choć jeszcze żył' : 'świat nie odpowiedział w ' + s(minelo) + ' s' + (sufit > ms ? ' i od ' + s(cisza) + ' s milczy' : '') });
+        } else if (!powiedziane && poLimicie) { powiedziane = true; poLimicie(o); }
+      }, 250);
+      o.oczekuje.set(id, (m) => { clearInterval(t); res(m); });
       if (o.ramka.contentWindow) o.ramka.contentWindow.postMessage({ jaskinia: 1, ...wiadomosc, id }, '*');
     });
   }
@@ -287,9 +301,12 @@
     ab.trwa = true; ab.jedz.disabled = true; ab.powtorz.disabled = true;
     const s = sekundyProgramu(program);
     ab.stan.textContent = 'Oba auta jadą od startu: ' + (program.nazwa || 'program') + ' (' + liczbaPL(s) + ' s)…';
-    // schowane okno może jechać wolniej, nigdy inaczej: limit to trzy długości programu i start
+    // wolne okno jedzie tak samo, tylko później: zwykły limit to trzy długości programu i start; po nim czekamy dalej na
+    // okno, które żyje, najwyżej dziesięć długości i minutę (nie dłużej niż kwadrans i nigdy krócej niż zwykły limit)
     const ms = Math.ceil(s * 3000 + 15000);
-    const [pa, pb] = await Promise.all([zapytajSwiat(A, { type: 'play', program }, ms), zapytajSwiat(B, { type: 'play', program }, ms)]);
+    const sufit = Math.max(ms, Math.min(15 * 60000, Math.ceil(s * 10000 + 60000)));
+    const dluzej = (o) => { ab.stan.textContent = 'Okno ' + o.rola + ' jedzie wolniej niż zegar: ten sam przejazd, tylko później. Czekam, póki daje znać, że żyje, najwyżej ' + liczbaPL(Math.round(sufit / 1000)) + ' s od startu…'; };
+    const [pa, pb] = await Promise.all([zapytajSwiat(A, { type: 'play', program }, ms, sufit, dluzej), zapytajSwiat(B, { type: 'play', program }, ms, sufit, dluzej)]);
     ab.trwa = false;
     ulozAB();
     if (!pa.ok || !pb.ok || !pa.przebieg || !pb.przebieg) {
@@ -373,16 +390,22 @@
   }
   // Gdzie ręka jechała ostatnio: ramka dostaje fokus przy kliknięciu, a strona traci go w tej samej chwili.
   // Zdanie „nie ma czego powtórzyć” znika, gdy ręka znowu wchodzi do gry, inaczej wisiało po przejeździe (ślepa ręka, D4).
-  addEventListener('blur', () => setTimeout(() => {
+  const rekaWRamce = () => {
     const a = document.activeElement;
     for (const o of okna.values()) if (o.ramka === a) { o.dotkniete = Date.now(); if (ab.zdanie && ab.zdanie.dataset.przejsciowe && o.para) { ab.zdanie.textContent = ''; delete ab.zdanie.dataset.przejsciowe; } }
-  }, 0));
+  };
+  addEventListener('blur', () => setTimeout(rekaWRamce, 0));
+  // Z ramki do ramki (klik w oknie B, potem w oknie A) strona nie dostaje „blur”, bo fokus jej nie wraca. Dopóki stoi para,
+  // sprawdzamy więc co 400 ms, która ramka ma fokus; inaczej „Powtórz” brało jazdę z okna B (próba AB17 to znalazła).
+  setInterval(() => { if (ab.para) rekaWRamce(); }, 400);
   // Rozmowa z gośćmi. Przyjmujemy wiadomości tylko od ramek, które sami otworzyliśmy.
   addEventListener('message', async (e) => {
     const m = e.data;
     if (!m || typeof m !== 'object' || m.jaskinia !== 1 || typeof m.type !== 'string') return;
     const o = [...okna.values()].find((x) => x.ramka.contentWindow === e.source);
     if (!o) return;
+    // świat żyje: porównanie A/B czeka na wolne okno tak długo, jak ono się odzywa (zapytajSwiat)
+    o.zyje = Date.now();
     const odp = (w) => e.source.postMessage({ jaskinia: 1, ...w }, '*');
     if (m.type === 'hello') {
       // w doku para musi się różnić: „Świat · A” i „Świat · B”, inaczej dwa takie same guziki
