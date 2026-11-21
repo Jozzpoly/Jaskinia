@@ -122,7 +122,9 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
       const o = { dla: p.get('dla') || null, nakladki: (p.get('nakladki') || '').split(',').filter(Boolean) };
       // Twarz pyta po nazwach swoich pokręteł: koszt nie zależy wtedy od tego, ile pokręteł i wartości leży w Miejscu.
       // Bez nazw: wszystko, co zadeklarowane (panel, agent, który chce zobaczyć całość).
-      return json(p.has('nazwy') ? await policzUstawieniaDlaNazw(w, { ...o, nazwy: p.get('nazwy').split(',') }) : policzUstawienia(w, { ...o, deklaracje: p.get('deklaracje') === 'tak' }));
+      // deklaracje=tak działa w obu drogach: po nazwach niesie deklaracje tylko pytanych pokręteł.
+      const deklaracje = p.get('deklaracje') === 'tak';
+      return json(p.has('nazwy') ? await policzUstawieniaDlaNazw(w, { ...o, nazwy: p.get('nazwy').split(','), deklaracje }) : policzUstawienia(w, { ...o, deklaracje }));
     }
     if (sciezka === '/api/srodowisko/spis') {
       const filtr = filtrZAdresu(w, p);
