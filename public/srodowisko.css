@@ -63,23 +63,40 @@ details > div { padding: 0 .65rem .5rem; }
 .okno .tresc iframe { width: auto; min-width: 0; flex: 1; }
 .okno .suwaki { width: 18rem; flex: none; overflow: auto; border-left: 1px solid var(--linia); padding: .3rem .75rem .8rem; font-size: .82rem; background: var(--plyta); }
 .okno .suwaki[hidden] { display: none; }
-.okno .suwaki h3 { font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ciche); margin: .8rem 0 .1rem; font-weight: 650; }
+.okno .suwaki h3, .okno .suwaki details.grupa > summary { font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ciche); margin: .8rem 0 .1rem; font-weight: 650; }
+.okno .suwaki details.grupa > summary { cursor: pointer; padding: .2rem 0; }
+.okno .suwaki details.grupa > summary .ile { font-weight: 400; letter-spacing: 0; }
 .okno .suwaki ul { list-style: none; margin: 0; padding: 0; }
 .okno .suwak { display: flex; flex-direction: column; gap: .2rem; padding: .45rem 0; border-bottom: 1px solid var(--linia); }
 .okno .suwak .nazwa { font-weight: 600; }
-.okno .suwak .opis { color: var(--ciche); font-size: .74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.okno .suwak .opis { color: var(--ciche); font-size: .74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.okno .suwak .opis.caly { white-space: normal; }
+.okno .suwak .historia-lista ul { list-style: none; margin: .2rem 0; padding: 0; display: flex; flex-direction: column; gap: .15rem; font-size: .76rem; }
+.okno .suwak .historia-lista li { display: flex; gap: .6rem; }
+.okno .suwak .historia-lista .w { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 4.5rem; }
+.okno .suwak .historia-lista .kto, .okno .suwak .historia-lista a { color: var(--ciche); font-size: .72rem; }
+.okno .suwaki .nad-presetem { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .8rem; color: var(--znak); border: 1px solid var(--znak); border-radius: .4rem; padding: .45rem .55rem; }
+.okno .suwak .historia-lista button.ustaw { font-size: .72rem; padding: .1rem .4rem; min-height: 0; }
+.okno .suwaki .presety button.usun { color: var(--znak); }
 .okno .suwak .skad { color: var(--ciche); font-size: .74rem; }
 .okno .suwak .skad.swoja { color: var(--akcent); }
 .okno .suwak .ust-para { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
 /* ogólna reguła pól (flex: 1, min-width: 10rem) rozpychała liczbę na całą szerokość panelu */
 .okno .suwak input[type=range] { flex: 1 1 7rem; min-width: 0; padding: 0; border: 0; background: none; accent-color: var(--akcent); }
-.okno .suwak input[type=number] { flex: none; width: 5.5rem; min-width: 0; font-variant-numeric: tabular-nums; }
+.okno .suwak input[type=number] { flex: none; width: 7rem; min-width: 0; font-variant-numeric: tabular-nums; }
 .okno .suwak input[type=color] { flex: none; min-width: 0; width: 3rem; padding: 0; }
 .okno .suwak select, .okno .suwak input[type=text] { min-width: 0; max-width: 100%; }
 .okno .suwak .czynnosci { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; font-size: .74rem; }
 .okno .suwak .czynnosci:empty { display: none; }
+.okno .suwaki .presety { display: flex; flex-direction: column; gap: .4rem; padding-bottom: .6rem; border-bottom: 1px solid var(--linia); }
+.okno .suwaki .presety select { font: inherit; min-height: 2.4rem; }
+.okno .suwaki .presety .nowy { display: flex; flex-wrap: wrap; gap: .4rem; }
+.okno .suwaki .presety .nowy input { min-width: 0; flex: 1 1 9rem; }
+.okno .suwaki .presety .czynnosci, .okno .suwaki .punkty li { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; font-size: .78rem; }
+.okno .suwaki .punkty { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
+.okno .suwaki .punkty li span { flex: 1; min-width: 0; color: var(--ciche); }
 .okno .pasek button.widoczne { background: var(--akcent); color: var(--plyta); border-color: var(--akcent); }
-@media (max-width: 40rem) { .okno .tresc { flex-direction: column; } .okno .suwaki { width: auto; max-height: 45%; border-left: 0; border-top: 1px solid var(--linia); } }
+@media (max-width: 40rem) { .okno .tresc { flex-direction: column; } .okno .suwaki { width: auto; max-height: 55%; border-left: 0; border-top: 1px solid var(--linia); } }
 /* Mowa świata pod oknem: sygnały z małym wykresem i ostatnie zdarzenie (krok 2 serca domu, 21 XI 2026). */
 .okno .mowa { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem 1rem; padding: .3rem .75rem; border-top: 1px solid var(--linia); font-size: .78rem; color: var(--ciche); font-variant-numeric: tabular-nums; }
 .okno .mowa[hidden] { display: none; }
