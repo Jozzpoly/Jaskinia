@@ -646,17 +646,21 @@
     const tMax = Math.max(1, ...ta.map((x) => x[0]), ...tb.map((x) => x[0]));
     let lo = Math.min(...wszystkie), hi = Math.max(...wszystkie);
     if (!Number.isFinite(lo)) { lo = 0; hi = 1; }
-    if (lo >= 0 && lo < hi / 2) lo = 0;
+    // seria nieujemna z drobnym minusem (prędkość tuż przy zatrzymaniu) też zaczyna od zera; podpis „-0” mylił
+    if ((lo >= 0 && lo < hi / 2) || (lo < 0 && hi > 0 && -lo < (hi - lo) * 0.02)) lo = 0;
     if (hi - lo < 1e-9) { hi += 1; lo -= lo === 0 ? 0 : 1; }
+    // podpisy skali z tyloma cyframi, ile trzeba: „0,45 m” zamiast „0 m” przy wysokości nadwozia
+    const cyfry = (v) => (Math.abs(v) >= 10 ? 0 : Math.abs(v) >= 1 ? 1 : 2);
+    const podpis = (v) => (Math.abs(v) < 0.005 ? 0 : v);
     const j = s.jednostka, os = czasA !== null ? ' s' : '';
     svg.setAttribute('aria-label', s.nazwa.charAt(0).toUpperCase() + s.nazwa.slice(1) + ' w A i w B w czasie programu: od ' + zJednostka(lo, j) + ' do ' + zJednostka(hi, j) + (czasA !== null ? ', ' + ileAB(tMax) + ' s' : ', ' + ileAB(tMax, 0) + ' próbek'));
-    const x = (t) => L + (t / tMax) * (W - L - 16), y = (v) => H - D - ((v - lo) / (hi - lo)) * (H - D - 6);
+    const x = (t) => L + (t / tMax) * (W - L - 16), y = (v) => Math.min(H - D, Math.max(6, H - D - ((v - lo) / (hi - lo)) * (H - D - 6)));
     const linia = (x1, y1, x2, y2, klasa) => { const l = document.createElementNS(NS, 'line'); l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2); l.setAttribute('class', klasa); svg.append(l); };
     const napis = (tekst, tx, ty, klasa, kotwica = 'start') => { const t = document.createElementNS(NS, 'text'); t.setAttribute('x', tx); t.setAttribute('y', ty); t.setAttribute('class', klasa); t.setAttribute('text-anchor', kotwica); t.textContent = tekst; svg.append(t); };
     linia(L, H - D, W - 16, H - D, 'os'); linia(L, 6, L, H - D, 'os');
     if (lo < 0 && hi > 0) linia(L, y(0), W - 16, y(0), 'os');
     // podpis skali wewnątrz wykresu: przy lewej krawędzi „122 km/h” wychodził poza rysunek i zostawało „2 km/h”
-    napis(zJednostka(hi, j, 0), L + 3, 12, 'skala'); napis(ileAB(lo, 0), L - 3, H - D, 'skala', 'end');
+    napis(zJednostka(podpis(hi), j, cyfry(hi)), L + 3, 12, 'skala'); napis(ileAB(podpis(lo), cyfry(lo)), L - 3, H - D, 'skala', 'end');
     napis(ileAB(tMax, 1) + os, W - 16, H - 2, 'skala', 'end'); napis('0' + os, L, H - 2, 'skala');
     for (const [p, k, klasa] of [[ta, 'A', 'krzywa-a'], [tb, 'B', 'krzywa-b']]) {
       if (p.length < 2) continue;
