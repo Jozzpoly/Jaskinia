@@ -560,6 +560,12 @@ export class Srodowisko {
     return zle.length ? zle : null;
   }
 
+  // Wycinek (`rodzaje`): najwyżej 24 rodzaje, sama nazwa znaczy wszystkie pokolenia. Jedna lista dla zapytania i dla
+  // liczenia z przekroju, żeby obie drogi nie rozjechały się po cichu.
+  _wycinek(rodzaje) {
+    return Array.isArray(rodzaje) ? [...new Set(rodzaje)].filter((x) => typeof x === 'string' && RODZAJ_LUB_NAZWA.test(x)).slice(0, 24) : [];
+  }
+
   _warunek({ rodzaj = null, rodzaje = null, obszar, gdzie = null, szukaj = null, odlozone = 'nie', po = null, dla = undefined } = {}) {
     const war = [], par = [];
     // Czytający podany wprost: rzeczy z obszarów, których nie widzi, nie trafiają nawet do liczenia.
@@ -583,8 +589,12 @@ export class Srodowisko {
       }
     }
     let trzebaTresci = false;
-    // `po`: tylko rzeczy zmienione po akcie o tym numerze (z `odlozone: 'razem'` także te, które po nim odłożono)
-    if (Number.isSafeInteger(po) && po >= 0) { war.push('r.akt > ?'); par.push(po); }
+    // `po`: tylko rzeczy zmienione po akcie o tym numerze (z `odlozone: 'razem'` także te, które po nim odłożono).
+    // To pytanie zadaje każda otwarta strona po każdej zmianie, więc idzie zawsze po indeksie aktu (`zrodlo` niżej):
+    // od wycinka planista wolał indeks rodzaju i czytał cały wycinek, żeby oddać zero zmian (pod adresem pnia 20 XI
+    // 2026: 1361 wierszy na jedno doganianie przy 664 rzeczach wycinka).
+    const poAkcie = Number.isSafeInteger(po) && po >= 0;
+    if (poAkcie) { war.push('r.akt > ?'); par.push(po); }
     if (rodzaj) {
       // Sama nazwa (bez pokolenia) znaczy wszystkie pokolenia. Porównanie zakresem (od "nazwa/" do "nazwa0", bo zero
       // stoi zaraz za ukośnikiem), nie wzorcem LIKE, w którym podkreślnik byłby dżokerem, i nie funkcją na kolumnie,
@@ -595,7 +605,7 @@ export class Srodowisko {
     }
     // Wycinek: kilka rodzajów naraz (najwyżej 24). Twarz czyta tylko to, czym rysuje, zamiast całego Miejsca.
     if (rodzaje !== null && rodzaje !== undefined) {
-      const lista = Array.isArray(rodzaje) ? [...new Set(rodzaje)].filter((x) => typeof x === 'string' && RODZAJ_LUB_NAZWA.test(x)).slice(0, 24) : [];
+      const lista = this._wycinek(rodzaje);
       if (!lista.length) war.push('0');
       else {
         war.push('(' + lista.map((x) => (x.includes('/') ? 'r.rodzaj = ?' : '(r.rodzaj >= ? AND r.rodzaj < ?)')).join(' OR ') + ')');
@@ -614,16 +624,19 @@ export class Srodowisko {
       }
     }
     if (typeof szukaj === 'string' && szukaj.trim()) { war.push(`r.szukane LIKE ? ESCAPE '\\'`); par.push('%' + szukaj.trim().toLocaleLowerCase('pl').replace(/[\\%_]/g, '\\$&') + '%'); }
-    return { gdzie: war.length ? 'WHERE ' + war.join(' AND ') : '', par, trzebaTresci };
+    // INDEXED BY zamiast nadziei na planistę: gdyby indeksu aktu zabrakło, zapytanie padnie głośno (i sprawdziany
+    // z nim), zamiast po cichu wrócić do czytania całego wycinka przy każdej zmianie w każdej otwartej stronie.
+    const zrodlo = poAkcie ? 'rzeczy r INDEXED BY rzeczy_akt' : 'rzeczy r';
+    return { gdzie: war.length ? 'WHERE ' + war.join(' AND ') : '', par, trzebaTresci, zrodlo };
   }
 
   // Lista rzeczy od ostatnio zmienionej. `pomin` i `limit` dają kawałek; ile jest wszystkich, mówi `ile()`.
   spis({ limit = 1000, pomin = 0, ...filtr } = {}) {
-    const { gdzie, par } = this._warunek(filtr);
+    const { gdzie, par, zrodlo } = this._warunek(filtr);
     const calkowita = (x, domyslna) => { const l = Math.trunc(Number(x)); return Number.isFinite(l) ? l : domyslna; };
     const n = Math.max(1, Math.min(2000, calkowita(limit, 1000) || 1000));
     const od = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, calkowita(pomin, 0)));
-    const w = this.q(`SELECT r.*, z.tresc FROM rzeczy r JOIN zapisy z ON z.id = r.zapis ${gdzie} ORDER BY r.zmieniono DESC, r.id LIMIT ? OFFSET ?`, ...par, n, od);
+    const w = this.q(`SELECT r.*, z.tresc FROM ${zrodlo} JOIN zapisy z ON z.id = r.zapis ${gdzie} ORDER BY r.zmieniono DESC, r.id LIMIT ? OFFSET ?`, ...par, n, od);
     return w.map((x) => this._zWiersza(x));
   }
 
@@ -646,18 +659,22 @@ export class Srodowisko {
     // ono zwykłą drogą i KAŻDE otwarcie strony skanowało przez to CAŁĄ tabelę rzeczy (zmierzone: tools/koszt.mjs).
     // Mój własny dług z tego samego dnia: widoczność wyłączyła szybką ścieżkę, zamiast nauczyć ją widzieć.
     const prostyRodzaj = rodzaj === null || (typeof rodzaj === 'string' && rodzaj.includes('/') && RODZAJ_LUB_NAZWA.test(rodzaj));
-    if (!cechy && !szukaj && po === null && rodzaje === null && prostyRodzaj && ['nie', 'tak', 'razem'].includes(odlozone)) {
+    // Wycinek też: Start pyta o `razem` swojego wycinka przy każdym otwarciu i do 20 XI 2026 liczył go przeglądem
+    // wszystkich jego rzeczy, czyli drugi raz tym samym kosztem co sam spis (pod adresem pnia: 2688 wierszy na wejście).
+    const wycinek = rodzaje === null ? null : this._wycinek(rodzaje);
+    if (!cechy && !szukaj && po === null && prostyRodzaj && ['nie', 'tak', 'razem'].includes(odlozone)) {
       let n = 0;
       for (const w of (dla === undefined ? this.przekroj() : this._przekrojDla(dla))) {
         if (rodzaj !== null && w.rodzaj !== rodzaj) continue;
+        if (wycinek && !wycinek.some((x) => (x.includes('/') ? w.rodzaj === x : w.rodzaj.startsWith(x + '/')))) continue;
         if (obszar !== undefined && (obszar === null || obszar === '' ? w.obszar !== null : w.obszar !== String(obszar))) continue;
         if (odlozone === 'nie' ? w.odlozone : (odlozone === 'tak' ? !w.odlozone : false)) continue;
         n += w.ile;
       }
       return n;
     }
-    const { gdzie, par, trzebaTresci } = this._warunek(filtr);
-    return this.q(`SELECT COUNT(*) AS n FROM rzeczy r ${trzebaTresci ? 'JOIN zapisy z ON z.id = r.zapis' : ''} ${gdzie}`, ...par)[0].n;
+    const { gdzie, par, trzebaTresci, zrodlo } = this._warunek(filtr);
+    return this.q(`SELECT COUNT(*) AS n FROM ${zrodlo} ${trzebaTresci ? 'JOIN zapisy z ON z.id = r.zapis' : ''} ${gdzie}`, ...par)[0].n;
   }
 
   // Przekrój spisu: ile rzeczy którego rodzaju leży w którym obszarze i ile z nich jest odłożonych. Z niego biorą się
