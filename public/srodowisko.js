@@ -357,7 +357,8 @@
   // okno, które daje znać, że żyje (każda jego wiadomość), i najwyżej do `sufit`. Wolne okno jedzie te same kroki fizyki,
   // tylko później (nagranie 21 XI: dwa JV na SwiftShaderze, 1–3 klatki na sekundę, a JV robi najwyżej 8 kroków na klatkę).
   function zapytajSwiat(o, wiadomosc, ms, sufit = ms, poLimicie = null) {
-    const id = 'ab-' + Date.now().toString(36) + '-' + ++nrZadaniaAB;
+    // id z wiadomości, gdy odpowiedź ma przyjść na wcześniejsze zlecenie (koniec lustra na żywo kończy jego play)
+    const id = typeof wiadomosc.id === 'string' ? wiadomosc.id : 'ab-' + Date.now().toString(36) + '-' + ++nrZadaniaAB;
     const od = Date.now();
     return new Promise((res) => {
       let powiedziane = false;
@@ -374,6 +375,110 @@
       if (o.ramka.contentWindow) o.ramka.contentWindow.postMessage({ jaskinia: 1, ...wiadomosc, id }, '*');
     });
   }
+  // Lustro na żywo (jego słowa z 21 XI 04:43: „daje input jednocześnie na dwa okna”; droga 1, którą Opus Code przyjął
+  // 21 XI 17:49; nazwy wiadomości w przekazie Opusa czatu z 25 XI 04:13): ręka jedzie w oknie źródła, świat źródła co
+  // najwyżej co 100 ms oddaje kroki, które zastosował (wejscie {id, od, odcinki}), a gospodarz przekazuje je bez zmian
+  // oknu lustra (dograj {id, od, odcinki}). Lustro jedzie te same kroki, a gdy ich brak, czeka bez kroku fizyki. „Stop”
+  // to koniec najpierw do źródła, potem do lustra; obie odpowiedzi played dają zwykłe zdanie porównania.
+  const wyslij = (o, wiadomosc) => { if (o.ramka.contentWindow) o.ramka.contentWindow.postMessage({ jaskinia: 1, ...wiadomosc }, '*'); };
+  // jazda ręki do zapisania jako przejazd/1: sąsiednie paczki z tymi samymi klawiszami sklejone w jeden odcinek
+  const kluczOdcinka = (x) => Object.keys(x).filter((k) => k !== 'kroki' && k !== 's').sort().map((k) => k + '=' + JSON.stringify(x[k])).join('&');
+  function dolozOdcinki(lista, nowe) {
+    for (const x of nowe) {
+      if (!x || typeof x !== 'object' || Array.isArray(x)) continue;
+      const ost = lista[lista.length - 1];
+      if (ost && Number.isInteger(ost.kroki) && Number.isInteger(x.kroki) && kluczOdcinka(ost) === kluczOdcinka(x)) ost.kroki += x.kroki;
+      else lista.push({ ...x });
+    }
+  }
+  const krokiOdcinkow = (odc) => odc.reduce((n, x) => n + (x && Number.isInteger(x.kroki) ? x.kroki : x && Number.isFinite(x.s) ? Math.round(x.s * 60) : 0), 0);
+  // paczka ze świata źródła: idzie bez zmian do lustra; numer pierwszego kroku mówi, czy po drodze nie zginęła paczka
+  function przekazWejscia(o, m) {
+    const z = ab.zywo;
+    if (!z || o !== z.zrodlo || m.id !== z.idZ || z.zamkniete) return;
+    if (!Number.isInteger(m.od) || m.od < 0 || !Array.isArray(m.odcinki) || m.odcinki.length > 600) { z.dziura = true; return; }
+    if (m.od !== z.kroki) z.dziura = true;
+    wyslij(z.lustro, { type: 'dograj', id: z.idL, od: m.od, odcinki: m.odcinki });
+    dolozOdcinki(z.odcinki, m.odcinki);
+    z.kroki = m.od + krokiOdcinkow(m.odcinki);
+    z.paczki++;
+  }
+  async function jedzNaZywo() {
+    const A = ab.para, B = A && okna.get(A.para);
+    if (!A || !B || ab.trwa) return;
+    // źródłem jest okno, w którym ręka była ostatnio (jak w „Powtórz”), domyślnie A
+    const zrodlo = B.dotkniete > A.dotkniete ? B : A, lustro = zrodlo === A ? B : A;
+    const nr = Date.now().toString(36) + '-' + ++nrZadaniaAB;
+    const idZ = 'zywo-' + nr + '-z', idL = 'zywo-' + nr + '-l';
+    const program = { schemat: 'wejscie/1', nazwa: 'Na żywo z okna ' + zrodlo.rola, odcinki: [] };
+    ab.trwa = true; ab.jedz.disabled = true; ab.powtorz.disabled = true; ab.zapisz.hidden = true; ab.wybor.disabled = true; ab.lustro.disabled = true;
+    ab.tekst.classList.remove('nieaktualne'); ab.aktualny = false; ab.mojPrzejazd = null;
+    delete ab.zdanie.dataset.przejsciowe; ab.zdanie.textContent = ''; ab.roznica.textContent = '';
+    // ustawienia z chwili startu, jak w jedzWObu
+    const roznica = await roznicaAB(A, B).catch(() => null);
+    const z = ab.zywo = { zrodlo, lustro, idZ, idL, odcinki: [], kroki: 0, paczki: 0, dziura: false, zamkniete: false, odp: new Map() };
+    // played przed „Stop” to świat, który otwartego programu nie przyjął (np. starsze JV): kończymy od razu, z jego słowami.
+    // Po bieżącym zadaniu, bo zamknięcie okna odpowiada „okno zamknięte”, zanim para się rozejdzie: wtedy to przerwanie.
+    const wczesnie = (id) => (m) => { z.odp.set(id, m); if (!m.ok) setTimeout(() => { if (ab.zywoKoniec) ab.zywoKoniec(!ab.para); }, 0); };
+    lustro.oczekuje.set(idL, wczesnie(idL)); zrodlo.oczekuje.set(idZ, wczesnie(idZ));
+    wyslij(lustro, { type: 'play', id: idL, program, otwarty: true });
+    wyslij(zrodlo, { type: 'play', id: idZ, program, otwarty: true, nadawaj: true });
+    ab.lustro.textContent = 'Stop'; ab.lustro.classList.add('trwa'); ab.lustro.title = 'Kończy jazdę na żywo i porównuje oba okna'; ab.lustro.disabled = false;
+    // które okno słucha ręki, a które powtarza: obwódka na czas jazdy
+    zrodlo.sekcja.classList.add('zywo-zrodlo'); lustro.sekcja.classList.add('zywo-lustro');
+    ab.stan.textContent = 'Jedziesz w oknie ' + zrodlo.rola + ', a okno ' + lustro.rola + ' powtarza Twoje ruchy na żywo. Jedź klawiszami; „Stop” kończy.';
+    // klawiatura od razu w świecie źródła, żeby ręka nie musiała najpierw w nie klikać
+    try { zrodlo.ramka.focus(); } catch { /* ręka kliknie sama */ }
+    const sprzatnij = () => {
+      ab.zywo = null; ab.trwa = false;
+      zrodlo.sekcja.classList.remove('zywo-zrodlo'); lustro.sekcja.classList.remove('zywo-lustro');
+      ab.lustro.textContent = 'Jedź na żywo w obu'; ab.lustro.classList.remove('trwa'); ab.lustro.title = TYTUL_LUSTRA;
+    };
+    // przerwij: para się rozeszła (okno zamknięte albo zwinięte). Światy dostają koniec, ale na wynik nie czekamy: pas jest
+    // schowany, a następna para zaczyna od wolnego pasa, nie od „Stop” po starej jeździe
+    ab.zywoKoniec = async (przerwij = false) => {
+      ab.zywoKoniec = null;
+      z.zamkniete = true;
+      if (przerwij) {
+        for (const [o, id] of [[zrodlo, idZ], [lustro, idL]]) if (!z.odp.has(id)) wyslij(o, { type: 'koniec', id });
+        sprzatnij();
+        ab.stan.textContent = ''; ab.lustro.disabled = false;
+        return;
+      }
+      ab.lustro.disabled = true;
+      ab.stan.textContent = 'Kończę: okno ' + zrodlo.rola + ' przestaje nadawać, a okno ' + lustro.rola + ' dojeżdża ostatnie kroki…';
+      // koniec idzie tylko do okna, które jeszcze nie odpowiedziało; czekamy jak przy zwykłej jeździe, póki okno żyje
+      const zakoncz = (o, id, ms, sufit) => (z.odp.has(id) ? Promise.resolve(z.odp.get(id)) : zapytajSwiat(o, { type: 'koniec', id }, ms, sufit, (x) => { ab.stan.textContent = 'Okno ' + x.rola + ' jeszcze dojeżdża Twoje kroki: ten sam przejazd, tylko później. Czekam, póki daje znać, że żyje…'; }));
+      const pz = await zakoncz(zrodlo, idZ, 15000, 120000);
+      // ostatnia paczka źródła przyszła przed jego played, więc lustro ma już wszystkie kroki
+      const s = Math.round(z.kroki / 6) / 10;
+      const pl = await zakoncz(lustro, idL, Math.ceil(s * 3000 + 15000), Math.max(Math.ceil(s * 3000 + 15000), Math.min(15 * 60000, Math.ceil(s * 10000 + 60000))));
+      sprzatnij();
+      ulozAB();
+      const [pa, pb] = zrodlo === A ? [pz, pl] : [pl, pz];
+      if (!pa.ok || !pb.ok || !pa.przebieg || !pb.przebieg) {
+        ab.stan.textContent = '';
+        ab.roznica.textContent = '';
+        ab.zdanie.textContent = 'Nie wyszło. ' + [!pa.ok || !pa.przebieg ? 'A: ' + String(pa.error || 'brak przebiegu').slice(0, 160) : null, !pb.ok || !pb.przebieg ? 'B: ' + String(pb.error || 'brak przebiegu').slice(0, 160) : null].filter(Boolean).join('; ') + '.' + (z.dziura ? ' Po drodze zginęła paczka kroków.' : '');
+        ab.ostatnie = null; rysujWykresAB();
+        return;
+      }
+      ab.stan.textContent = program.nazwa + ', ' + liczbaPL(s) + ' s' + (z.dziura ? '; po drodze zginęła paczka kroków, więc okna mogły jechać różnie.' : '.');
+      ab.zdanie.textContent = zdanieAB(pa.przebieg, pb.przebieg, program);
+      const warunki = roznicaWarunkow(pa.przebieg, pb.przebieg);
+      ab.roznica.textContent = warunki ? zdanieWarunkow(warunki, roznica) : zdanieRoznicy(roznica);
+      ab.ostatnie = { a: pa.przebieg, b: pb.przebieg, wsp: wspolneSerie(pa.przebieg, pb.przebieg) };
+      rysujWykresAB();
+      dopiszProbe(pa.przebieg, pb.przebieg, program, warunki || roznica);
+      ab.aktualny = true;
+      // jazda ręki zostaje jak po „Powtórz”: da się ją zapisać jako przejazd/1 i puścić później w obu
+      ab.mojPrzejazd = z.odcinki.length ? { schemat: 'wejscie/1', nazwa: program.nazwa, odcinki: z.odcinki } : null;
+      ab.zapisz.hidden = !ab.mojPrzejazd;
+      ab.tekst.scrollTop = 0;
+      if (ab.sekcja.scrollHeight > ab.sekcja.clientHeight + 4) ab.sekcja.scrollTop = Math.max(0, ab.tekst.offsetTop - 6);
+    };
+  }
+  const TYTUL_LUSTRA = 'Ręka jedzie w jednym oknie, a drugie powtarza te same kroki na żywo; „Stop” kończy i porównuje';
   async function otworzAB(idA) {
     const A = okna.get(idA);
     if (!A || !A.gosc) return;
@@ -411,6 +516,7 @@
     ab.wybor = el('select', { klasa: 'ab-wybor', 'aria-label': 'Przejazd do porównania', title: 'Który przejazd pojadą oba auta' });
     rysujWybor();
     ab.jedz = el('button', { klasa: 'glowny', tekst: 'Jedź tak samo w obu', title: 'Oba auta wracają na start i jadą wybrany przejazd', klik: () => jedzWObu(wybranyProgram()) });
+    ab.lustro = el('button', { tekst: 'Jedź na żywo w obu', hidden: true, title: TYTUL_LUSTRA, klik: () => (ab.zywoKoniec ? ab.zywoKoniec() : jedzNaZywo()) });
     ab.powtorz = el('button', { tekst: 'Powtórz mój przejazd w obu', title: 'Twoja jazda od ostatniego startu w oknie, w którym jechałeś, odtworzona od startu w obu oknach', klik: () => powtorzWObu() });
     ab.zapisz = el('button', { tekst: 'Zapisz ten przejazd', hidden: true, title: 'Twoja jazda zostaje jako przejazd do wyboru, także dla agentów (rzecz przejazd/1)', klik: () => zapiszPrzejazd() });
     // Próby w tej parze obok siebie (ślepa ręka, D9: każda jazda wymazywała poprzednią); guzik rozciąga pas, żeby było je widać
@@ -419,7 +525,7 @@
     ab.sekcja = el('section', { klasa: 'ab', hidden: true, 'aria-label': 'Porównanie okien A i B' },
       // guziki w jednym rzędzie; stan, zdanie i różnica w jednym bloku, który się przewija (z wyborem przejazdu stan
       // zawijał się pod guziki i zjadał miejsce zdaniu)
-      el('div', { klasa: 'ab-guziki' }, ab.wybor, ab.jedz, ab.powtorz, ab.zapisz, ab.guzikProby), ab.tekst = el('div', { klasa: 'ab-tekst' }, ab.stan, ab.zdanie, ab.roznica, ab.tabela),
+      el('div', { klasa: 'ab-guziki' }, ab.wybor, ab.jedz, ab.lustro, ab.powtorz, ab.zapisz, ab.guzikProby), ab.tekst = el('div', { klasa: 'ab-tekst' }, ab.stan, ab.zdanie, ab.roznica, ab.tabela),
       // podpis wybranej serii przy wykresie: pod zdaniem był ucięty w niskim pasie (ślepa ręka 25 XI, D12)
       el('div', { klasa: 'ab-wykres-cale' }, ab.seria, ab.wykres, ab.opisSerii));
     $('okna').append(ab.sekcja);
@@ -436,6 +542,8 @@
     if (!ab.sekcja) return;
     ab.sekcja.hidden = !obaWidac;
     ab.para = obaWidac ? A : null;
+    // para zniknęła w trakcie jazdy na żywo (zamknięte albo zwinięte okno): kończymy ją, inaczej pas stałby zajęty
+    if (!obaWidac && ab.zywoKoniec) ab.zywoKoniec(true);
     // próby należą do świata pary: para innego świata zaczyna z pustą tabelą (dawniej dostawała wiersze poprzedniego
     // świata, z jego kolumnami, np. przechyłem pod kolonią); ten sam świat po ponownym „A/B” ma swoje próby dalej
     if (obaWidac && ab.probyDla !== A.klucz) { ab.probyDla = A.klucz; ab.proby = []; ab.tabela.replaceChildren(); ab.guzikProby.hidden = true; $('okna').classList.remove('ab-duzy'); ab.guzikProby.setAttribute('aria-expanded', 'false'); }
@@ -446,6 +554,9 @@
       ab.jedz.hidden = ab.wybor.hidden = znane && !wejscie;
       ab.jedz.disabled = ab.wybor.disabled = !wejscie;
       ab.powtorz.disabled = !['play', 'record'].every((u) => A.umie.includes(u) && B.umie.includes(u));
+      // lustro na żywo: oba okna muszą umieć lustro i program wejścia
+      ab.lustro.hidden = !(wejscie && A.umie.includes('lustro') && B.umie.includes('lustro'));
+      ab.lustro.disabled = false;
       const jazda = wejscie || !znane;
       ab.powtorz.textContent = jazda ? 'Powtórz mój przejazd w obu' : 'Powtórz w obu to, co zrobiłem';
       ab.powtorz.title = jazda ? 'Twoja jazda od ostatniego startu w oknie, w którym jechałeś, odtworzona od startu w obu oknach' : 'To, co zrobiłeś od ostatniego startu w oknie, w którym byłeś, odtworzone od startu w obu oknach';
@@ -455,7 +566,7 @@
   async function jedzWObu(program, skad = '') {
     const A = ab.para, B = A && okna.get(A.para);
     if (!A || !B || ab.trwa) return;
-    ab.trwa = true; ab.jedz.disabled = true; ab.powtorz.disabled = true; ab.zapisz.hidden = true;
+    ab.trwa = true; ab.jedz.disabled = true; ab.powtorz.disabled = true; ab.zapisz.hidden = true; ab.lustro.disabled = true;
     ab.tekst.classList.remove('nieaktualne'); ab.aktualny = false;
     const slowa = slowaProgramu(program.schemat);
     // długość zna gospodarz tylko dla programu wejścia (odcinki w sekundach albo krokach); innego schematu nie liczy
@@ -712,6 +823,9 @@
   // Z ramki do ramki (klik w oknie B, potem w oknie A) strona nie dostaje „blur”, bo fokus jej nie wraca. Dopóki stoi para,
   // sprawdzamy więc co 400 ms, która ramka ma fokus; inaczej „Powtórz” brało jazdę z okna B (próba AB17 to znalazła).
   setInterval(() => { if (ab.para) rekaWRamce(); }, 400);
+  // Klik w stronę (np. guzik w pasie) zaraz po ramce: w chwili pointerdown fokus jest jeszcze w ramce, więc tu widać, gdzie
+  // ręka była, nawet gdy od wejścia do ramki nie minęło 400 ms (lustro na żywo brało wtedy źródło z poprzedniego okna)
+  addEventListener('pointerdown', rekaWRamce, true);
   // Rozmowa z gośćmi. Przyjmujemy wiadomości tylko od ramek, które sami otworzyliśmy.
   addEventListener('message', async (e) => {
     const m = e.data;
@@ -739,6 +853,8 @@
       // odpowiedź na play albo record od gospodarza: czeka na nią porównanie A/B
       const w = o.oczekuje.get(m.id);
       if (w) { o.oczekuje.delete(m.id); w(m); }
+    } else if (m.type === 'wejscie') {
+      przekazWejscia(o, m);
     } else if (m.type === 'state') {
       o.mowi.textContent = typeof m.text === 'string' ? m.text.slice(0, 240) : '';
     } else if (m.type === 'read') {

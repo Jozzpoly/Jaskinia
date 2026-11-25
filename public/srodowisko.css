@@ -236,6 +236,10 @@ ul.ust { list-style: none; margin: 0; padding: 0; }
 /* wartość poza suwakiem: pole liczby w barwie znaku, a podpis mówi „poza suwakiem” */
 .okno .suwak.poza input[type=number] { border-color: var(--znak); color: var(--znak); }
 .ab .ab-guziki { grid-column: 1; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; min-width: 0; }
+/* jazda na żywo trwa: guzik „Stop” w barwie znaku, okno ręki z pełną obwódką, okno lustra z przerywaną */
+.ab .ab-guziki button.trwa { border-color: var(--znak); color: var(--znak); font-weight: 600; }
+#okna .okno.zywo-zrodlo { outline: 2px solid var(--znak); outline-offset: -2px; }
+#okna .okno.zywo-lustro { outline: 2px dashed var(--ciche); outline-offset: -2px; }
 .ab .ab-tekst { grid-column: 1; min-width: 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: .15rem; }
 .ab .ab-stan { display: block; color: var(--ciche); font-size: .8rem; min-width: 0; }
 .ab .ab-stan:empty { display: none; }
