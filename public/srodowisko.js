@@ -331,9 +331,18 @@
   }
   // Różnica z warunków jest prawdą świata; suwaki Jaskini mówią tylko, co ustawiła Jaskinia. Gdy świat mówi „inaczej”,
   // a suwaki „tak samo”, różnicę ustawiono w samym świecie, i to zdanie to mówi.
-  const zdanieWarunkow = (rw, rs) => (!rw.length
-    ? 'Świat mówi, że na starcie B miało te same ustawienia co A.'
-    : 'Świat mówi, że na starcie B różniło się od A: ' + listaRoznic(rw) + '.' + (rs && !rs.length ? ' W suwakach Jaskini B ma te same ustawienia co A, więc tę różnicę ustawiono w samym świecie.' : ''));
+  // Gdy suwaki mówią co innego niż świat (ślepa ręka 25 XI, D11: suwak Mocy 3 w B i ×2 z guzika w grze dawały samo
+  // „Moc 6 (A: 1)”), stoi też linia suwaków; różnica suwaków powtórzona przez świat tą samą nazwą i liczbami jej nie robi.
+  function zdanieWarunkow(rw, rs) {
+    const juzMowi = (r) => rw.some((w) => w.etykieta === r.etykieta && JSON.stringify(w.a) === JSON.stringify(r.a) && JSON.stringify(w.b) === JSON.stringify(r.b));
+    const suwaki = rs ? rs.filter((r) => !juzMowi(r)) : [];
+    if (!rw.length) return 'Świat mówi, że na starcie B miało te same ustawienia co A.' + (suwaki.length ? ' W suwakach Jaskini B różni się od A: ' + listaRoznic(suwaki) + ', ale świat jechał tak samo.' : '');
+    return 'Świat mówi, że na starcie B różniło się od A: ' + listaRoznic(rw) + '.'
+      + (rs && !rs.length ? ' W suwakach Jaskini B ma te same ustawienia co A, więc tę różnicę ustawiono w samym świecie.'
+        : suwaki.length ? ' W suwakach Jaskini B różni się od A: ' + listaRoznic(suwaki) + '.' : '');
+  }
+  // kropka na końcu zdania, chyba że tekst już się nią kończy („szt.”)
+  const zKropka = (t) => (/\.$/.test(t) ? t : t + '.');
   const ab = { sekcja: null, para: null, trwa: false, proby: [], aktualny: false };
   const sekundyProgramu = (p) => Math.round((p.odcinki || []).reduce((s, x) => s + (Number.isFinite(x.s) ? x.s : (Number(x.kroki) || 0) / 60), 0) * 10) / 10;
   let nrZadaniaAB = 0;
@@ -405,8 +414,9 @@
     ab.sekcja = el('section', { klasa: 'ab', hidden: true, 'aria-label': 'Porównanie okien A i B' },
       // guziki w jednym rzędzie; stan, zdanie i różnica w jednym bloku, który się przewija (z wyborem przejazdu stan
       // zawijał się pod guziki i zjadał miejsce zdaniu)
-      el('div', { klasa: 'ab-guziki' }, ab.wybor, ab.jedz, ab.powtorz, ab.zapisz, ab.guzikProby), ab.tekst = el('div', { klasa: 'ab-tekst' }, ab.stan, ab.zdanie, ab.roznica, ab.opisSerii, ab.tabela),
-      el('div', { klasa: 'ab-wykres-cale' }, ab.seria, ab.wykres));
+      el('div', { klasa: 'ab-guziki' }, ab.wybor, ab.jedz, ab.powtorz, ab.zapisz, ab.guzikProby), ab.tekst = el('div', { klasa: 'ab-tekst' }, ab.stan, ab.zdanie, ab.roznica, ab.tabela),
+      // podpis wybranej serii przy wykresie: pod zdaniem był ucięty w niskim pasie (ślepa ręka 25 XI, D12)
+      el('div', { klasa: 'ab-wykres-cale' }, ab.seria, ab.wykres, ab.opisSerii));
     $('okna').append(ab.sekcja);
   }
   // Para A/B widoczna razem: okna stają obok siebie (na telefonie jedno pod drugim), a pod nimi pas porównania.
@@ -482,6 +492,15 @@
     if (ab.sekcja.scrollHeight > ab.sekcja.clientHeight + 4) ab.sekcja.scrollTop = Math.max(0, ab.tekst.offsetTop - 6);
     return true;
   }
+  // Okno B pamięta swoje wartości z poprzedniego „A/B” (profil B zostaje). Pas mówi to zaraz po otwarciu, inaczej „B
+  // szybsze” zaskakiwało, choć nikt nic nie ruszał (ślepa ręka 25 XI). Tylko dopóki pas nie ma żadnego wyniku.
+  async function pokazPamiecB(B) {
+    const A = B.para && okna.get(B.para);
+    if (!A || !ab.roznica) return;
+    const r = await roznicaAB(A, B).catch(() => null);
+    if (!r || !r.length || ab.para !== A || ab.aktualny || ab.trwa || ab.zdanie.textContent || ab.roznica.textContent) return;
+    ab.roznica.textContent = 'Okno B pamięta swoje ustawienia z poprzedniego razu: ' + listaRoznic(r) + '.';
+  }
   // Wartość serii w chwili porównania: próbka najbliżej 3 s od startu programu, a bez serii czasu środkowa próbka.
   const wierszWChwili = (p, czas) => (!Array.isArray(p.probki) || !p.probki.length ? null
     : czas !== null && czas !== undefined ? p.probki.reduce((naj, r) => (Math.abs(r[czas] - CHWILA_AB) < Math.abs(naj[czas] - CHWILA_AB) ? r : naj))
@@ -504,17 +523,18 @@
   function dopiszProbe(a, b, program, roznica) {
     const w = wspolneSerie(a, b), s1 = w.serie[0] || null, czasA = w.czas ? w.czas.kolA : null, czasB = w.czas ? w.czas.kolB : null;
     const ra = wierszWChwili(a, czasA), rb = wierszWChwili(b, czasB);
-    let wynik = '?', szczyt = '?';
-    if (a.skrot && a.skrot === b.skrot) wynik = szczyt = 'tak samo';
+    let wynik = '?', szczyt = '?', kres = '?';
+    if (a.skrot && a.skrot === b.skrot) wynik = szczyt = kres = 'tak samo';
     else if (s1 && ra && rb) {
       const va = Number(ra[s1.kolA]), vb = Number(rb[s1.kolB]), pr = procentAB(va, vb);
       wynik = (pr === null ? 'B ' + ileAB(vb) + ' · A ' + ileAB(va) : 'B ' + (pr >= 0 ? '+' : '−') + ileAB(Math.abs(pr), 0) + '% (' + ileAB(vb) + ' / ' + ileAB(va) + ')') + (s1.jednostka ? ' ' + s1.jednostka : '');
       const ma = najwyzej(a, s1.kolA, czasA), mb = najwyzej(b, s1.kolB, czasB);
       szczyt = 'B ' + ileAB(mb && mb.v) + ' · A ' + zJednostka(ma && ma.v, s1.jednostka);
+      kres = 'B ' + ileAB(naKoncu(b, s1.kolB)) + ' · A ' + zJednostka(naKoncu(a, s1.kolA), s1.jednostka);
     }
     const ea = a.koniec || {}, eb = b.koniec || {};
     const stopnie = (x) => (Number.isFinite(x) ? ileAB(x, 0) + '°' + (x >= PRZEWROTKA_ST ? ' (leży)' : '') : '?');
-    ab.proby.unshift({ kiedy: godzinaTeraz(), przejazd: program.nazwa || slowaProgramu(program.schemat).rzecz, wynik, szczyt,
+    ab.proby.unshift({ kiedy: godzinaTeraz(), przejazd: program.nazwa || slowaProgramu(program.schemat).rzecz, wynik, szczyt, kres,
       koniec: Number.isFinite(ea.odleglosc_m) && Number.isFinite(eb.odleglosc_m) ? 'B ' + ileAB(eb.odleglosc_m) + ' · A ' + ileAB(ea.odleglosc_m) + ' m' : '',
       przechyl: Number.isFinite(a.przechyl_max_st) && Number.isFinite(b.przechyl_max_st) ? 'B ' + stopnie(b.przechyl_max_st) + ' · A ' + stopnie(a.przechyl_max_st) : '',
       roznica: !roznica ? '?' : !roznica.length ? 'te same' : roznica.slice(0, 4).map((r) => r.etykieta + ' ' + wartoscPL(r.b) + ' (A: ' + wartoscPL(r.a) + ')').join('; '),
@@ -524,8 +544,8 @@
     ab.guzikProby.textContent = 'Próby (' + ab.proby.length + ')';
     // kolumny odległości i przechyłu tylko wtedy, gdy któraś próba je ma; nagłówek wyniku nazywa serię świata
     const { seria, chwila } = ab.proby[0];
-    const KOL = [['kiedy', 'kiedy'], ['przejazd', program.schemat === 'wejscie/1' ? 'przejazd' : 'program'], ['wynik', (seria ? seria + ' ' : '') + chwila], ['szczyt', 'najwyżej'],
-      ...(ab.proby.some((x) => x.koniec) ? [['koniec', 'od startu na końcu']] : []), ...(ab.proby.some((x) => x.przechyl) ? [['przechyl', 'przechył']] : []), ['roznica', 'B różni się']];
+    const KOL = [['kiedy', 'kiedy'], ['przejazd', program.schemat === 'wejscie/1' ? 'przejazd' : 'program'], ['wynik', (seria ? seria + ' ' : '') + chwila], ['szczyt', 'najwyżej'], ['kres', 'na końcu'],
+      ...(ab.proby.some((x) => x.koniec) ? [['koniec', 'odległość od startu']] : []), ...(ab.proby.some((x) => x.przechyl) ? [['przechyl', 'przechył']] : []), ['roznica', 'B różni się']];
     ab.tabela.replaceChildren(el('table', {}, el('thead', {}, el('tr', {}, ...KOL.map(([, n]) => el('th', { tekst: n })))), el('tbody', {}, ...ab.proby.map((x) => el('tr', {}, ...KOL.map(([k]) => el('td', { tekst: x[k] })))))));
   }
   // Wynik ostatniej jazdy przestaje być prawdą, gdy zmienią się ustawienia pary (ślepa ręka, D7: po ponownym otwarciu B
@@ -607,7 +627,10 @@
       + (pr === null ? '' : Math.abs(pr) < 0.5 ? ' (tyle samo)' : ' (B o ' + ileAB(Math.abs(pr), 0) + '% ' + (pr > 0 ? 'więcej' : 'mniej') + ')');
     const ma = najwyzej(a, s1.kolA, czasA), mb = najwyzej(b, s1.kolB, czasB);
     if (ma && mb) z += '; najwyżej B ' + zJednostka(mb.v, j) + ', A ' + zJednostka(ma.v, j);
-    z += '.' + inne;
+    // i na końcu: samo „po 3 s” myliło przy kolonii (ślepa ręka 25 XI, D14: „B o 961% więcej”, choć A kończyło wyżej)
+    const ka = naKoncu(a, s1.kolA), kb = naKoncu(b, s1.kolB);
+    if (ka !== null && kb !== null) z += '; na końcu B ' + zJednostka(kb, j) + ', A ' + zJednostka(ka, j);
+    z = zKropka(z) + inne;
     const ea = a.koniec || {}, eb = b.koniec || {};
     if (Number.isFinite(ea.odleglosc_m) && Number.isFinite(eb.odleglosc_m)) z += ' Na końcu B ' + ileAB(eb.odleglosc_m) + ' m od startu, A ' + ileAB(ea.odleglosc_m) + ' m.';
     const pa = a.przechyl_max_st, pb = b.przechyl_max_st;
@@ -632,7 +655,7 @@
     const czasA = o.wsp.czas ? o.wsp.czas.kolA : null, czasB = o.wsp.czas ? o.wsp.czas.kolB : null;
     const ma = najwyzej(o.a, s.kolA, czasA), mb = najwyzej(o.b, s.kolB, czasB), ka = naKoncu(o.a, s.kolA), kb = naKoncu(o.b, s.kolB);
     const kiedy = (m) => (o.wsp.czas ? ' po ' + ileAB(m.t, 1) + ' s' : '');
-    ab.opisSerii.textContent = ma && mb ? 'Na wykresie ' + s.nazwa + ': najwyżej B ' + zJednostka(mb.v, s.jednostka) + kiedy(mb) + ', A ' + zJednostka(ma.v, s.jednostka) + kiedy(ma) + '; na końcu B ' + zJednostka(kb, s.jednostka) + ', A ' + zJednostka(ka, s.jednostka) + '.' : '';
+    ab.opisSerii.textContent = ma && mb ? zKropka('Na wykresie ' + s.nazwa + ': najwyżej B ' + zJednostka(mb.v, s.jednostka) + kiedy(mb) + ', A ' + zJednostka(ma.v, s.jednostka) + kiedy(ma) + '; na końcu B ' + zJednostka(kb, s.jednostka) + ', A ' + zJednostka(ka, s.jednostka)) : '';
     ab.wykres.replaceChildren(wykresAB(o.a, o.b, s, czasA, czasB));
   }
   // Dwie krzywe jednej serii na jednej skali: A i B podpisane przy najwyższych punktach, więc nie trzeba legendy z kolorów.
@@ -742,6 +765,7 @@
           for (const n of nazwy) if (o.czyta.size < 64) o.czyta.add(n);
           if (typeof m.dla === 'string' && /^[0-9a-z]{26}$/.test(m.dla)) o.dla = m.dla;
           if (o.czyta.size) o.guzikSuwakow.hidden = false;
+          if (o.rola === 'B' && !o.pamiecPokazana) { o.pamiecPokazana = true; setTimeout(() => pokazPamiecB(o), 0); }
         } else throw new Error('nie znam takiego czytania: ' + String(m.what) + '; znane: spis, rzecz, ksztalty, ja, ustawienia');
         odp({ type: 'result', id: m.id, ok: true, data: dane });
       } catch (blad) { odp({ type: 'result', id: m.id, ok: false, error: String(blad && blad.message || blad).slice(0, 300) }); }
@@ -1112,6 +1136,11 @@
     }) : null;
     return el('section', { klasa: 'presety' },
       el('h3', { tekst: 'Preset dla ' + tu }),
+      // okno B jednym ruchem jak A: wszystkie jego wartości odłożone, cofa się guzikiem „cofnij” (ślepa ręka 25 XI: „wróć do A”
+      // był tylko przy każdym suwaku osobno, a jego słowo z 15 XI to „experymentować bawić się”)
+      o.rola === 'B' && wlasne.length && klucz ? el('div', { klasa: 'jak-a' },
+        el('span', { tekst: 'Okno B ma ' + lp(wlasne.length, 'własną wartość', 'własne wartości', 'własnych wartości') + '.' }),
+        el('button', { tekst: 'wszystko jak w A', title: 'Odłóż wszystkie wartości okna B: wraca to, co ma okno A', klik: async () => odswiez(await ruchyGestem(odlozWlasne('okno B jak A'), 'Okno B jak A: odłożone ' + lp(wlasne.length, 'wartość', 'wartości', 'wartości') + '.', o, 'okno B jak A')) })) : null,
       wybor,
       // ostrzeżenie zaraz pod wyborem, w ramce: na komputerze przeoczone pod niżej (ślepa ręka 2, pkt 6)
       aktywny && wlasne.length && klucz ? el('div', { klasa: 'nad-presetem', role: 'status' },

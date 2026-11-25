@@ -247,6 +247,10 @@ ul.ust { list-style: none; margin: 0; padding: 0; }
 .ab .ab-seria { font: inherit; font-size: .75rem; min-height: 1.7rem; max-width: 100%; align-self: flex-start; }
 .ab .ab-opis-serii { margin: 0; font-size: .78rem; line-height: 1.3; color: var(--ciche); min-width: 0; font-variant-numeric: tabular-nums; }
 .ab .ab-opis-serii:empty { display: none; }
+/* przy wykresie: podpis wybranej serii pod rysunkiem, mały, żeby rysunek miał miejsce */
+.ab .ab-wykres-cale .ab-opis-serii { font-size: .72rem; line-height: 1.25; }
+/* okno B jednym ruchem jak A, nad wyborem presetu */
+.suwaki .jak-a { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: .2rem 0 .5rem; font-size: .82rem; color: var(--ciche); }
 /* czym B różni się od A w tej jeździe: pod zdaniem, cicho; pusta linia nie zajmuje miejsca */
 .ab .ab-roznica { margin: 0; font-size: .8rem; line-height: 1.3; color: var(--ciche); min-width: 0; font-variant-numeric: tabular-nums; }
 .ab .ab-roznica:empty { display: none; }
