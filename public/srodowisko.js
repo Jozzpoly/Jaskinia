@@ -118,12 +118,16 @@
     } catch { /* okno i tak jest otwarte na tej stronie; nie wróci tylko po przeładowaniu */ }
   }
   // Otwarcie narzędzia z jego rzeczy (gosc/1): z guzika "Otwórz" i przy powrocie okien po przeładowaniu strony.
+  // Okno, które wraca samo, gdy ręka zdążyła już coś otworzyć, wraca zwinięte do doku: inaczej wchodziło na wierzch okna
+  // otwartego chwilę wcześniej ręką (ślepa ręka 25 XI: „Otwórz” przy Kolonii, a na wierzchu stary „Świat A/B”).
+  let otwartoReka = false;
   function otworzGoscia(r, { cicho = false } = {}) {
     const c = r.cechy;
     const kod = typeof c.kod === 'string' && /^[0-9a-f]{64}$/.test(c.kod) ? '/gosc/' + c.kod : null;
     const adres = !kod && typeof c.adres === 'string' && /^https:\/\//.test(c.adres) ? c.adres : null;
     if (!kod && !adres) return;
-    otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul, umowa: typeof c.umowa === 'string' ? c.umowa : null } });
+    if (!cicho) otwartoReka = true;
+    otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul, umowa: typeof c.umowa === 'string' ? c.umowa : null }, schowane: cicho && otwartoReka });
     if (!cicho) zapamietajOkno(r, true);
   }
   // Powrót okien po przeładowaniu: regułę trzyma public/okna.mjs (tylko okno, które sam zapisałem, i tylko do narzędzia
@@ -143,8 +147,8 @@
       else if (w.powiedz && !powiedzianeOkna.has(o.id + ':' + o.wersja)) { powiedzianeOkna.add(o.id + ':' + o.wersja); komunikat(w.powiedz); if (g) zapamietajOkno({ id: g.id, tytul: g.tytul }, false); }
     }
   }
-  function otworz({ klucz, tytul, adres, piaskownica, gosc = null, nakladka = null, rola = null }) {
-    for (const [id, o] of okna) if (o.klucz === klucz) return pokaz(id, true);
+  function otworz({ klucz, tytul, adres, piaskownica, gosc = null, nakladka = null, rola = null, schowane = false }) {
+    for (const [id, o] of okna) if (o.klucz === klucz) return schowane ? undefined : pokaz(id, true);
     const id = 'okno-' + ++nrOkna;
     const ramka = el('iframe', { src: adres, title: tytul, referrerpolicy: 'no-referrer', allow: 'fullscreen; gamepad', sandbox: PIASKOWNICE[piaskownica] || PIASKOWNICE.obcy });
     const mowi = el('span', { klasa: 'mowi' });
@@ -179,7 +183,7 @@
     ramka.addEventListener('load', () => { if (!ramka.contentWindow) return; ramka.contentWindow.postMessage({ jaskinia: 1, type: 'hi', v: 2, umowy: ['okno/2', 'okno/3'], umie: ['look'] }, '*'); powiedzWyglad(okna.get(id)); });
     $('okna').append(sekcja);
     $('dok').append(guzik);
-    pokaz(id, true);
+    pokaz(id, !schowane);
   }
   function pokaz(id, widac) {
     // Para A/B pokazuje się i chowa razem: dwa okna obok siebie albo żadne.
