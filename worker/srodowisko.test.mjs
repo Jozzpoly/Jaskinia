@@ -261,6 +261,11 @@ test('umowa okna opisuje program wejścia: play i record od gospodarza, played i
   ma('0 stoi, 90 na boku, 180 na dachu');
   ma('Granice: najwyżej 5 minut (18 000 kroków), 20 000 odcinków, nazwa do 80 znaków');
   ma('nie pokrętła: puszczone przez play jedzie dokładnie tak samo przy tych samych pokrętłach');
+  // świat mówi sam za siebie (25 XI; list Gemini Neona i głos Fable po przerwie): schematy w hello, serie nazwane przez świat
+  ma('programy: ["wejscie/1"] mówi, jakie schematy programu grasz; gospodarz wysyła play tylko z takim');
+  ma('serie: [{klucz, nazwa, jednostka}], po jednej na kolumnę');
+  ma('Gospodarz porównuje i rysuje tylko serie, które oba okna nazwały tak samo');
+  ma('nie przebiera się za auto');
   ma('nowy poprawny play przerywa');
   // przykład z umowy to cała wiadomość, z polem jaskinia (bez niego świat milczy), i program, który da się przeczytać
   const linia = u.split('\n').find((l) => l.startsWith('Przykład') && l.includes('type: "play"'));
