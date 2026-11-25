@@ -236,8 +236,9 @@
     { schemat: 'wejscie/1', nazwa: 'Slalom: prawo, lewo, prawo, hamowanie', odcinki: [{ s: 1 }, { s: 2, gaz: 1 }, { s: 1.5, gaz: 0.6, skret: 0.6 }, { s: 1.5, gaz: 0.6, skret: -0.6 }, { s: 1.5, gaz: 0.6, skret: 0.6 }, { s: 2, hamulec: 1 }] },
   ];
   const NAJWIEKSZY_PRZEJAZD_ZNAKI = 32000;
-  // Para umie porównanie, gdy świat gra programy (play) i podał choć jeden schemat; gotowe przejazdy to programy wejścia.
-  const umieAB = (o) => o.umie.includes('play') && o.programy.length > 0;
+  // Para ma sens, gdy pas umie w niej coś porównać: gotowy przejazd (świat gra program wejścia) albo powtórkę tego, co
+  // zrobiła ręka (świat umie record). Świat, który gra tylko własny schemat i nie oddaje nagrania, guzika „A/B” nie dostaje.
+  const umieAB = (o) => o.umie.includes('play') && (o.programy.includes('wejscie/1') || o.umie.includes('record'));
   const grajaOba = (A, B, schemat) => A.programy.includes(schemat) && B.programy.includes(schemat);
   const slowaProgramu = (schemat) => (schemat === 'wejscie/1'
     ? { rzecz: 'przejazd', robia: 'jadą', zrobily: 'przejechały', proba: 'jeździe', twoj: (rola) => 'Twój przejazd z okna ' + rola, pusto: (rola) => 'w oknie ' + rola + ' nikt jeszcze nie jechał od startu' }
