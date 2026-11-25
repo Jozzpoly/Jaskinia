@@ -1,0 +1,24 @@
+/* Okna swobodne (Opus Code, 21 XI 2026): uchwyty do zmiany rozmiaru, pasek do przesuwania, zarys przyklejania.
+   Odległość przyklejania i grubość uchwytu to zmienne, które warstwa odczuwalna może nadpisać jak inne. */
+:root { --okna-przyklejanie: 12px; --okna-uchwyt: 8px; }
+@media (min-width: 40.01rem) {
+  #okna > .okno .pasek { cursor: grab; user-select: none; touch-action: none; }
+  #okna > .okno .pasek :is(button, a, input, select, textarea, label) { cursor: pointer; }
+  /* para A/B stoi tak, jak ją ułożyła strona: pasek nie chwyta, uchwytów nie ma */
+  #okna > .okno:is(.ab-a, .ab-b) .pasek { cursor: default; }
+  #okna > .okno:is(.ab-a, .ab-b) .okno-uchwyt { display: none; }
+  #okna > .okno .okno-uchwyt { position: absolute; z-index: 3; touch-action: none; }
+  #okna > .okno .okno-uchwyt[data-k="e"] { top: 2.4rem; right: 0; bottom: 16px; width: var(--okna-uchwyt); cursor: ew-resize; }
+  #okna > .okno .okno-uchwyt[data-k="w"] { top: 2.4rem; left: 0; bottom: 16px; width: var(--okna-uchwyt); cursor: ew-resize; }
+  #okna > .okno .okno-uchwyt[data-k="s"] { left: 16px; right: 16px; bottom: 0; height: var(--okna-uchwyt); cursor: ns-resize; }
+  #okna > .okno .okno-uchwyt[data-k="se"] { right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 55%, var(--linia) 55%, var(--linia) 65%, transparent 65%, transparent 75%, var(--linia) 75%, var(--linia) 85%, transparent 85%); }
+  #okna > .okno .okno-uchwyt[data-k="sw"] { left: 0; bottom: 0; width: 16px; height: 16px; cursor: nesw-resize; }
+}
+@media (max-width: 40rem) { #okna > .okno .okno-uchwyt { display: none; } }
+/* okno ma margines sekcji strony (1,1 rem nad sobą); przy położeniu z ręki dokładałby się do góry przy każdym ruchu */
+#okna > .okno.okno-swobodne { margin: 0; }
+/* w trakcie gestu ramka świata nie łapie wskaźnika, inaczej przesuwanie urywa się nad oknem */
+body.okna-ruch iframe { pointer-events: none; }
+body.okna-ruch, body.okna-ruch * { user-select: none; cursor: grabbing; }
+.okna-zarys { position: fixed; z-index: 29; pointer-events: none; border: 2px solid var(--akcent); border-radius: .6rem; background: color-mix(in srgb, var(--akcent) 14%, transparent); }
+.okna-zarys[hidden] { display: none; }

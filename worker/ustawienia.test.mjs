@@ -686,3 +686,65 @@ test('U26. świat czyta swoje pokrętła dla własnej rzeczy gościa: pytanie po
   ok(await s.ruch('jozz', { op: 'ust-u26-wroc', co: 'odloz', rzecz: (await zDeklaracjami(swiatGosc.id)).wartosci['swiat.probny.moc'].rzecz, wersja: 'dowolna', powod: 'powrót do wartości odziedziczonej' }));
   assert.equal((await zDeklaracjami(swiatGosc.id)).wartosci['swiat.probny.moc'].wartosc, 1);
 });
+
+test('U27. nakładka, której czytający nie widzi, mówi w pominiete, a nie znika po cichu (warunek A/B, 21 XI 2026)', async () => {
+  const { s, ok, wartosc, licz } = await swiat();
+  const T = ok(await s.ruch('jozz', { op: 'ust-u27-tajne', co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Tajne', widzi: 'wlasciciel', ile_wolno: 'prowadzic' } })).rzecz;
+  const profil = ok(await s.ruch('jozz', { op: 'ust-u27-profil', co: 'poloz', rodzaj: 'profil/1', obszar: T, cechy: { nazwa: 'B' } })).rzecz;
+  ok(await wartosc('jozz', 'ust-u27-wartosc', 'odczucie.reka.prog_przeciagania', 14, { zasieg: profil }));
+  const wlasciciel = licz('jozz', { nakladki: [profil] });
+  assert.equal(wlasciciel.wartosci['odczucie.reka.prog_przeciagania'].wartosc, 14, 'kontrola: właściciel widzi profil i dostaje jego wartość');
+  assert.ok(!(wlasciciel.pominiete || []).some((p) => p.nakladka === profil), 'kontrola: widoczna nakładka nie jest pominięta');
+  const agent = licz('agent-a', { nakladki: [profil] });
+  assert.notEqual(agent.wartosci['odczucie.reka.prog_przeciagania'].wartosc, 14, 'agent nie dostaje wartości z profilu, którego nie widzi');
+  const p = (agent.pominiete || []).find((x) => x.nakladka === profil);
+  assert.ok(p, 'i słyszy, że nakładkę pominięto: ' + JSON.stringify(agent.pominiete));
+  assert.match(p.dlaczego, /nie widać/);
+  const brak = '0'.repeat(26);
+  assert.ok((licz('jozz', { nakladki: [brak] }).pominiete || []).some((x) => x.nakladka === brak), 'nieistniejąca nakładka też mówi');
+});
+
+test('U28. nakładka mówi na każdej drodze: wprost, po nazwach (tą czyta okno świata), na stronie tekstowej; zły kształt i piąta też (druga linia Opusa czatu na 86, 21 XI 2026)', async () => {
+  const { s, ok, wartosc } = await swiat();
+  const T = ok(await s.ruch('jozz', { op: 'ust-u28-tajne', co: 'poloz', rodzaj: 'obszar/1', cechy: { nazwa: 'Tajne', widzi: 'wlasciciel', ile_wolno: 'prowadzic' } })).rzecz;
+  const profil = ok(await s.ruch('jozz', { op: 'ust-u28-profil', co: 'poloz', rodzaj: 'profil/1', obszar: T, cechy: { nazwa: 'B' } })).rzecz;
+  ok(await wartosc('jozz', 'ust-u28-wartosc', 'odczucie.reka.prog_przeciagania', 14, { zasieg: profil }));
+  const N = 'odczucie.reka.prog_przeciagania';
+  const brak = '0'.repeat(26);
+  const pytanie = (sciezka, kto) => obsluzSrodowisko(s, new Request('https://proba.example' + sciezka, { headers: { 'x-kto': kto } }));
+  const json = async (sciezka, kto) => (await pytanie(sciezka, kto)).json();
+  const slyszy = (u, id) => (u.pominiete || []).some((x) => x.nakladka === id);
+  for (const [droga, nazwy] of [['wprost', ''], ['po nazwach', `nazwy=${N}&`]]) {
+    const wl = await json(`/api/srodowisko/ustawienia?${nazwy}nakladki=${profil}`, 'jozz');
+    assert.equal(wl.wartosci[N].wartosc, 14, `${droga}: kontrola, właściciel widzi profil i dostaje jego wartość`);
+    assert.equal(slyszy(wl, profil), false, `${droga}: kontrola, widoczna nakładka nie jest pominięta`);
+    const ag = await json(`/api/srodowisko/ustawienia?${nazwy}nakladki=${profil}`, 'agent-a');
+    assert.notEqual(ag.wartosci[N].wartosc, 14, `${droga}: agent nie dostaje wartości z profilu, którego nie widzi`);
+    assert.equal(slyszy(ag, profil), true, `${droga}: agent słyszy, że nakładkę pominięto: ${JSON.stringify(ag.pominiete)}`);
+    assert.equal(slyszy(await json(`/api/srodowisko/ustawienia?${nazwy}nakladki=${brak}`, 'jozz'), brak), true, `${droga}: nieistniejąca nakładka też mówi`);
+    // zły kształt i piąta nakładka: dawniej odpadały bez słowa
+    const wiele = [profil, brak, '1'.repeat(26), '2'.repeat(26), '3'.repeat(26)];
+    const u = await json(`/api/srodowisko/ustawienia?${nazwy}nakladki=zly-ksztalt,${wiele.join(',')}`, 'jozz');
+    assert.equal(u.wartosci[N].wartosc, 14, `${droga}: kontrola, cztery pierwsze dobre nakładki dalej działają`);
+    assert.match((u.pominiete || []).find((x) => x.nakladka === 'zly-ksztalt')?.dlaczego || '', /nie identyfikator/, `${droga}: zły kształt mówi`);
+    assert.match((u.pominiete || []).find((x) => x.nakladka === '3'.repeat(26))?.dlaczego || '', /najwyżej 4/, `${droga}: piąta nakładka mówi`);
+  }
+  // ta sama odpowiedź dla niewidocznej i nieistniejącej: pominięcie nie zdradza, że ukryta rzecz istnieje
+  const ag = await json(`/api/srodowisko/ustawienia?nakladki=${profil},${brak}`, 'agent-a');
+  const dl = (id) => ag.pominiete.find((x) => x.nakladka === id).dlaczego;
+  assert.equal(dl(profil), dl(brak));
+  const tekst = await (await pytanie(`/ustawienia?nakladki=${profil}`, 'agent-a')).text();
+  assert.match(tekst, new RegExp(`nakładka ${profil}: `), 'strona tekstowa przyjmuje nakładki i mówi o pominiętej');
+  assert.doesNotMatch(await (await pytanie(`/ustawienia?nakladki=${profil}`, 'jozz')).text(), new RegExp(`nakładka ${profil}: `), 'kontrola: właścicielowi strona nie mówi o pominięciu');
+  // echo złego kształtu bez znaków sterujących: nowa linia nie dopisuje na stronie tekstowej własnego wiersza (sonda Opusa czatu)
+  const falszywa = 'x\n  nakładka FALSZYWA';
+  const echo = await pytanie(`/ustawienia?nakladki=${encodeURIComponent(falszywa)}`, 'agent-a');
+  assert.doesNotMatch(await echo.text(), /\n {2}nakładka FALSZYWA/, 'znak nowej linii z adresu nie robi nowego wiersza');
+  const jakoDane = await json(`/api/srodowisko/ustawienia?nakladki=${encodeURIComponent(falszywa)}`, 'agent-a');
+  assert.equal(jakoDane.pominiete.find((x) => /FALSZYWA/.test(x.nakladka))?.nakladka, 'x?  nakładka FALSZYWA', 'w danych echo ma znak zapytania w miejscu znaku sterującego');
+  assert.equal((await json(`/api/srodowisko/ustawienia?nakladki=zly-ksztalt`, 'agent-a')).pominiete[0].nakladka, 'zly-ksztalt', 'kontrola: zwykły zły kształt wraca bez zmian');
+  // CR też robi wiersz w przeglądarce; NEL, U+2028 i U+2029 dzielą wiersze u agentów (druga linia Opusa czatu na 90)
+  const kazdy = 'a\rb\u0085c\u2028d\u2029e';
+  assert.equal((await json(`/api/srodowisko/ustawienia?nakladki=${encodeURIComponent(kazdy)}`, 'agent-a')).pominiete[0].nakladka, 'a?b?c?d?e', 'CR, NEL, U+2028 i U+2029 też idą na znak zapytania');
+  assert.doesNotMatch(await (await pytanie(`/ustawienia?nakladki=${encodeURIComponent('y\r  nakładka FALSZYWA2')}`, 'agent-a')).text(), /\r {2}nakładka FALSZYWA2/, 'powrót karetki z adresu nie robi nowego wiersza');
+});
