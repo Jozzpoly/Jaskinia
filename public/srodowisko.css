@@ -240,8 +240,13 @@ ul.ust { list-style: none; margin: 0; padding: 0; }
 /* który przejazd jadą oba auta: gotowe i zapisane (przejazd/1); wąski, żeby guziki zostały w jednym rzędzie */
 .ab .ab-wybor { font: inherit; font-size: .85rem; min-height: 2.1rem; max-width: 17rem; min-width: 0; }
 .ab .ab-zdanie { margin: 0; font-size: .88rem; line-height: 1.35; min-width: 0; font-variant-numeric: tabular-nums; }
-.ab .ab-zdanie:empty::before { content: 'Naciśnij „Jedź tak samo w obu”: oba auta wrócą na start i pojadą ten sam program.'; color: var(--ciche); }
-.ab .ab-wykres { grid-column: 2; grid-row: 1 / span 2; min-width: 0; min-height: 0; }
+/* podpowiedź przy pustym zdaniu mówi słowami pary (przejazd albo program): strona wpisuje ją w data-pusto */
+.ab .ab-zdanie:empty::before { content: attr(data-pusto); color: var(--ciche); }
+.ab .ab-wykres-cale { grid-column: 2; grid-row: 1 / span 2; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: .2rem; }
+.ab .ab-wykres { flex: 1; min-width: 0; min-height: 0; }
+.ab .ab-seria { font: inherit; font-size: .75rem; min-height: 1.7rem; max-width: 100%; align-self: flex-start; }
+.ab .ab-opis-serii { margin: 0; font-size: .78rem; line-height: 1.3; color: var(--ciche); min-width: 0; font-variant-numeric: tabular-nums; }
+.ab .ab-opis-serii:empty { display: none; }
 /* czym B różni się od A w tej jeździe: pod zdaniem, cicho; pusta linia nie zajmuje miejsca */
 .ab .ab-roznica { margin: 0; font-size: .8rem; line-height: 1.3; color: var(--ciche); min-width: 0; font-variant-numeric: tabular-nums; }
 .ab .ab-roznica:empty { display: none; }
@@ -273,8 +278,8 @@ ul.ust { list-style: none; margin: 0; padding: 0; }
   #okna .okno.ab-a { top: 0; }
   #okna .okno.ab-b { top: calc(var(--ab-wolne) / 2 + .5rem); }
   /* na telefonie zdanie i wykres nie mieszczą się pod guzikami: pas da się przewinąć (ślepa ręka, D8) */
-  #okna .ab { left: 0; right: 0; bottom: 3.1rem; height: 12rem; border-radius: 0; overflow-y: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 6rem; }
-  .ab .ab-wykres { grid-column: 1; grid-row: 3; }
+  #okna .ab { left: 0; right: 0; bottom: 3.1rem; height: 12rem; border-radius: 0; overflow-y: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 8rem; }
+  .ab .ab-wykres-cale { grid-column: 1; grid-row: 3; }
   /* na telefonie wiersz tekstu rośnie z treścią (min-height: auto), a przewija się cały pas; z min-height: 0 tekst wchodził pod wykres */
   .ab .ab-tekst { overflow: visible; min-height: auto; }
   /* pasek okna na telefonie: „nowa karta” jako strzałka, żeby tytuł świata się mieścił, a guziki nie łamały się na dwa wiersze */
