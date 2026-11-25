@@ -242,18 +242,20 @@
   const NAJWIEKSZY_PRZEJAZD_ZNAKI = 32000;
   // Para ma sens, gdy pas umie w niej coś porównać: gotowy przejazd (świat gra program wejścia) albo powtórkę tego, co
   // zrobiła ręka (świat umie record). Świat, który gra tylko własny schemat i nie oddaje nagrania, guzika „A/B” nie dostaje.
-  const umieAB = (o) => o.umie.includes('play') && (o.programy.includes('wejscie/1') || o.umie.includes('record'));
+  // Bez programy w hello świat nie nazwał żadnego schematu, więc pas nie ma czego mu wysłać ani z czym porównać nagrania.
+  const umieAB = (o) => o.umie.includes('play') && o.programy.length > 0 && (o.programy.includes('wejscie/1') || o.umie.includes('record'));
   const grajaOba = (A, B, schemat) => A.programy.includes(schemat) && B.programy.includes(schemat);
   const slowaProgramu = (schemat) => (schemat === 'wejscie/1'
     ? { rzecz: 'przejazd', robia: 'jadą', zrobily: 'przejechały', proba: 'jeździe', twoj: (rola) => 'Twój przejazd z okna ' + rola, pusto: (rola) => 'w oknie ' + rola + ' nikt jeszcze nie jechał od startu' }
     : { rzecz: 'program', robia: 'grają', zrobily: 'zagrały', proba: 'próbie', twoj: (rola) => 'To, co zrobiłeś w oknie ' + rola, pusto: (rola) => 'w oknie ' + rola + ' nic się jeszcze nie działo od startu' });
   // Serie przebiegu nazwane przez świat: serie [{klucz, nazwa, jednostka}], po jednej na kolumnę z pola kolumny (JV od
-  // 524350b). Przebieg bez serii (JV sprzed 25 XI) dostaje same klucze kolumn, bez nazw i jednostek, których świat nie
-  // powiedział (TYMCZASOWE.md). Kolumna to miejsce serii w wierszu próbki.
+  // 524350b, na stronie roboczej od 25 XI). Przebieg bez serii nie ma czego porównać: gospodarz nie nadaje nazw za świat
+  // (ścieżka wstecz z surowymi kluczami kolumn zdjęta 25 XI, gdy JV z seriami stanęło na stronie roboczej). Kolumna to
+  // miejsce serii w wierszu próbki.
   function serieAB(p) {
     const kol = Array.isArray(p.kolumny) ? p.kolumny.filter((k) => typeof k === 'string') : [];
     const nazwane = Array.isArray(p.serie) ? p.serie.filter((s) => s && typeof s === 'object' && typeof s.klucz === 'string' && s.klucz) : null;
-    return (nazwane || kol.map((k) => ({ klucz: k }))).map((s, i) => ({
+    return (nazwane || []).map((s, i) => ({
       klucz: s.klucz.slice(0, 60),
       nazwa: typeof s.nazwa === 'string' && s.nazwa.trim() ? s.nazwa.trim().slice(0, 60) : s.klucz.slice(0, 60),
       jednostka: typeof s.jednostka === 'string' ? s.jednostka.trim().slice(0, 12) : '',
@@ -261,8 +263,7 @@
     })).filter((s) => s.kol >= 0);
   }
   // Wspólne serie dwóch przebiegów: ten sam klucz i ta sama jednostka (umowa: „nazwały tak samo”), nazwa z okna A. Seria
-  // t to czas od startu programu w sekundach (przebieg bez serii ma t bez jednostki, jak w umowie sprzed 25 XI); bez niej
-  // pas liczy po numerze próbki.
+  // t to czas od startu programu w sekundach; bez niej pas liczy po numerze próbki.
   function wspolneSerie(a, b) {
     const sa = serieAB(a), sb = serieAB(b), wspolne = [], inne = [];
     for (const x of sa) {
@@ -271,7 +272,7 @@
       if (y.jednostka !== x.jednostka) inne.push({ nazwa: x.nazwa, ja: x.jednostka || 'bez jednostki', jb: y.jednostka || 'bez jednostki' });
       else wspolne.push({ klucz: x.klucz, nazwa: x.nazwa, jednostka: x.jednostka, kolA: x.kol, kolB: y.kol });
     }
-    const czas = wspolne.find((s) => s.klucz === 't' && (s.jednostka === 's' || s.jednostka === '')) || null;
+    const czas = wspolne.find((s) => s.klucz === 't' && s.jednostka === 's') || null;
     return { czas, serie: wspolne.filter((s) => s !== czas && s.klucz !== 't'), inne };
   }
   // liczba z jednostką świata: stopnie i procenty bez spacji, reszta ze spacją; bez jednostki sama liczba
@@ -726,9 +727,9 @@
       o.chce = Array.isArray(m.wants) ? m.wants.filter((x) => typeof x === 'string').slice(0, 8) : [];
       // co świat umie poza umową (JV od 21 XI: play i record, programy wejścia); nieznane pola pomijamy
       o.umie = Array.isArray(m.umie) ? m.umie.filter((x) => typeof x === 'string').slice(0, 16) : [];
-      // jakie schematy programu świat gra (umowa od 25 XI: świat mówi sam za siebie). Świat, który umie play, a schematów
-      // nie podaje, to JV sprzed 25 XI: umowa znała wtedy tylko program wejścia (TYMCZASOWE.md)
-      o.programy = Array.isArray(m.programy) ? m.programy.filter((x) => typeof x === 'string' && /^[a-z0-9_-]{1,40}\/[0-9]{1,4}$/.test(x)).slice(0, 16) : o.umie.includes('play') ? ['wejscie/1'] : [];
+      // jakie schematy programu świat gra (umowa od 25 XI: świat mówi sam za siebie); gospodarz wysyła play tylko z takim.
+      // Świat bez programy nie dostaje „A/B” (ścieżka wstecz dla JV sprzed 25 XI zdjęta, gdy nowe JV stanęło na stronie roboczej)
+      o.programy = Array.isArray(m.programy) ? m.programy.filter((x) => typeof x === 'string' && /^[a-z0-9_-]{1,40}\/[0-9]{1,4}$/.test(x)).slice(0, 16) : [];
       o.przedstawil = true;
       o.guzikAB.hidden = !(umieAB(o) && o.gosc && o.rola !== 'B');
       o.guzikAB.title = 'Drugie okno tego świata obok, z własnymi ustawieniami (profil B), i ' + (o.programy.includes('wejscie/1') ? 'ten sam przejazd' : 'to samo') + ' w obu';
