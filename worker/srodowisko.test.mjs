@@ -264,7 +264,13 @@ test('umowa okna opisuje program wejścia: play i record od gospodarza, played i
   // świat mówi sam za siebie (25 XI; list Gemini Neona i głos Fable po przerwie): schematy w hello, serie nazwane przez świat
   ma('programy: ["wejscie/1"] mówi, jakie schematy programu grasz; gospodarz wysyła play tylko z takim');
   ma('serie: [{klucz, nazwa, jednostka}], po jednej na kolumnę');
-  ma('Gospodarz porównuje i rysuje tylko serie, które oba okna nazwały tak samo');
+  ma('Gospodarz porównuje i rysuje tylko serie, które oba okna nazwały tym samym kluczem i tą samą jednostką, nazwą z okna A');
+  // uwagi Opusa czatu do 1166a32 (25 XI): jednostka w „tak samo”, czas jako seria t, cisza o przechyle zamiast języka auta, warunki
+  ma('ten sam klucz w innej jednostce pokazuje bez porównania');
+  ma('Seria o kluczu t to czas od startu programu w sekundach (jednostka s)');
+  ma('świat, który ich nie poda, nic o nich nie usłyszy');
+  assert.ok(!u.includes('świat nie podaje przechyłu'), 'gospodarz nie mówi do świata językiem auta');
+  ma('warunki: co świat miał ustawione w chwili startu programu');
   ma('nie przebiera się za auto');
   ma('nowy poprawny play przerywa');
   // przykład z umowy to cała wiadomość, z polem jaskinia (bez niego świat milczy), i program, który da się przeczytać
