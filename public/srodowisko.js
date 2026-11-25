@@ -118,12 +118,16 @@
     } catch { /* okno i tak jest otwarte na tej stronie; nie wróci tylko po przeładowaniu */ }
   }
   // Otwarcie narzędzia z jego rzeczy (gosc/1): z guzika "Otwórz" i przy powrocie okien po przeładowaniu strony.
+  // Okno, które wraca samo, gdy ręka zdążyła już coś otworzyć, wraca zwinięte do doku: inaczej wchodziło na wierzch okna
+  // otwartego chwilę wcześniej ręką (ślepa ręka 25 XI: „Otwórz” przy Kolonii, a na wierzchu stary „Świat A/B”).
+  let otwartoReka = false;
   function otworzGoscia(r, { cicho = false } = {}) {
     const c = r.cechy;
     const kod = typeof c.kod === 'string' && /^[0-9a-f]{64}$/.test(c.kod) ? '/gosc/' + c.kod : null;
     const adres = !kod && typeof c.adres === 'string' && /^https:\/\//.test(c.adres) ? c.adres : null;
     if (!kod && !adres) return;
-    otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul, umowa: typeof c.umowa === 'string' ? c.umowa : null } });
+    if (!cicho) otwartoReka = true;
+    otworz({ klucz: 'g:' + r.id + ':' + (kod || adres), tytul: r.tytul, adres: kod || adres, piaskownica: kod ? 'kod' : (odWlasciciela(r) ? 'swoj' : 'obcy'), gosc: { id: r.id, nazwa: r.tytul, umowa: typeof c.umowa === 'string' ? c.umowa : null }, schowane: cicho && otwartoReka });
     if (!cicho) zapamietajOkno(r, true);
   }
   // Powrót okien po przeładowaniu: regułę trzyma public/okna.mjs (tylko okno, które sam zapisałem, i tylko do narzędzia
@@ -143,8 +147,8 @@
       else if (w.powiedz && !powiedzianeOkna.has(o.id + ':' + o.wersja)) { powiedzianeOkna.add(o.id + ':' + o.wersja); komunikat(w.powiedz); if (g) zapamietajOkno({ id: g.id, tytul: g.tytul }, false); }
     }
   }
-  function otworz({ klucz, tytul, adres, piaskownica, gosc = null, nakladka = null, rola = null }) {
-    for (const [id, o] of okna) if (o.klucz === klucz) return pokaz(id, true);
+  function otworz({ klucz, tytul, adres, piaskownica, gosc = null, nakladka = null, rola = null, schowane = false }) {
+    for (const [id, o] of okna) if (o.klucz === klucz) return schowane ? undefined : pokaz(id, true);
     const id = 'okno-' + ++nrOkna;
     const ramka = el('iframe', { src: adres, title: tytul, referrerpolicy: 'no-referrer', allow: 'fullscreen; gamepad', sandbox: PIASKOWNICE[piaskownica] || PIASKOWNICE.obcy });
     const mowi = el('span', { klasa: 'mowi' });
@@ -175,11 +179,11 @@
     sekcja.append(mowa);
     const guzik = el('button', { tekst: tytul, klik: () => pokaz(id, sekcja.hidden) });
     okna.set(id, { klucz, ramka, sekcja, guzik, tyt, mowi, gosc, chce: [], nazwa: tytul, slad: sladOkna, zapisy: 0, propozycje: 0, mowa, sygnaly: new Map(), zdarzenia: [], rysujMowe: 0, suwaki, guzikSuwakow, czyta: new Set(), dla: null, suwakiNr: 0, trzymaSuwak: false, suwakiZalegle: false, zwiniete: new Set(),
-      adres, piaskownica, nakladka, rola, para: null, umie: [], oczekuje: new Map(), dotkniete: 0, guzikAB });
+      adres, piaskownica, nakladka, rola, para: null, umie: [], programy: [], przedstawil: false, oczekuje: new Map(), dotkniete: 0, guzikAB });
     ramka.addEventListener('load', () => { if (!ramka.contentWindow) return; ramka.contentWindow.postMessage({ jaskinia: 1, type: 'hi', v: 2, umowy: ['okno/2', 'okno/3'], umie: ['look'] }, '*'); powiedzWyglad(okna.get(id)); });
     $('okna').append(sekcja);
     $('dok').append(guzik);
-    pokaz(id, true);
+    pokaz(id, !schowane);
   }
   function pokaz(id, widac) {
     // Para A/B pokazuje się i chowa razem: dwa okna obok siebie albo żadne.
@@ -208,7 +212,7 @@
       const p = okna.get(o.para);
       p.para = null;
       wyczyscWynikAB();
-      if (o.rola === 'A') { zamknij(o.para); } else { p.rola = null; p.sekcja.querySelector('.pasek .rola')?.remove(); p.guzikAB.hidden = !(p.umie.includes('play') && p.gosc); p.guzik.textContent = p.nazwa; }
+      if (o.rola === 'A') { zamknij(o.para); } else { p.rola = null; p.sekcja.querySelector('.pasek .rola')?.remove(); p.guzikAB.hidden = !(umieAB(p) && p.gosc); p.guzik.textContent = p.nazwa; }
     }
     if (o.gosc && o.rola !== 'B') zapamietajOkno({ id: o.gosc.id, tytul: o.gosc.nazwa }, false);
     for (const w of o.oczekuje.values()) w({ ok: false, error: 'okno zamknięte' });
@@ -220,9 +224,11 @@
   // Jego słowa z 21 XI 04:43: ten sam input na dwa okna, inne ustawienia. Okno B to ten sam świat z profilem
   // „B: <świat>” jako nakładką: czyta to, co A, a nad tym swoje wartości (A/B na profilach, uzgodnione z Opusem Code).
   // Porównanie idzie programem wejścia (umowa JV z 21 XI: play/played, record/recorded, format wejscie/1 i przebieg/1):
-  // oba auta wracają na start i jadą krok w krok to samo, więc różnica bierze się tylko z ustawień. Zdanie liczy się
-  // jak w przyrządzie Opusa Code (sprawdz-swiat.mjs, dwaOkna): prędkość po 3 s, odległość na końcu, najwyższa
-  // prędkość i przechył, bo szybsze nie znaczy lepsze (pierwszy zrzut A/B pokazał szybsze auto na boku).
+  // oba okna wracają na start i jadą krok w krok to samo, więc różnica bierze się tylko z ustawień.
+  // Świat mówi sam za siebie (umowa od 25 XI; głos Fable po przerwie, § 7; Drugi Świat Gemini Neona mnożył prędkość ciała
+  // przez 12, żeby gospodarz miał co narysować): pas porównuje i rysuje tylko serie, które oba okna nazwały tym samym
+  // kluczem i tą samą jednostką, i mówi nazwami świata. Słowa „przejazd” i „jadą” biorą się ze schematu programu (program
+  // wejścia umowa nazywa przejazdem); „km/h”, przechył i odległość od startu tylko wtedy, gdy świat je podał.
   const PROGRAM_AB = { schemat: 'wejscie/1', nazwa: 'Osiadanie, ruszanie, łuk, hamowanie do zatrzymania', odcinki: [{ s: 1 }, { s: 2, gaz: 1 }, { s: 1, gaz: 1, skret: 0.5 }, { s: 3, hamulec: 1 }] };
   const CHWILA_AB = 3, PRZEWROTKA_ST = 60;
   // Kilka gotowych przejazdów do wyboru (jego „ten sam input… inne ustawienia, inny rig, moc”: różne próby pokazują różne
@@ -234,6 +240,43 @@
     { schemat: 'wejscie/1', nazwa: 'Slalom: prawo, lewo, prawo, hamowanie', odcinki: [{ s: 1 }, { s: 2, gaz: 1 }, { s: 1.5, gaz: 0.6, skret: 0.6 }, { s: 1.5, gaz: 0.6, skret: -0.6 }, { s: 1.5, gaz: 0.6, skret: 0.6 }, { s: 2, hamulec: 1 }] },
   ];
   const NAJWIEKSZY_PRZEJAZD_ZNAKI = 32000;
+  // Para ma sens, gdy pas umie w niej coś porównać: gotowy przejazd (świat gra program wejścia) albo powtórkę tego, co
+  // zrobiła ręka (świat umie record). Świat, który gra tylko własny schemat i nie oddaje nagrania, guzika „A/B” nie dostaje.
+  // Bez programy w hello świat nie nazwał żadnego schematu, więc pas nie ma czego mu wysłać ani z czym porównać nagrania.
+  const umieAB = (o) => o.umie.includes('play') && o.programy.length > 0 && (o.programy.includes('wejscie/1') || o.umie.includes('record'));
+  const grajaOba = (A, B, schemat) => A.programy.includes(schemat) && B.programy.includes(schemat);
+  const slowaProgramu = (schemat) => (schemat === 'wejscie/1'
+    ? { rzecz: 'przejazd', robia: 'jadą', zrobily: 'przejechały', proba: 'jeździe', twoj: (rola) => 'Twój przejazd z okna ' + rola, pusto: (rola) => 'w oknie ' + rola + ' nikt jeszcze nie jechał od startu' }
+    : { rzecz: 'program', robia: 'grają', zrobily: 'zagrały', proba: 'próbie', twoj: (rola) => 'To, co zrobiłeś w oknie ' + rola, pusto: (rola) => 'w oknie ' + rola + ' nic się jeszcze nie działo od startu' });
+  // Serie przebiegu nazwane przez świat: serie [{klucz, nazwa, jednostka}], po jednej na kolumnę z pola kolumny (JV od
+  // 524350b, na stronie roboczej od 25 XI). Przebieg bez serii nie ma czego porównać: gospodarz nie nadaje nazw za świat
+  // (ścieżka wstecz z surowymi kluczami kolumn zdjęta 25 XI, gdy JV z seriami stanęło na stronie roboczej). Kolumna to
+  // miejsce serii w wierszu próbki.
+  function serieAB(p) {
+    const kol = Array.isArray(p.kolumny) ? p.kolumny.filter((k) => typeof k === 'string') : [];
+    const nazwane = Array.isArray(p.serie) ? p.serie.filter((s) => s && typeof s === 'object' && typeof s.klucz === 'string' && s.klucz) : null;
+    return (nazwane || []).map((s, i) => ({
+      klucz: s.klucz.slice(0, 60),
+      nazwa: typeof s.nazwa === 'string' && s.nazwa.trim() ? s.nazwa.trim().slice(0, 60) : s.klucz.slice(0, 60),
+      jednostka: typeof s.jednostka === 'string' ? s.jednostka.trim().slice(0, 12) : '',
+      kol: kol.length ? kol.indexOf(s.klucz) : i,
+    })).filter((s) => s.kol >= 0);
+  }
+  // Wspólne serie dwóch przebiegów: ten sam klucz i ta sama jednostka (umowa: „nazwały tak samo”), nazwa z okna A. Seria
+  // t to czas od startu programu w sekundach; bez niej pas liczy po numerze próbki.
+  function wspolneSerie(a, b) {
+    const sa = serieAB(a), sb = serieAB(b), wspolne = [], inne = [];
+    for (const x of sa) {
+      const y = sb.find((s) => s.klucz === x.klucz);
+      if (!y) continue;
+      if (y.jednostka !== x.jednostka) inne.push({ nazwa: x.nazwa, ja: x.jednostka || 'bez jednostki', jb: y.jednostka || 'bez jednostki' });
+      else wspolne.push({ klucz: x.klucz, nazwa: x.nazwa, jednostka: x.jednostka, kolA: x.kol, kolB: y.kol });
+    }
+    const czas = wspolne.find((s) => s.klucz === 't' && s.jednostka === 's') || null;
+    return { czas, serie: wspolne.filter((s) => s !== czas && s.klucz !== 't'), inne };
+  }
+  // liczba z jednostką świata: stopnie i procenty bez spacji, reszta ze spacją; bez jednostki sama liczba
+  const zJednostka = (x, j, m = 1) => ileAB(x, m) + (!j ? '' : j === '°' || j === '%' ? j : ' ' + j);
   const programPrzejazdu = (r) => { const p = r && r.cechy && r.cechy.program; return p && p.schemat === 'wejscie/1' && Array.isArray(p.odcinki) && p.odcinki.length ? { ...p, nazwa: typeof r.cechy.nazwa === 'string' && r.cechy.nazwa ? r.cechy.nazwa : (p.nazwa || 'przejazd') } : null; };
   const przejazdyZapisane = () => rzeczy.filter((r) => r.rodzaj === 'przejazd/1' && !r.odlozone && programPrzejazdu(r));
   function wybranyProgram() {
@@ -262,6 +305,7 @@
     const q = '/api/srodowisko/ustawienia?deklaracje=tak&nazwy=' + nazwy.map(encodeURIComponent).join(',') + '&dla=' + dla;
     const [ua, ub] = await Promise.all([czytaj(q), czytaj(q + (B.nakladka ? '&nakladki=' + B.nakladka : ''))]);
     const dekl = new Map((ua.deklaracje || []).map((d) => [d.nazwa, d]));
+    for (const [n, d] of dekl) etykietyPokretel.set(n, etykietaPokretla(d).nazwa);
     const rozne = [];
     for (const n of nazwy) {
       const va = ((ua.wartosci || {})[n] || {}).wartosc, vb = ((ub.wartosci || {})[n] || {}).wartosc;
@@ -272,7 +316,38 @@
   const wartoscPL = (x) => (typeof x === 'number' && Number.isFinite(x) ? liczbaPL(x) : x === undefined ? 'brak' : typeof x === 'string' ? x : JSON.stringify(x));
   // „w suwakach”, bo tyle twarz wie: guzik w samej grze (np. Moc w JV) zmienia jazdę bez słowa do Jaskini (sonda 21 XI:
   // „2×” w grze B dało „B szybsze o 35%”, a suwaki A i B były te same). Co gra ustawiła sama, widać na pasku okna.
-  const zdanieRoznicy = (rozne) => (!rozne ? '' : !rozne.length ? 'W suwakach B ma te same ustawienia co A.' : 'B różni się od A w suwakach: ' + rozne.slice(0, 8).map((r) => r.etykieta + ' ' + wartoscPL(r.b) + ' (A: ' + wartoscPL(r.a) + ')').join('; ') + (rozne.length > 8 ? '; i ' + (rozne.length - 8) + ' innych' : '') + '.');
+  const listaRoznic = (rozne) => rozne.slice(0, 8).map((r) => r.etykieta + ' ' + wartoscPL(r.b) + ' (A: ' + wartoscPL(r.a) + ')').join('; ') + (rozne.length > 8 ? '; i ' + (rozne.length - 8) + ' innych' : '');
+  const zdanieRoznicy = (rozne) => (!rozne ? '' : !rozne.length ? 'W suwakach B ma te same ustawienia co A.' : 'B różni się od A w suwakach: ' + listaRoznic(rozne) + '.');
+  // Na czym oba okna naprawdę zaczęły: przebieg niesie warunki z chwili startu programu (JV od 47e8e55: lokacja, moc
+  // i hamulec z zakładki gry, pokrętła JV core, wersja). Widać w nich także guzik w samej grze, którego suwaki Jaskini
+  // nie znają (sonda 21 XI: „2×” pod MOC w grze okna B dało „B szybsze o 35%” przy „tych samych” suwakach).
+  // Pokrętła mówią ludzką nazwą z deklaracji, a własne pola świata swoim kluczem.
+  const etykietyPokretel = new Map();
+  const etykietaPola = (k) => { const t = String(k).replace(/_/g, ' ').slice(0, 60); return t.charAt(0).toUpperCase() + t.slice(1); };
+  function roznicaWarunkow(a, b) {
+    const wa = a.warunki, wb = b.warunki;
+    if (!wa || !wb || typeof wa !== 'object' || typeof wb !== 'object' || Array.isArray(wa) || Array.isArray(wb)) return null;
+    const rowne = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+    const pa = wa.pokretla && typeof wa.pokretla === 'object' ? wa.pokretla : {}, pb = wb.pokretla && typeof wb.pokretla === 'object' ? wb.pokretla : {};
+    const rozne = [];
+    for (const k of [...new Set([...Object.keys(wa), ...Object.keys(wb)])].slice(0, 32)) if (k !== 'pokretla' && !rowne(wa[k], wb[k])) rozne.push({ nazwa: k, etykieta: etykietaPola(k), a: wa[k], b: wb[k] });
+    for (const n of [...new Set([...Object.keys(pa), ...Object.keys(pb)])].slice(0, 64)) if (!rowne(pa[n], pb[n])) rozne.push({ nazwa: n, etykieta: etykietyPokretel.get(n) || etykietaPola(n.split('.').pop()), a: pa[n], b: pb[n] });
+    return rozne;
+  }
+  // Różnica z warunków jest prawdą świata; suwaki Jaskini mówią tylko, co ustawiła Jaskinia. Gdy świat mówi „inaczej”,
+  // a suwaki „tak samo”, różnicę ustawiono w samym świecie, i to zdanie to mówi.
+  // Gdy suwaki mówią co innego niż świat (ślepa ręka 25 XI, D11: suwak Mocy 3 w B i ×2 z guzika w grze dawały samo
+  // „Moc 6 (A: 1)”), stoi też linia suwaków; różnica suwaków powtórzona przez świat tą samą nazwą i liczbami jej nie robi.
+  function zdanieWarunkow(rw, rs) {
+    const juzMowi = (r) => rw.some((w) => w.etykieta === r.etykieta && JSON.stringify(w.a) === JSON.stringify(r.a) && JSON.stringify(w.b) === JSON.stringify(r.b));
+    const suwaki = rs ? rs.filter((r) => !juzMowi(r)) : [];
+    if (!rw.length) return 'Świat mówi, że na starcie B miało te same ustawienia co A.' + (suwaki.length ? ' W suwakach Jaskini B różni się od A: ' + listaRoznic(suwaki) + ', ale świat jechał tak samo.' : '');
+    return 'Świat mówi, że na starcie B różniło się od A: ' + listaRoznic(rw) + '.'
+      + (rs && !rs.length ? ' W suwakach Jaskini B ma te same ustawienia co A, więc tę różnicę ustawiono w samym świecie.'
+        : suwaki.length ? ' W suwakach Jaskini B różni się od A: ' + listaRoznic(suwaki) + '.' : '');
+  }
+  // kropka na końcu zdania, chyba że tekst już się nią kończy („szt.”)
+  const zKropka = (t) => (/\.$/.test(t) ? t : t + '.');
   const ab = { sekcja: null, para: null, trwa: false, proby: [], aktualny: false };
   const sekundyProgramu = (p) => Math.round((p.odcinki || []).reduce((s, x) => s + (Number.isFinite(x.s) ? x.s : (Number(x.kroki) || 0) / 60), 0) * 10) / 10;
   let nrZadaniaAB = 0;
@@ -328,6 +403,10 @@
     ab.stan = el('span', { klasa: 'ab-stan', 'aria-live': 'polite' });
     ab.zdanie = el('p', { klasa: 'ab-zdanie', 'aria-live': 'polite' });
     ab.roznica = el('p', { klasa: 'ab-roznica' });
+    // na wykresie jedna seria naraz, do wyboru spośród tych, które oba okna nazwały; pod zdaniem jej najwyższa i końcowa wartość
+    ab.seria = el('select', { klasa: 'ab-seria', hidden: true, 'aria-label': 'Seria na wykresie', title: 'Którą serię świata pokazać na wykresie' });
+    ab.seria.addEventListener('change', () => rysujWykresAB());
+    ab.opisSerii = el('p', { klasa: 'ab-opis-serii' });
     ab.wykres = el('div', { klasa: 'ab-wykres' });
     ab.wybor = el('select', { klasa: 'ab-wybor', 'aria-label': 'Przejazd do porównania', title: 'Który przejazd pojadą oba auta' });
     rysujWybor();
@@ -340,7 +419,9 @@
     ab.sekcja = el('section', { klasa: 'ab', hidden: true, 'aria-label': 'Porównanie okien A i B' },
       // guziki w jednym rzędzie; stan, zdanie i różnica w jednym bloku, który się przewija (z wyborem przejazdu stan
       // zawijał się pod guziki i zjadał miejsce zdaniu)
-      el('div', { klasa: 'ab-guziki' }, ab.wybor, ab.jedz, ab.powtorz, ab.zapisz, ab.guzikProby), ab.tekst = el('div', { klasa: 'ab-tekst' }, ab.stan, ab.zdanie, ab.roznica, ab.tabela), ab.wykres);
+      el('div', { klasa: 'ab-guziki' }, ab.wybor, ab.jedz, ab.powtorz, ab.zapisz, ab.guzikProby), ab.tekst = el('div', { klasa: 'ab-tekst' }, ab.stan, ab.zdanie, ab.roznica, ab.tabela),
+      // podpis wybranej serii przy wykresie: pod zdaniem był ucięty w niskim pasie (ślepa ręka 25 XI, D12)
+      el('div', { klasa: 'ab-wykres-cale' }, ab.seria, ab.wykres, ab.opisSerii));
     $('okna').append(ab.sekcja);
   }
   // Para A/B widoczna razem: okna stają obok siebie (na telefonie jedno pod drugim), a pod nimi pas porównania.
@@ -355,22 +436,41 @@
     if (!ab.sekcja) return;
     ab.sekcja.hidden = !obaWidac;
     ab.para = obaWidac ? A : null;
-    if (obaWidac && !ab.trwa) { ab.jedz.disabled = !(A.umie.includes('play') && B.umie.includes('play')); ab.powtorz.disabled = !(A.umie.includes('record') && B.umie.includes('record')); }
+    // próby należą do świata pary: para innego świata zaczyna z pustą tabelą (dawniej dostawała wiersze poprzedniego
+    // świata, z jego kolumnami, np. przechyłem pod kolonią); ten sam świat po ponownym „A/B” ma swoje próby dalej
+    if (obaWidac && ab.probyDla !== A.klucz) { ab.probyDla = A.klucz; ab.proby = []; ab.tabela.replaceChildren(); ab.guzikProby.hidden = true; $('okna').classList.remove('ab-duzy'); ab.guzikProby.setAttribute('aria-expanded', 'false'); }
+    if (obaWidac && !ab.trwa) {
+      // gotowe przejazdy i „Jedź tak samo w obu” to programy wejścia: tylko gdy oba okna je grają. Do przedstawienia się
+      // okna B guzik stoi wyłączony, a nie znika, żeby pas nie mrugał. „Powtórz” działa dla każdego schematu.
+      const wejscie = grajaOba(A, B, 'wejscie/1'), znane = A.przedstawil && B.przedstawil;
+      ab.jedz.hidden = ab.wybor.hidden = znane && !wejscie;
+      ab.jedz.disabled = ab.wybor.disabled = !wejscie;
+      ab.powtorz.disabled = !['play', 'record'].every((u) => A.umie.includes(u) && B.umie.includes(u));
+      const jazda = wejscie || !znane;
+      ab.powtorz.textContent = jazda ? 'Powtórz mój przejazd w obu' : 'Powtórz w obu to, co zrobiłem';
+      ab.powtorz.title = jazda ? 'Twoja jazda od ostatniego startu w oknie, w którym jechałeś, odtworzona od startu w obu oknach' : 'To, co zrobiłeś od ostatniego startu w oknie, w którym byłeś, odtworzone od startu w obu oknach';
+      ab.zdanie.dataset.pusto = jazda ? 'Naciśnij „Jedź tak samo w obu”: oba okna wrócą na start i pojadą ten sam przejazd.' : 'Zrób coś w jednym oknie i naciśnij „Powtórz w obu to, co zrobiłem”: oba okna wrócą na start i zagrają to samo.';
+    }
   }
   async function jedzWObu(program, skad = '') {
     const A = ab.para, B = A && okna.get(A.para);
     if (!A || !B || ab.trwa) return;
     ab.trwa = true; ab.jedz.disabled = true; ab.powtorz.disabled = true; ab.zapisz.hidden = true;
     ab.tekst.classList.remove('nieaktualne'); ab.aktualny = false;
-    const s = sekundyProgramu(program);
-    ab.stan.textContent = 'Oba auta jadą od startu: ' + (program.nazwa || 'program') + ' (' + liczbaPL(s) + ' s)…';
+    const slowa = slowaProgramu(program.schemat);
+    // długość zna gospodarz tylko dla programu wejścia (odcinki w sekundach albo krokach); innego schematu nie liczy
+    const s = program.schemat === 'wejscie/1' ? sekundyProgramu(program) : null;
+    ab.stan.textContent = 'Oba okna ' + slowa.robia + ' od startu: ' + (program.nazwa || slowa.rzecz) + (s !== null ? ' (' + liczbaPL(s) + ' s)' : '') + '…';
     // wolne okno jedzie tak samo, tylko później: zwykły limit to trzy długości programu i start; po nim czekamy dalej na
-    // okno, które żyje, najwyżej dziesięć długości i minutę (nie dłużej niż kwadrans i nigdy krócej niż zwykły limit)
-    const ms = Math.ceil(s * 3000 + 15000);
-    const sufit = Math.max(ms, Math.min(15 * 60000, Math.ceil(s * 10000 + 60000)));
+    // okno, które żyje, najwyżej dziesięć długości i minutę (nie dłużej niż kwadrans i nigdy krócej niż zwykły limit).
+    // Program bez znanej długości: zwykły limit minuta, potem kwadrans, póki okno daje znać, że żyje.
+    const ms = s !== null ? Math.ceil(s * 3000 + 15000) : 60000;
+    const sufit = s !== null ? Math.max(ms, Math.min(15 * 60000, Math.ceil(s * 10000 + 60000))) : 15 * 60000;
     // ustawienia z chwili startu: ręka może ruszyć suwak w trakcie jazdy, a zdanie ma mówić o tym, co jechało
     const roznica = await roznicaAB(A, B).catch(() => null);
-    const dluzej = (o) => { ab.stan.textContent = 'Okno ' + o.rola + ' jedzie wolniej niż zegar: ten sam przejazd, tylko później. Czekam, póki daje znać, że żyje, najwyżej ' + liczbaPL(Math.round(sufit / 1000)) + ' s od startu…'; };
+    const dluzej = (o) => {
+      ab.stan.textContent = 'Okno ' + o.rola + (s !== null ? ' jedzie wolniej niż zegar: ten sam przejazd, tylko później.' : ' jeszcze gra.') + ' Czekam, póki daje znać, że żyje, najwyżej ' + liczbaPL(Math.round(sufit / 1000)) + ' s od startu…';
+    };
     const [pa, pb] = await Promise.all([zapytajSwiat(A, { type: 'play', program }, ms, sufit, dluzej), zapytajSwiat(B, { type: 'play', program }, ms, sufit, dluzej)]);
     ab.trwa = false;
     ulozAB();
@@ -378,38 +478,80 @@
       ab.stan.textContent = '';
       ab.roznica.textContent = '';
       ab.zdanie.textContent = 'Nie wyszło. ' + [!pa.ok || !pa.przebieg ? 'A: ' + String(pa.error || 'brak przebiegu').slice(0, 160) : null, !pb.ok || !pb.przebieg ? 'B: ' + String(pb.error || 'brak przebiegu').slice(0, 160) : null].filter(Boolean).join('; ') + '.';
-      ab.wykres.replaceChildren();
+      ab.ostatnie = null; rysujWykresAB();
       return false;
     }
     // „Twój przejazd z okna A” jest już nazwą programu: nie powtarzamy jej dwa razy (ślepa ręka, D4)
-    ab.stan.textContent = (skad || 'Przejazd: ' + (program.nazwa || 'program')) + ', ' + liczbaPL(s) + ' s.';
+    ab.stan.textContent = (skad || slowa.rzecz.charAt(0).toUpperCase() + slowa.rzecz.slice(1) + ': ' + (program.nazwa || slowa.rzecz)) + (s !== null ? ', ' + liczbaPL(s) + ' s.' : '.');
     delete ab.zdanie.dataset.przejsciowe;
     ab.zdanie.textContent = zdanieAB(pa.przebieg, pb.przebieg, program);
-    ab.roznica.textContent = zdanieRoznicy(roznica);
-    ab.wykres.replaceChildren(wykresAB(pa.przebieg, pb.przebieg));
-    dopiszProbe(pa.przebieg, pb.przebieg, program, roznica);
+    // warunki świata, gdy oba przebiegi je niosą; inaczej to, co wie Jaskinia: suwaki
+    const warunki = roznicaWarunkow(pa.przebieg, pb.przebieg);
+    ab.roznica.textContent = warunki ? zdanieWarunkow(warunki, roznica) : zdanieRoznicy(roznica);
+    ab.ostatnie = { a: pa.przebieg, b: pb.przebieg, wsp: wspolneSerie(pa.przebieg, pb.przebieg) };
+    rysujWykresAB();
+    dopiszProbe(pa.przebieg, pb.przebieg, program, warunki || roznica);
     ab.aktualny = true;
     // telefon: pas jest niski i przewija się cały, a wynik stał pod stanem, niewidoczny (ślepa ręka, D8): przewijamy do tekstu
     ab.tekst.scrollTop = 0;
     if (ab.sekcja.scrollHeight > ab.sekcja.clientHeight + 4) ab.sekcja.scrollTop = Math.max(0, ab.tekst.offsetTop - 6);
     return true;
   }
-  // Jedna próba w tabeli: przejazd, prędkość po 3 s, droga na końcu, przechył i czym różniło się B (każdy wiersz mówi
-  // o swoich ustawieniach, więc zmiana suwaka nie robi z niego nieprawdy). Najwyżej dwanaście, najnowsza na górze.
+  // Okno B pamięta swoje wartości z poprzedniego „A/B” (profil B zostaje). Pas mówi to zaraz po otwarciu, inaczej „B
+  // szybsze” zaskakiwało, choć nikt nic nie ruszał (ślepa ręka 25 XI). Tylko dopóki pas nie ma żadnego wyniku.
+  async function pokazPamiecB(B) {
+    const A = B.para && okna.get(B.para);
+    if (!A || !ab.roznica) return;
+    const r = await roznicaAB(A, B).catch(() => null);
+    if (!r || !r.length || ab.para !== A || ab.aktualny || ab.trwa || ab.zdanie.textContent || ab.roznica.textContent) return;
+    ab.roznica.textContent = 'Okno B pamięta swoje ustawienia z poprzedniego razu: ' + listaRoznic(r) + '.';
+  }
+  // Wartość serii w chwili porównania: próbka najbliżej 3 s od startu programu, a bez serii czasu środkowa próbka.
+  const wierszWChwili = (p, czas) => (!Array.isArray(p.probki) || !p.probki.length ? null
+    : czas !== null && czas !== undefined ? p.probki.reduce((naj, r) => (Math.abs(r[czas] - CHWILA_AB) < Math.abs(naj[czas] - CHWILA_AB) ? r : naj))
+      : p.probki[Math.floor((p.probki.length - 1) / 2)]);
+  // najwyższa wartość serii z próbek (co 0,1 s w JV) i kiedy padła
+  function najwyzej(p, kol, czas) {
+    let naj = null;
+    (p.probki || []).forEach((r, i) => { const v = Number(r[kol]); if (Number.isFinite(v) && (!naj || v > naj.v)) naj = { v, t: czas !== null ? Number(r[czas]) : i }; });
+    return naj;
+  }
+  const naKoncu = (p, kol) => { const r = (p.probki || [])[(p.probki || []).length - 1]; const v = r ? Number(r[kol]) : NaN; return Number.isFinite(v) ? v : null; };
+  // „B o 72% więcej”: tylko gdy obie wartości są nieujemne, a A nie stoi na zerze; inaczej same liczby mówią więcej
+  function procentAB(va, vb) {
+    if (!Number.isFinite(va) || !Number.isFinite(vb) || va < 0 || vb < 0 || !(va > 0.05)) return null;
+    return (vb / va - 1) * 100;
+  }
+  // Jedna próba w tabeli: program, pierwsza wspólna seria świata po 3 s i najwyżej, odległość i przechył, gdy przebieg
+  // je niesie, i czym różniło się B (każdy wiersz mówi o swoich ustawieniach, więc zmiana suwaka nie robi z niego
+  // nieprawdy). Najwyżej dwanaście, najnowsza na górze.
   function dopiszProbe(a, b, program, roznica) {
-    const ka = kolumnyAB(a), kb = kolumnyAB(b);
-    const blisko = (p, k) => (Array.isArray(p.probki) && p.probki.length ? p.probki.reduce((naj, r) => (Math.abs(r[k.t] - CHWILA_AB) < Math.abs(naj[k.t] - CHWILA_AB) ? r : naj)) : null);
-    const ra = blisko(a, ka), rb = blisko(b, kb);
-    const va = ra ? Math.abs(ra[ka.v]) : NaN, vb = rb ? Math.abs(rb[kb.v]) : NaN;
-    const wynik = a.skrot && a.skrot === b.skrot ? 'tak samo' : !(va > 0.05) ? 'A stoi, B ' + ileAB(vb) + ' km/h' : 'B ' + (vb >= va ? '+' : '−') + ileAB(Math.abs((vb / va - 1) * 100), 0) + '% (' + ileAB(vb) + ' / ' + ileAB(va) + ' km/h)';
+    const w = wspolneSerie(a, b), s1 = w.serie[0] || null, czasA = w.czas ? w.czas.kolA : null, czasB = w.czas ? w.czas.kolB : null;
+    const ra = wierszWChwili(a, czasA), rb = wierszWChwili(b, czasB);
+    let wynik = '?', szczyt = '?', kres = '?';
+    if (a.skrot && a.skrot === b.skrot) wynik = szczyt = kres = 'tak samo';
+    else if (s1 && ra && rb) {
+      const va = Number(ra[s1.kolA]), vb = Number(rb[s1.kolB]), pr = procentAB(va, vb);
+      wynik = (pr === null ? 'B ' + ileAB(vb) + ' · A ' + ileAB(va) : 'B ' + (pr >= 0 ? '+' : '−') + ileAB(Math.abs(pr), 0) + '% (' + ileAB(vb) + ' / ' + ileAB(va) + ')') + (s1.jednostka ? ' ' + s1.jednostka : '');
+      const ma = najwyzej(a, s1.kolA, czasA), mb = najwyzej(b, s1.kolB, czasB);
+      szczyt = 'B ' + ileAB(mb && mb.v) + ' · A ' + zJednostka(ma && ma.v, s1.jednostka);
+      kres = 'B ' + ileAB(naKoncu(b, s1.kolB)) + ' · A ' + zJednostka(naKoncu(a, s1.kolA), s1.jednostka);
+    }
     const ea = a.koniec || {}, eb = b.koniec || {};
     const stopnie = (x) => (Number.isFinite(x) ? ileAB(x, 0) + '°' + (x >= PRZEWROTKA_ST ? ' (leży)' : '') : '?');
-    ab.proby.unshift({ kiedy: godzinaTeraz(), przejazd: program.nazwa || 'przejazd', wynik, koniec: 'B ' + ileAB(eb.odleglosc_m) + ' · A ' + ileAB(ea.odleglosc_m) + ' m', przechyl: 'B ' + stopnie(b.przechyl_max_st) + ' · A ' + stopnie(a.przechyl_max_st), roznica: !roznica ? '?' : !roznica.length ? 'te same' : roznica.slice(0, 4).map((r) => r.etykieta + ' ' + wartoscPL(r.b) + ' (A: ' + wartoscPL(r.a) + ')').join('; ') });
+    ab.proby.unshift({ kiedy: godzinaTeraz(), przejazd: program.nazwa || slowaProgramu(program.schemat).rzecz, wynik, szczyt, kres,
+      koniec: Number.isFinite(ea.odleglosc_m) && Number.isFinite(eb.odleglosc_m) ? 'B ' + ileAB(eb.odleglosc_m) + ' · A ' + ileAB(ea.odleglosc_m) + ' m' : '',
+      przechyl: Number.isFinite(a.przechyl_max_st) && Number.isFinite(b.przechyl_max_st) ? 'B ' + stopnie(b.przechyl_max_st) + ' · A ' + stopnie(a.przechyl_max_st) : '',
+      roznica: !roznica ? '?' : !roznica.length ? 'te same' : roznica.slice(0, 4).map((r) => r.etykieta + ' ' + wartoscPL(r.b) + ' (A: ' + wartoscPL(r.a) + ')').join('; '),
+      seria: s1 ? s1.nazwa : '', chwila: w.czas ? 'po 3 s' : 'w połowie' });
     ab.proby.length = Math.min(ab.proby.length, 12);
     ab.guzikProby.hidden = false;
     ab.guzikProby.textContent = 'Próby (' + ab.proby.length + ')';
-    const KOL = [['kiedy', 'kiedy'], ['przejazd', 'przejazd'], ['wynik', 'po 3 s'], ['koniec', 'na końcu'], ['przechyl', 'przechył'], ['roznica', 'B różni się w suwakach']];
-    ab.tabela.replaceChildren(el('table', {}, el('thead', {}, el('tr', {}, ...KOL.map(([, n]) => el('th', { tekst: n })))), el('tbody', {}, ...ab.proby.map((w) => el('tr', {}, ...KOL.map(([k]) => el('td', { tekst: w[k] })))))));
+    // kolumny odległości i przechyłu tylko wtedy, gdy któraś próba je ma; nagłówek wyniku nazywa serię świata
+    const { seria, chwila } = ab.proby[0];
+    const KOL = [['kiedy', 'kiedy'], ['przejazd', program.schemat === 'wejscie/1' ? 'przejazd' : 'program'], ['wynik', (seria ? seria + ' ' : '') + chwila], ['szczyt', 'najwyżej'], ['kres', 'na końcu'],
+      ...(ab.proby.some((x) => x.koniec) ? [['koniec', 'odległość od startu']] : []), ...(ab.proby.some((x) => x.przechyl) ? [['przechyl', 'przechył']] : []), ['roznica', 'B różni się']];
+    ab.tabela.replaceChildren(el('table', {}, el('thead', {}, el('tr', {}, ...KOL.map(([, n]) => el('th', { tekst: n })))), el('tbody', {}, ...ab.proby.map((x) => el('tr', {}, ...KOL.map(([k]) => el('td', { tekst: x[k] })))))));
   }
   // Wynik ostatniej jazdy przestaje być prawdą, gdy zmienią się ustawienia pary (ślepa ręka, D7: po ponownym otwarciu B
   // pas mówił „te same ustawienia”, a B miało moc 7). Mówimy to i przygaszamy zdanie; tabela prób zostaje, bo każdy
@@ -424,7 +566,8 @@
     if (!ab.tekst) return;
     ab.aktualny = false; ab.mojPrzejazd = null; ab.zapisz.hidden = true;
     ab.tekst.classList.remove('nieaktualne');
-    ab.stan.textContent = ''; ab.zdanie.textContent = ''; ab.roznica.textContent = ''; ab.wykres.replaceChildren();
+    ab.stan.textContent = ''; ab.zdanie.textContent = ''; ab.roznica.textContent = '';
+    ab.ostatnie = null; rysujWykresAB();
   }
   // Jazda ręki zostaje jako przejazd/1: wraca w wyborze przy następnym porównaniu (też w innych ustawieniach) i agent
   // może ją przeczytać. Nazwa z godziną, jak kopia presetu; długa jazda nie mieści się w jednej rzeczy, więc mówimy to wprost.
@@ -449,59 +592,105 @@
     const A = ab.para, B = A && okna.get(A.para);
     if (!A || !B || ab.trwa) return;
     const zrodlo = B.dotkniete > A.dotkniete ? B : A;
-    ab.stan.textContent = 'Biorę Twój przejazd z okna ' + zrodlo.rola + '…';
+    // słowa ze schematów, które oba okna grają; nagranie przychodzi już we własnym schemacie świata
+    const slowaPary = slowaProgramu(grajaOba(A, B, 'wejscie/1') ? 'wejscie/1' : null);
+    ab.stan.textContent = 'Biorę ' + slowaPary.twoj(zrodlo.rola).replace(/^T/, 't') + '…';
     const r = await zapytajSwiat(zrodlo, { type: 'record' }, 10000);
-    if (!r.ok || !r.program || !Array.isArray(r.program.odcinki) || !r.program.odcinki.length) { ab.stan.textContent = ''; ab.zdanie.textContent = 'Nie ma czego powtórzyć: ' + String(r.error || 'w oknie ' + zrodlo.rola + ' nikt jeszcze nie jechał od startu') + '.'; ab.zdanie.dataset.przejsciowe = '1'; return; }
-    const program = { ...r.program, nazwa: r.program.nazwa || 'Twój przejazd z okna ' + zrodlo.rola };
-    const udalo = await jedzWObu(program, 'Twój przejazd z okna ' + zrodlo.rola + (r.obciete ? ' (ucięty do limitu programu)' : ''));
-    ab.mojPrzejazd = udalo ? program : null;
-    ab.zapisz.hidden = !udalo;
+    const p = r.ok && r.program && typeof r.program === 'object' && !Array.isArray(r.program) ? r.program : null;
+    const slowa = slowaProgramu(p ? p.schemat : null);
+    // program wejścia bez odcinków to jazda, której nie było; program w schemacie, którego któreś okno nie gra, nie pojedzie
+    const obcy = p && !(typeof p.schemat === 'string' && grajaOba(A, B, p.schemat));
+    if (!p || obcy || (p.schemat === 'wejscie/1' && !(Array.isArray(p.odcinki) && p.odcinki.length))) {
+      ab.stan.textContent = '';
+      ab.zdanie.textContent = 'Nie ma czego powtórzyć: ' + (obcy ? 'okno ' + zrodlo.rola + ' oddało program w schemacie „' + String(p.schemat).slice(0, 40) + '”, którego oba okna nie grają' : String(r.error || slowaPary.pusto(zrodlo.rola))) + '.';
+      ab.zdanie.dataset.przejsciowe = '1';
+      return;
+    }
+    const program = { ...p, nazwa: p.nazwa || slowa.twoj(zrodlo.rola) };
+    const udalo = await jedzWObu(program, slowa.twoj(zrodlo.rola) + (r.obciete ? ' (ucięty do limitu programu)' : ''));
+    // zapis jako przejazd/1 jest dla programów wejścia (rodzaj tak mówi); program innego schematu zostaje w tabeli prób
+    ab.mojPrzejazd = udalo && p.schemat === 'wejscie/1' ? program : null;
+    ab.zapisz.hidden = !ab.mojPrzejazd;
   }
-  // Która kolumna próbki jest czasem, a która prędkością: z pola kolumny (przebieg/1), inaczej t i v_kmh na początku.
-  const kolumnyAB = (p) => { const k = Array.isArray(p.kolumny) ? p.kolumny : []; const t = k.indexOf('t'), v = k.indexOf('v_kmh'); return { t: t >= 0 ? t : 0, v: v >= 0 ? v : 1 }; };
   const ileAB = (x, m = 1) => (typeof x === 'number' && Number.isFinite(x) ? x.toLocaleString('pl-PL', { maximumFractionDigits: m }) : '?');
+  // Zdanie porównania: pierwsza wspólna seria świata w chwili 3 s i najwyżej, nazwą i jednostką świata. Odległość od startu
+  // i przechył (pola przebiegu/1, gdy oba przebiegi je niosą) dochodzą jak dotąd, bo szybsze nie znaczy lepsze (pierwszy
+  // zrzut A/B pokazał szybsze auto na boku). Świat, który ich nie podaje, nic o nich nie słyszy.
   function zdanieAB(a, b, program) {
+    const slowa = slowaProgramu(program.schemat);
     if (!Array.isArray(a.probki) || !Array.isArray(b.probki) || !a.probki.length || !b.probki.length) return 'Świat oddał przebieg bez próbek, więc nie ma czego porównać.';
     // po „wróć do A” zdanie „ustawienia B nie zmieniły jazdy” czytało się dziwnie (ślepa ręka, D6): mówimy, co widać
-    if (a.skrot && a.skrot === b.skrot) return 'Oba okna przejechały „' + (program.nazwa || 'program') + '” bit w bit tak samo: w tej jeździe A i B niczym się nie różnią.';
-    const ka = kolumnyAB(a), kb = kolumnyAB(b);
-    const wChwili = (p, k) => p.probki.reduce((naj, r) => (Math.abs(r[k.t] - CHWILA_AB) < Math.abs(naj[k.t] - CHWILA_AB) ? r : naj));
-    const ra = wChwili(a, ka), rb = wChwili(b, kb);
-    const va = Math.abs(ra[ka.v]), vb = Math.abs(rb[kb.v]);
-    const procent = va > 0.05 ? (vb / va - 1) * 100 : null;
-    let z = procent === null
-      ? 'Po ' + ileAB(ra[ka.t], 2) + ' s programu B jedzie ' + ileAB(vb) + ' km/h, A stoi.'
-      : 'B ' + (procent >= 0 ? 'szybsze' : 'wolniejsze') + ' o ' + ileAB(Math.abs(procent), 0) + '% po ' + ileAB(ra[ka.t], 2) + ' s programu (' + ileAB(vb) + ' wobec ' + ileAB(va) + ' km/h).';
+    if (a.skrot && a.skrot === b.skrot) return 'Oba okna ' + slowa.zrobily + ' „' + (program.nazwa || slowa.rzecz) + '” bit w bit tak samo: w tej ' + slowa.proba + ' A i B niczym się nie różnią.';
+    const w = wspolneSerie(a, b);
+    const inne = w.inne.length ? ' ' + w.inne.map((x) => x.nazwa.charAt(0).toUpperCase() + x.nazwa.slice(1) + ': w A ' + x.ja + ', w B ' + x.jb + ', więc bez porównania').join('; ') + '.' : '';
+    if (!w.serie.length) return 'Okna nie nazwały żadnej wspólnej serii, więc nie ma czego porównać.' + inne;
+    const s1 = w.serie[0], czasA = w.czas ? w.czas.kolA : null, czasB = w.czas ? w.czas.kolB : null;
+    const ra = wierszWChwili(a, czasA), rb = wierszWChwili(b, czasB);
+    const va = Number(ra[s1.kolA]), vb = Number(rb[s1.kolB]), pr = procentAB(va, vb);
+    const j = s1.jednostka;
+    let z = (w.czas ? 'Po ' + ileAB(Number(ra[czasA]), 2) + ' s programu ' : 'W połowie programu ') + s1.nazwa + ': B ' + zJednostka(vb, j) + ', A ' + zJednostka(va, j)
+      + (pr === null ? '' : Math.abs(pr) < 0.5 ? ' (tyle samo)' : ' (B o ' + ileAB(Math.abs(pr), 0) + '% ' + (pr > 0 ? 'więcej' : 'mniej') + ')');
+    const ma = najwyzej(a, s1.kolA, czasA), mb = najwyzej(b, s1.kolB, czasB);
+    if (ma && mb) z += '; najwyżej B ' + zJednostka(mb.v, j) + ', A ' + zJednostka(ma.v, j);
+    // i na końcu: samo „po 3 s” myliło przy kolonii (ślepa ręka 25 XI, D14: „B o 961% więcej”, choć A kończyło wyżej)
+    const ka = naKoncu(a, s1.kolA), kb = naKoncu(b, s1.kolB);
+    if (ka !== null && kb !== null) z += '; na końcu B ' + zJednostka(kb, j) + ', A ' + zJednostka(ka, j);
+    z = zKropka(z) + inne;
     const ea = a.koniec || {}, eb = b.koniec || {};
-    if (Number.isFinite(ea.odleglosc_m) && Number.isFinite(eb.odleglosc_m)) z += ' Na końcu B ' + ileAB(eb.odleglosc_m) + ' m od startu, A ' + ileAB(ea.odleglosc_m) + ' m';
-    if (Number.isFinite(a.vmax_kmh) && Number.isFinite(b.vmax_kmh)) z += (z.endsWith(' m') ? '; najwyżej' : ' Najwyżej') + ' B ' + ileAB(Math.abs(b.vmax_kmh)) + ', A ' + ileAB(Math.abs(a.vmax_kmh)) + ' km/h';
-    if (!z.endsWith('.')) z += '.';
+    if (Number.isFinite(ea.odleglosc_m) && Number.isFinite(eb.odleglosc_m)) z += ' Na końcu B ' + ileAB(eb.odleglosc_m) + ' m od startu, A ' + ileAB(ea.odleglosc_m) + ' m.';
     const pa = a.przechyl_max_st, pb = b.przechyl_max_st;
-    if (!Number.isFinite(pa) || !Number.isFinite(pb)) return z + ' (Świat nie podaje przechyłu.)';
+    if (!Number.isFinite(pa) || !Number.isFinite(pb)) return z;
     const lezy = [['B', pb, b.t_przechyl_max], ['A', pa, a.t_przechyl_max]].filter((x) => x[1] >= PRZEWROTKA_ST);
     const opisL = (x) => x[0] + ' ' + ileAB(x[1], 0) + '° po ' + ileAB(x[2], 1) + ' s';
     if (lezy.length === 2) return z + ' Oba się przewróciły: ' + lezy.map(opisL).join(', ') + '.';
     if (lezy.length === 1) return z + ' ' + lezy[0][0] + ' się przewróciło (' + opisL(lezy[0]) + '), ' + (lezy[0][0] === 'B' ? 'A' : 'B') + ' nie (najwyżej ' + ileAB(lezy[0][0] === 'B' ? pa : pb, 0) + '°).';
     return z + ' Przechył najwyżej B ' + ileAB(pb, 0) + '°, A ' + ileAB(pa, 0) + '°.';
   }
-  // Dwie krzywe prędkości v(t) na jednej skali: A i B podpisane przy końcach linii, więc nie trzeba legendy z kolorów.
-  function wykresAB(a, b) {
+  // Wykres jednej serii naraz: wybór pokazuje serie, które oba okna nazwały (nazwą i jednostką świata), a pod zdaniem
+  // stoi najwyższa i końcowa wartość wybranej. Wybór trwa między jazdami, póki seria jest w przebiegu.
+  function rysujWykresAB() {
+    if (!ab.wykres) return;
+    const o = ab.ostatnie;
+    if (!o || !o.wsp.serie.length) { ab.wykres.replaceChildren(); ab.seria.hidden = true; ab.seria.replaceChildren(); ab.opisSerii.textContent = ''; return; }
+    const bylo = ab.seria.value;
+    ab.seria.replaceChildren(...o.wsp.serie.map((x) => el('option', { value: x.klucz, tekst: x.nazwa + (x.jednostka ? ' (' + x.jednostka + ')' : '') })));
+    ab.seria.value = o.wsp.serie.some((x) => x.klucz === bylo) ? bylo : o.wsp.serie[0].klucz;
+    ab.seria.hidden = o.wsp.serie.length < 2;
+    const s = o.wsp.serie.find((x) => x.klucz === ab.seria.value);
+    const czasA = o.wsp.czas ? o.wsp.czas.kolA : null, czasB = o.wsp.czas ? o.wsp.czas.kolB : null;
+    const ma = najwyzej(o.a, s.kolA, czasA), mb = najwyzej(o.b, s.kolB, czasB), ka = naKoncu(o.a, s.kolA), kb = naKoncu(o.b, s.kolB);
+    const kiedy = (m) => (o.wsp.czas ? ' po ' + ileAB(m.t, 1) + ' s' : '');
+    ab.opisSerii.textContent = ma && mb ? zKropka('Na wykresie ' + s.nazwa + ': najwyżej B ' + zJednostka(mb.v, s.jednostka) + kiedy(mb) + ', A ' + zJednostka(ma.v, s.jednostka) + kiedy(ma) + '; na końcu B ' + zJednostka(kb, s.jednostka) + ', A ' + zJednostka(ka, s.jednostka)) : '';
+    ab.wykres.replaceChildren(wykresAB(o.a, o.b, s, czasA, czasB));
+  }
+  // Dwie krzywe jednej serii na jednej skali: A i B podpisane przy najwyższych punktach, więc nie trzeba legendy z kolorów.
+  // Skala zaczyna się od zera, gdy seria jest nieujemna i zero jej nie spłaszcza; inaczej od najniższej wartości.
+  function wykresAB(a, b, s, czasA, czasB) {
     const NS = 'http://www.w3.org/2000/svg', W = 320, H = 90, L = 28, D = 14;
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('role', 'img');
-    const ka = kolumnyAB(a), kb = kolumnyAB(b);
-    const pkt = (p, k) => p.probki.map((r) => [Number(r[k.t]), Math.abs(Number(r[k.v]))]).filter(([t, v]) => Number.isFinite(t) && Number.isFinite(v));
-    const ta = pkt(a, ka), tb = pkt(b, kb);
+    const pkt = (p, kol, czas) => (p.probki || []).map((r, i) => [czas !== null ? Number(r[czas]) : i, Number(r[kol])]).filter(([t, v]) => Number.isFinite(t) && Number.isFinite(v));
+    const ta = pkt(a, s.kolA, czasA), tb = pkt(b, s.kolB, czasB);
+    const wszystkie = [...ta, ...tb].map((x) => x[1]);
     const tMax = Math.max(1, ...ta.map((x) => x[0]), ...tb.map((x) => x[0]));
-    const vMax = Math.max(1, ...ta.map((x) => x[1]), ...tb.map((x) => x[1]));
-    svg.setAttribute('aria-label', 'Prędkość A i B w czasie programu, najwyżej ' + ileAB(vMax) + ' km/h po ' + ileAB(tMax) + ' s');
-    const x = (t) => L + (t / tMax) * (W - L - 16), y = (v) => H - D - (v / vMax) * (H - D - 6);
+    let lo = Math.min(...wszystkie), hi = Math.max(...wszystkie);
+    if (!Number.isFinite(lo)) { lo = 0; hi = 1; }
+    // seria nieujemna z drobnym minusem (prędkość tuż przy zatrzymaniu) też zaczyna od zera; podpis „-0” mylił
+    if ((lo >= 0 && lo < hi / 2) || (lo < 0 && hi > 0 && -lo < (hi - lo) * 0.02)) lo = 0;
+    if (hi - lo < 1e-9) { hi += 1; lo -= lo === 0 ? 0 : 1; }
+    // podpisy skali z tyloma cyframi, ile trzeba: „0,45 m” zamiast „0 m” przy wysokości nadwozia
+    const cyfry = (v) => (Math.abs(v) >= 10 ? 0 : Math.abs(v) >= 1 ? 1 : 2);
+    const podpis = (v) => (Math.abs(v) < 0.005 ? 0 : v);
+    const j = s.jednostka, os = czasA !== null ? ' s' : '';
+    svg.setAttribute('aria-label', s.nazwa.charAt(0).toUpperCase() + s.nazwa.slice(1) + ' w A i w B w czasie programu: od ' + zJednostka(lo, j) + ' do ' + zJednostka(hi, j) + (czasA !== null ? ', ' + ileAB(tMax) + ' s' : ', ' + ileAB(tMax, 0) + ' próbek'));
+    const x = (t) => L + (t / tMax) * (W - L - 16), y = (v) => Math.min(H - D, Math.max(6, H - D - ((v - lo) / (hi - lo)) * (H - D - 6)));
     const linia = (x1, y1, x2, y2, klasa) => { const l = document.createElementNS(NS, 'line'); l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2); l.setAttribute('class', klasa); svg.append(l); };
     const napis = (tekst, tx, ty, klasa, kotwica = 'start') => { const t = document.createElementNS(NS, 'text'); t.setAttribute('x', tx); t.setAttribute('y', ty); t.setAttribute('class', klasa); t.setAttribute('text-anchor', kotwica); t.textContent = tekst; svg.append(t); };
     linia(L, H - D, W - 16, H - D, 'os'); linia(L, 6, L, H - D, 'os');
+    if (lo < 0 && hi > 0) linia(L, y(0), W - 16, y(0), 'os');
     // podpis skali wewnątrz wykresu: przy lewej krawędzi „122 km/h” wychodził poza rysunek i zostawało „2 km/h”
-    napis(ileAB(vMax, 0) + ' km/h', L + 3, 12, 'skala'); napis('0', L - 3, H - D, 'skala', 'end');
-    napis(ileAB(tMax, 1) + ' s', W - 16, H - 2, 'skala', 'end'); napis('0 s', L, H - 2, 'skala');
+    napis(zJednostka(podpis(hi), j, cyfry(hi)), L + 3, 12, 'skala'); napis(ileAB(podpis(lo), cyfry(lo)), L - 3, H - D, 'skala', 'end');
+    napis(ileAB(tMax, 1) + os, W - 16, H - 2, 'skala', 'end'); napis('0' + os, L, H - 2, 'skala');
     for (const [p, k, klasa] of [[ta, 'A', 'krzywa-a'], [tb, 'B', 'krzywa-b']]) {
       if (p.length < 2) continue;
       const l = document.createElementNS(NS, 'polyline');
@@ -538,7 +727,12 @@
       o.chce = Array.isArray(m.wants) ? m.wants.filter((x) => typeof x === 'string').slice(0, 8) : [];
       // co świat umie poza umową (JV od 21 XI: play i record, programy wejścia); nieznane pola pomijamy
       o.umie = Array.isArray(m.umie) ? m.umie.filter((x) => typeof x === 'string').slice(0, 16) : [];
-      o.guzikAB.hidden = !(o.umie.includes('play') && o.gosc && o.rola !== 'B');
+      // jakie schematy programu świat gra (umowa od 25 XI: świat mówi sam za siebie); gospodarz wysyła play tylko z takim.
+      // Świat bez programy nie dostaje „A/B” (ścieżka wstecz dla JV sprzed 25 XI zdjęta, gdy nowe JV stanęło na stronie roboczej)
+      o.programy = Array.isArray(m.programy) ? m.programy.filter((x) => typeof x === 'string' && /^[a-z0-9_-]{1,40}\/[0-9]{1,4}$/.test(x)).slice(0, 16) : [];
+      o.przedstawil = true;
+      o.guzikAB.hidden = !(umieAB(o) && o.gosc && o.rola !== 'B');
+      o.guzikAB.title = 'Drugie okno tego świata obok, z własnymi ustawieniami (profil B), i ' + (o.programy.includes('wejscie/1') ? 'ten sam przejazd' : 'to samo') + ' w obu';
       // okno B przedstawia się później niż powstaje para: dopiero wtedy wiadomo, czy oba umieją jechać programem
       if (o.para) ulozAB();
     } else if (m.type === 'played' || m.type === 'recorded') {
@@ -576,6 +770,7 @@
           for (const n of nazwy) if (o.czyta.size < 64) o.czyta.add(n);
           if (typeof m.dla === 'string' && /^[0-9a-z]{26}$/.test(m.dla)) o.dla = m.dla;
           if (o.czyta.size) o.guzikSuwakow.hidden = false;
+          if (o.rola === 'B' && !o.pamiecPokazana) { o.pamiecPokazana = true; setTimeout(() => pokazPamiecB(o), 0); }
         } else throw new Error('nie znam takiego czytania: ' + String(m.what) + '; znane: spis, rzecz, ksztalty, ja, ustawienia');
         odp({ type: 'result', id: m.id, ok: true, data: dane });
       } catch (blad) { odp({ type: 'result', id: m.id, ok: false, error: String(blad && blad.message || blad).slice(0, 300) }); }
@@ -946,6 +1141,11 @@
     }) : null;
     return el('section', { klasa: 'presety' },
       el('h3', { tekst: 'Preset dla ' + tu }),
+      // okno B jednym ruchem jak A: wszystkie jego wartości odłożone, cofa się guzikiem „cofnij” (ślepa ręka 25 XI: „wróć do A”
+      // był tylko przy każdym suwaku osobno, a jego słowo z 15 XI to „experymentować bawić się”)
+      o.rola === 'B' && wlasne.length && klucz ? el('div', { klasa: 'jak-a' },
+        el('span', { tekst: 'Okno B ma ' + lp(wlasne.length, 'własną wartość', 'własne wartości', 'własnych wartości') + '.' }),
+        el('button', { tekst: 'wszystko jak w A', title: 'Odłóż wszystkie wartości okna B: wraca to, co ma okno A', klik: async () => odswiez(await ruchyGestem(odlozWlasne('okno B jak A'), 'Okno B jak A: odłożone ' + lp(wlasne.length, 'wartość', 'wartości', 'wartości') + '.', o, 'okno B jak A')) })) : null,
       wybor,
       // ostrzeżenie zaraz pod wyborem, w ramce: na komputerze przeoczone pod niżej (ślepa ręka 2, pkt 6)
       aktywny && wlasne.length && klucz ? el('div', { klasa: 'nad-presetem', role: 'status' },
