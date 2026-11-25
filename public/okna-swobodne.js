@@ -145,7 +145,10 @@
       u.addEventListener('pointerdown', (e) => gest(s, e, k));
       s.append(u);
     }
-    s.addEventListener('pointerdown', () => naWierzch(s), true);
+    // chwyt albo klik w okno zabiera fokus ramce INNEGO okna (inaczej co pół sekundy wracałoby ono na wierzch, bo to ono
+    // ma fokus), a własna ramka fokus zachowuje, żeby gra nie traciła klawiatury przy przesuwaniu swojego okna
+    // (druga linia Fable na 94, 25 XI; poprawka jego, sprawdzona przez niego na scaleniu z pniem)
+    s.addEventListener('pointerdown', () => { const a = document.activeElement; if (a && a.tagName === 'IFRAME' && a.closest('#okna > .okno') !== s) a.blur(); naWierzch(s); }, true);
     const pamiec = uklad[kluczOkna(s)];
     if (pamiec && SZEROKI.matches) {
       ustaw(s, wGranicach(pamiec));
