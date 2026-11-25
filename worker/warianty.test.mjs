@@ -392,6 +392,12 @@ test('WA13. odczyt źródła pod adresem kosztuje tyle samo przy 60 i 200 jego k
   assert.ok(dwiescie.koszt[1] <= zero.koszt[1] + 2 * (WSKAZUJA_NAJWIECEJ + 1), 'wierszy najwyżej tyle, ile granica');
   // oczami zwiedzającego: odniesienia z obszaru, którego nie widzi, nie wychodzą (Nowe widzą tylko uczestnicy)
   assert.deepEqual(s.dla(null).wskazujaNa(D), []);
+  // droga bez okularów (właściciel nie ma nic zamkniętego): ta sama granica, osobne zapytanie (po ataku 6, 20 XI)
+  s.dla('jozz').wskazujaNa(D); // rozgrzanie (rola, pamięci)
+  const w0 = miara.wierszy;
+  const jego = s.dla('jozz').wskazujaNa(D);
+  assert.deepEqual([jego.length, jego.wiecej], [WSKAZUJA_NAJWIECEJ, true], 'właściciel też dostaje najwyżej granicę i znacznik');
+  assert.ok(miara.wierszy - w0 <= WSKAZUJA_NAJWIECEJ + 1, `baza oddaje najwyżej granicę + 1 wierszy, a oddała ${miara.wierszy - w0}`);
 });
 
 test('WA14. ponowienie to ten sam op i ta sama prośba: inne źródło, op z innego ruchu albo inny otwierający okno dają 409, nie cudzą kopię (uwagi A4e–A4g)', async () => {

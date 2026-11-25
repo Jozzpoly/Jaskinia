@@ -26,7 +26,7 @@
 // zostają cechami obszaru. Ten plik nie zna Cloudflare ani drzwi: dostaje środowisko albo jego widok dla czytającego.
 
 // Reguła typu drabina mieszka w module bez zależności, który czyta też twarz (jedna reguła dla zapisu i odczytu).
-import { wadaDrabiny, NAJWIECEJ_SZCZEBLI } from '../public/drabina.mjs';
+import { wadaDrabiny, NAJWIECEJ_SZCZEBLI, GRANICE_DRABINY } from '../public/drabina.mjs';
 
 export const FORMAT_USTAWIEN = 'ustawienia-2';
 export const POKRETLO_ZESTAWOW = 'srodowisko.zestawy';
@@ -53,7 +53,7 @@ export const TYPY_POKRETEL = {
   rampa: `rampa barw: {przystanki: lista od 2 do 16 przystanków {w: 0..1, kolor} w kolejności rosnącego w, przestrzen: ${PRZESTRZENIE.join(' albo ')} (niewymagana; bez niej srgb)}`,
   kroj: 'krój pisma: {rodzina (napis jak w CSS), grubosc 1..1000 (niewymagana), osie {wght: 600, …} (niewymagane), plik {rzecz: <id rzeczy plik/1>, odcisk: <odcisk jej dzisiejszej wersji>} (niewymagany: krój z bajtów w Miejscu)}',
   cien: 'cień: {x, y, rozmycie >= 0, kolor}; krycie to kanał alfa koloru (#rrggbbaa)',
-  drabina: `drabina przedstawień: {szczeble: lista od 1 do ${NAJWIECEJ_SZCZEBLI} szczebli {co: nazwa elementu, miara: {szer, wys} (mniejsza z szerokości i wysokości karty na ekranie razy te liczby), od i do (px miary: przenikanie od niewidocznego do pełnego; 0 i 0 znaczy zawsze) albo rozmiar {od, do} (px pisma: szczebel ciągły) z ucinaj {szer_od, wys_od, rozmiar} (niewymagane)}}; nieznane pole (także krzywa przenikania, której twarz jeszcze nie czyta) jest odrzucane; twarz pomija co, którego nie zna, a wartość z węższego zasięgu zastępuje całą drabinę`,
+  drabina: `drabina przedstawień: {szczeble: lista od 1 do ${NAJWIECEJ_SZCZEBLI} szczebli {co: nazwa elementu, miara: {szer, wys} (mniejsza z szerokości i wysokości karty na ekranie razy te liczby), od i do (px miary: przenikanie od niewidocznego do pełnego; 0 i 0 znaczy zawsze) albo rozmiar {od, do} (px pisma: szczebel ciągły) z ucinaj {szer_od, wys_od, rozmiar} (niewymagane)}}; nieznane pole (także krzywa przenikania, której twarz jeszcze nie czyta) jest odrzucane; liczby mają twarde granice (miara do ${GRANICE_DRABINY.miara}, px miary do ${GRANICE_DRABINY.px}, pismo od ${GRANICE_DRABINY.pismo.od} do ${GRANICE_DRABINY.pismo.do} px); twarz pomija co, którego nie zna, a wartość z węższego zasięgu zastępuje całą drabinę`,
   zestawy: 'lista identyfikatorów rzeczy rodzaju zestaw/1 (najwyżej 8); późniejszy na liście wygrywa',
   dowolne: 'dowolna wartość JSON; środowisko jej nie sprawdza (wyjście dla narzędzi z własną strukturą)',
 };
@@ -246,10 +246,16 @@ export function sprawdzUstawienie(s, rodzaj, cechy, widzi, obszar = undefined) {
 }
 
 // Zasięgi od najbliższego: nakładki, rzecz `dla`, obszar, w którym leży, obszary w górę, na końcu obszar główny (Miejsce).
-export function lancuchZasiegow(w, dla = null, nakladki = []) {
+export function lancuchZasiegow(w, dla = null, nakladki = [], pominiete = null) {
   const lancuch = [];
   const dodaj = (rz) => { if (rz && !lancuch.some((x) => x.id === rz.id)) lancuch.push({ id: rz.id, rodzaj: rz.rodzaj, nazwa: w.tytul(rz) }); };
-  for (const id of nakladki) dodaj(w.rzecz(id));
+  for (const id of nakladki) {
+    const rz = w.rzecz(id);
+    if (rz) dodaj(rz);
+    // Nakładka, której czytający nie widzi albo której nie ma, nie znika po cichu (warunek A/B Opusa czatu, 21 XI 2026):
+    // przy `dla` ta sama sytuacja daje 404, a tu mówi przynajmniej w `pominiete`, inaczej dwa profile dałyby te same liczby bez słowa.
+    else if (pominiete) pominiete.push({ nakladka: id, dlaczego: 'nakładki nie widać temu, kto czyta (albo jej nie ma), więc jej wartości się nie liczą' });
+  }
   const start = dla ? w.rzecz(dla) : null;
   if (dla && !start) return null;
   if (start) {
@@ -274,14 +280,31 @@ function zestawyWZasiegach(w, lancuch, wart) {
   return m;
 }
 
+// Nakładki do łańcucha: najwyżej NAJWIECEJ_NAKLADEK identyfikatorów rzeczy. Reszta mówi w pominiete, a nie odpada po
+// cichu (druga linia Opusa czatu na 86, 21 XI 2026: zły kształt i piąta nakładka znikały bez słowa).
+export const NAJWIECEJ_NAKLADEK = 4;
+function nakladkiDoLancucha(nakladki, pominiete) {
+  const nakl = [];
+  for (const x of Array.isArray(nakladki) ? nakladki : []) {
+    // echo tego, co przyszło, bez znaków sterujących: nowa linia (LF albo CR) dopisywałaby na stronie tekstowej własny
+    // wiersz (druga linia Opusa czatu na 86); NEL, U+2028 i U+2029 dzielą wiersze u agentów (splitlines w Pythonie,
+    // wyrażenie regularne z flagą m), więc też idą na znak zapytania (druga linia na 90)
+    if (typeof x !== 'string' || !ID.test(x)) pominiete.push({ nakladka: String(x).slice(0, 40).replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]/g, '?'), dlaczego: 'to nie identyfikator rzeczy (26 znaków: cyfry i małe litery)' });
+    else if (nakl.length >= NAJWIECEJ_NAKLADEK) pominiete.push({ nakladka: x, dlaczego: `najwyżej ${NAJWIECEJ_NAKLADEK} nakładki w jednym pytaniu, ta jest dalsza` });
+    else nakl.push(x);
+  }
+  return nakl;
+}
+
 // Wartości wszystkich pokręteł dla zasięgu, policzone oczami czytającego (`w` to widok z srodowisko.dla albo samo
 // środowisko). Jedno żądanie daje twarzy wszystko, czego potrzebuje do narysowania się.
 // `zrodlo`: deklaracje, wartości i zestawy już wybrane po nazwach (policzUstawieniaDlaNazw); bez niego wszystko, co leży
 // w Miejscu.
 export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = false, zrodlo = null } = {}) {
   if (dla !== null && !(typeof dla === 'string' && ID.test(dla))) return { ok: false, status: 400, blad: 'dla: identyfikator rzeczy, dla której liczyć ustawienia (26 znaków); bez niego liczy się dla całego Miejsca' };
-  const nakl = (Array.isArray(nakladki) ? nakladki : []).filter((x) => typeof x === 'string' && ID.test(x)).slice(0, 4);
-  const lancuch = zrodlo ? zrodlo.lancuch : lancuchZasiegow(w, dla, nakl);
+  const pominieteNakladki = [];
+  const nakl = nakladkiDoLancucha(nakladki, pominieteNakladki);
+  const lancuch = zrodlo ? zrodlo.lancuch : lancuchZasiegow(w, dla, nakl, pominieteNakladki);
   if (lancuch === null) return { ok: false, status: 404, blad: `nie ma rzeczy ${dla}` };
   const dekl = zrodlo ? zrodlo.dekl : w.pamietaj('ustawienia:deklaracje', () => { const m = new Map(); for (const d of w.wszystkie({ rodzaj: 'pokretlo/1' })) if (typeof d.cechy.nazwa === 'string' && !m.has(d.cechy.nazwa)) m.set(d.cechy.nazwa, d); return m; });
   // Wartości tylko z zasięgów na drodze: każdy zasięg wie, które wartości go wskazują (spis odniesień). Czytanie wszystkich
@@ -289,7 +312,8 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
   // (niezależny atak, 18 XI 2026).
   const wart = zrodlo ? zrodlo.wart : new Map(lancuch.flatMap((z) => w.pamietaj('ustawienia:wartosci:' + z.id, () => w._wartosciZasiegu(z.id).map((id) => w.rzecz(id)).filter((x) => x && x.rodzaj === 'wartosc/1' && !x.odlozone)).map((x) => [x.cechy.pokretlo + '|' + z.id, x])));
   const zestawyW = zrodlo && zrodlo.zestawy ? zrodlo.zestawy : (dekl.has(POKRETLO_ZESTAWOW) ? zestawyWZasiegach(w, lancuch, wart) : new Map(lancuch.map((z) => [z.id, []])));
-  const pominiete = [];
+  // droga po nazwach liczy łańcuch sama, więc jej pominięte nakładki przychodzą w zrodlo (druga linia Opusa czatu na 86)
+  const pominiete = [...(zrodlo ? zrodlo.pominieteNakladki || [] : pominieteNakladki)];
   const maRzecz = (id) => w.rzecz(id);
 
   // Zaufanie odwołań: ustawienie, które obowiązuje tam, gdzie zmiana wymaga zgody, nie idzie za pokrętłem zadeklarowanym
@@ -394,12 +418,13 @@ export function policzUstawienia(w, { dla = null, nakladki = [], deklaracje = fa
 // każdej zmianie ustawień i w każdej otwartej twarzy: kto dokładał pokrętła tam, gdzie prowadzi, podnosił koszt wszystkim
 // (niezależny atak, 17 XI 2026; limit wierszy jest wspólny dla całego konta).
 // Pokrętła, za którymi idą wartości pochodne, dociąga samo (najwyżej tyle obiegów, ile wynosi głębokość odwołań).
-export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], nazwy = [] } = {}) {
+export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], nazwy = [], deklaracje = false } = {}) {
   if (dla !== null && !(typeof dla === 'string' && ID.test(dla))) return policzUstawienia(w, { dla });
   const lista = [...new Set((Array.isArray(nazwy) ? nazwy : []).filter((n) => typeof n === 'string' && NAZWA.test(n)))];
   if (lista.length > NAJWIECEJ_NAZW) return { ok: false, status: 400, blad: `nazwy: najwyżej ${NAJWIECEJ_NAZW} nazw pokręteł w jednym pytaniu` };
-  const nakl = (Array.isArray(nakladki) ? nakladki : []).filter((x) => typeof x === 'string' && ID.test(x)).slice(0, 4);
-  const lancuch = lancuchZasiegow(w, dla, nakl);
+  const pominieteNakladki = [];
+  const nakl = nakladkiDoLancucha(nakladki, pominieteNakladki);
+  const lancuch = lancuchZasiegow(w, dla, nakl, pominieteNakladki);
   if (lancuch === null) return { ok: false, status: 404, blad: `nie ma rzeczy ${dla}` };
   const kP = w.ksztaltDla('pokretlo/1'), kW = w.ksztaltDla('wartosc/1');
   const dekl = new Map(), wart = new Map(), brak = new Set();
@@ -438,16 +463,22 @@ export async function policzUstawieniaDlaNazw(w, { dla = null, nakladki = [], na
     }
     kolejka = nastepne;
   }
-  const u = policzUstawienia(w, { dla, nakladki: nakl, zrodlo: { dekl, wart, lancuch, zestawy } });
-  if (u.ok) u.wartosci = Object.fromEntries(Object.entries(u.wartosci).filter(([n]) => lista.includes(n)));
+  const u = policzUstawienia(w, { dla, nakladki: nakl, deklaracje, zrodlo: { dekl, wart, lancuch, zestawy, pominieteNakladki } });
+  if (u.ok) {
+    const pytane = new Set(lista);
+    u.wartosci = Object.fromEntries(Object.entries(u.wartosci).filter(([n]) => pytane.has(n)));
+    // Deklaracje tylko pytanych pokręteł (suwaki świata obok jego okna potrzebują typu, zakresu i grupy tego, co świat
+    // czyta), bez pokręteł dociągniętych po drodze: zestawów i celów odwołań.
+    if (u.deklaracje) u.deklaracje = u.deklaracje.filter((d) => pytane.has(d.nazwa));
+  }
   return u;
 }
 
 const pokaz = (x) => { const t = JSON.stringify(x); return t.length > 90 ? t.slice(0, 89) + '…' : t; };
 
 // To samo tekstem, dla ciała, które umie tylko czytać.
-export function stronaUstawien(w, { dla = null, origin = '' } = {}) {
-  const u = policzUstawienia(w, { dla, deklaracje: true });
+export function stronaUstawien(w, { dla = null, nakladki = [], origin = '' } = {}) {
+  const u = policzUstawienia(w, { dla, nakladki, deklaracje: true });
   if (!u.ok) return u.blad + '\n';
   const glowny = w.r.meta('obszar_glowny');
   const wiersze = [
@@ -470,7 +501,7 @@ export function stronaUstawien(w, { dla = null, origin = '' } = {}) {
     wiersze.push(`  ${d.nazwa} = ${pokaz(x.wartosc)}   [${d.typ}${d.jednostka ? ', ' + d.jednostka : ''}; ${skad}${x.z ? '; idzie za ' + x.z : ''}]`);
     wiersze.push(`      ${d.opis}${d.zakres ? ` Zakres suwaka: ${d.zakres.od} do ${d.zakres.do}.` : ''}${d.typ === 'wybor' ? ` Wartości: ${d.wartosci.join(', ')}.` : ''}${Array.isArray(d.dotyczy) ? ` Dotyczy: ${d.dotyczy.join(', ')}.` : ''}`);
   }
-  if (u.pominiete) wiersze.push('', 'POMINIĘTE (wartość nie przechodzi dzisiejszej deklaracji albo jej odwołanie nie ma dokąd iść, więc nie dochodzi do twarzy):', ...u.pominiete.map((p) => `  ${p.pokretlo}: ${p.dlaczego}${p.rzecz ? ' -> /rzecz/' + p.rzecz : ''}`));
+  if (u.pominiete) wiersze.push('', 'POMINIĘTE (wartość nie przechodzi dzisiejszej deklaracji albo jej odwołanie nie ma dokąd iść, więc nie dochodzi do twarzy):', ...u.pominiete.map((p) => p.nakladka ? `  nakładka ${p.nakladka}: ${p.dlaczego}` : `  ${p.pokretlo}: ${p.dlaczego}${p.rzecz ? ' -> /rzecz/' + p.rzecz : ''}`));
   wiersze.push('',
     'JAK ZMIENIĆ (ten sam ruch co każdy inny; skutek albo propozycja zależy od obszaru, w którym leży zasięg):',
     `  POST ${origin}/api/srodowisko/ruch`,

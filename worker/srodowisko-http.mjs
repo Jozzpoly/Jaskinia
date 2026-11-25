@@ -98,7 +98,7 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
     }
     if (sciezka === '/co-tu-jest') return tekst(coTuJest(w, opcje));
     if (sciezka === '/umowa-okna') return tekst(umowaOkna());
-    if (sciezka === '/ustawienia') return tekst(stronaUstawien(w, { dla: p.get('dla') || null, origin }));
+    if (sciezka === '/ustawienia') return tekst(stronaUstawien(w, { dla: p.get('dla') || null, nakladki: (p.get('nakladki') || '').split(',').filter(Boolean), origin }));
     if (sciezka === '/rodzaje') return tekst(listaRodzajow(w));
     if (sciezka.startsWith('/rodzaj/')) {
       let rodzaj = null;
@@ -122,7 +122,9 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
       const o = { dla: p.get('dla') || null, nakladki: (p.get('nakladki') || '').split(',').filter(Boolean) };
       // Twarz pyta po nazwach swoich pokręteł: koszt nie zależy wtedy od tego, ile pokręteł i wartości leży w Miejscu.
       // Bez nazw: wszystko, co zadeklarowane (panel, agent, który chce zobaczyć całość).
-      return json(p.has('nazwy') ? await policzUstawieniaDlaNazw(w, { ...o, nazwy: p.get('nazwy').split(',') }) : policzUstawienia(w, { ...o, deklaracje: p.get('deklaracje') === 'tak' }));
+      // deklaracje=tak działa w obu drogach: po nazwach niesie deklaracje tylko pytanych pokręteł.
+      const deklaracje = p.get('deklaracje') === 'tak';
+      return json(p.has('nazwy') ? await policzUstawieniaDlaNazw(w, { ...o, nazwy: p.get('nazwy').split(','), deklaracje }) : policzUstawienia(w, { ...o, deklaracje }));
     }
     if (sciezka === '/api/srodowisko/spis') {
       const filtr = filtrZAdresu(w, p);

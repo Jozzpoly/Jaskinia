@@ -2089,7 +2089,17 @@ export class Srodowisko {
     return Object.keys(p).length ? { przypiete: p } : {};
   }
 
-  _zatwierdz(kto, lista, slad, wynik) {
+  // Pamięć podręczna spisu nie cofa się razem z bazą: po wycofanej czynności zapominamy ją, a następny odczyt policzy
+  // ją z tego, co naprawdę zostało (21 XI 2026).
+  _atomowo(fn) {
+    try { return this.r.wTransakcji(fn); }
+    catch (e) { this._k = null; this._pam = null; this._prz = null; this._role = { nr: -1, mapa: new Map() }; throw e; }
+  }
+
+  // Dziennik i spis razem albo wcale: wyjątek w liczeniu spisu cofa także akty tej czynności (21 XI 2026).
+  _zatwierdz(kto, lista, slad, wynik) { return this._atomowo(() => this._zatwierdzRazem(kto, lista, slad, wynik)); }
+
+  _zatwierdzRazem(kto, lista, slad, wynik) {
     const z = this.r.zatwierdzPolozenia(kto, lista.map((x) => x.p), { slad: sladZ(slad) });
     if (!z.ok) return z;
     if (!z.powtorzone) lista.forEach((x, i) => this._projekcja(x.id, x.rodzaj, x.obszar, x.p.id, z.wyniki[i].wersja, kto, x.cechy, x.ksztalt, x.odlozone, z.wyniki[i].kiedy));
@@ -2312,8 +2322,11 @@ export class Srodowisko {
     return { propozycje: this.wszystkie({ rodzaj: 'propozycja/1', gdzie: { stan: 'czeka' } }), prosby: this.wszystkie({ rodzaj: 'prosba/1', gdzie: { stan: 'czeka' } }) };
   }
 
-  // Odbudowa spisu z samych głów i dziennika (po wwozie albo gdy tabele spisu zginą).
-  przebuduj() {
+  // Odbudowa spisu z samych głów i dziennika (po wwozie albo gdy tabele spisu zginą). W całości albo wcale: połowa
+  // spisu po wyjątku liczyłaby prawa i widoczność z połowy rzeczy (21 XI 2026).
+  przebuduj() { return this._atomowo(() => this._przebuduj()); }
+
+  _przebuduj() {
     this.r.sql.exec(`DELETE FROM rzeczy`);
     this.r.sql.exec(`DELETE FROM odniesienia`);
     const glowy = this.q(`SELECT g.nazwa, g.zapis, g.akt, z.rodzaj, z.tresc FROM glowy g JOIN zapisy z ON z.id = g.zapis WHERE g.nazwa LIKE 'rzecz:%' ORDER BY g.akt`);
