@@ -1248,6 +1248,16 @@
             z.filter((x) => x.stan === s).sort((a, b) => a.nazwa.localeCompare(b.nazwa)).map((x) => el('p', {}, el('b', { tekst: x.nazwa + '. ' }), el('span', { tekst: x.opis + (x.jak ? ' ' + x.jak : '') })))))));
       })));
   }
+  // Świat pod adresem karty: gość (gosc/1), którego adres leży pod stroną projektu, np. JV z mową Jaskini pod
+  // …/JV-Box3D-Web-experiment/__experiments__/jaskinia-okno/ przy karcie repozytorium ze stroną …/JV-Box3D-Web-experiment/.
+  // Karta otwiera wtedy ten świat, a nie samą stronę: sama strona w oknie czyta jak zwiedzający (suwaki tylko do
+  // oglądania, bez A/B), a gość mówi z Jaskinią całą umową. Jozz, 21 XI ok. 17:20, na podglądzie pnia: „jest zagraj,
+  // nie ma ani suwaków ani ab” (świat z suwakami stał niżej, w „Organach i narzędziach”). Kilka pasujących: ostatnio zmieniony.
+  function swiatPodAdresem(adres) {
+    const baza = adres.endsWith('/') ? adres : adres + '/';
+    const pasujace = rzeczy.filter((g) => g.rodzaj.startsWith('gosc/') && !g.odlozone && typeof g.cechy.adres === 'string' && /^https:\/\//.test(g.cechy.adres) && (g.cechy.adres === adres || g.cechy.adres.startsWith(baza)));
+    return pasujace.sort((a, b) => String(b.zmieniono || '').localeCompare(String(a.zmieniono || '')))[0] || null;
+  }
   function kartaProjektu(r) {
     const c = r.cechy;
     const k = el('article', { klasa: 'karta' });
@@ -1261,7 +1271,12 @@
     const swoja = odWlasciciela(r);
     // gra z karta: true ma się otwierać w osobnej karcie: ramka dzieli pamięć gry i miejsce przy stole przepada
     const wKarcie = c.karta === true && typeof c.zagraj === 'string' && /^https:///.test(c.zagraj);
+    const swiat = !wKarcie && typeof c.zagraj === 'string' && /^https:\/\//.test(c.zagraj) ? swiatPodAdresem(c.zagraj) : null;
     if (wKarcie) ruchy.append(el('a', { klasa: 'guzik glowny', href: c.zagraj, target: '_blank', rel: 'noopener', title: typeof c.wejscie === 'string' && c.wejscie ? c.wejscie : null, tekst: 'Zagraj w karcie' }));
+    else if (swiat) ruchy.append(
+      el('button', { klasa: 'glowny', tekst: 'Zagraj', title: 'Otwiera świat „' + swiat.tytul + '” w oknie Jaskini, z tym, co mówi z Jaskinią (suwaki, A/B). Sama strona projektu: guzik „strona”.', klik: () => otworzGoscia(swiat) }),
+      // sama strona zostaje osiągalna: to adres, który znał dotąd (wersja raz podana zostaje grywalna)
+      el('a', { klasa: 'guzik', href: c.zagraj, target: '_blank', rel: 'noopener', tekst: 'strona', title: 'Sama strona projektu, w nowej karcie, bez Jaskini: ' + c.zagraj }));
     else if (typeof c.zagraj === 'string' && /^https:\/\//.test(c.zagraj)) ruchy.append(el('button', { klasa: 'glowny', tekst: 'Zagraj', title: swoja ? c.zagraj : 'Adres podał ' + r.zmienil + ', nie właściciel: otworzy się bez własnej pamięci. ' + c.zagraj, klik: () => otworz({ klucz: 'p:' + r.id, tytul: r.tytul, adres: c.zagraj, piaskownica: swoja ? 'swoj' : 'obcy' }) }));
     if (typeof c.zrodlo === 'string' && /^https:\/\//.test(c.zrodlo)) ruchy.append(el('a', { klasa: 'guzik', href: c.zrodlo, target: '_blank', rel: 'noopener', tekst: 'źródło' }));
     if (ruchy.childNodes.length) k.append(ruchy);
