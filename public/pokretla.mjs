@@ -10,6 +10,11 @@
 // Wartość domyślna może iść za innym pokrętłem: {z: "<nazwa>"} (wartość pochodna; worker/ustawienia.mjs).
 // Ten plik nie zna ani przeglądarki, ani Workera: ładuje go twarz, strona gospodarza, zasiew i sprawdziany.
 
+// Drabina przedstawień (19 XI 2026): reguła sprawdzania jest wspólna z zapleczem (./drabina.mjs), a wartość domyślna
+// mieszka przy czytelniku Startu (./start/drabina.mjs). Oba moduły są czyste, bez zależności.
+import { wadaDrabiny } from './drabina.mjs';
+import { DRABINA_DOMYSLNA } from './start/drabina.mjs';
+
 const kolor = (nazwa, domyslna, opis, grupa) => ({ nazwa, typ: 'kolor', domyslna, opis, grupa });
 const JASNE = { tlo: '#f4f1ea', plyta: '#fbf9f4', tekst: '#24211c', ciche: '#6b645a', akcent: '#9a5b1e', linia: '#d8d1c4', zywe: '#2f8a4a', stare: '#a39a8b', znak: '#b3441e' };
 const CIEMNE = { tlo: '#15130e', plyta: '#1e1b14', tekst: '#ece6da', ciche: '#a69d8f', akcent: '#e0a35e', linia: '#37322a', zywe: '#58c47a', stare: '#5d564b', znak: '#f08a5d' };
@@ -26,6 +31,7 @@ export const POKRETLA = [
   ...KOLORY.map((n) => kolor(PALETA.ciemna + n, CIEMNE[n], `Paleta ciemna: ${CO_KOLOR[n]}.`, 'Wygląd / Paleta ciemna')),
   { nazwa: 'wyglad.kroj.tekst', typ: 'kroj', domyslna: { rodzina: KROJ_DOMYSLNY }, grupa: 'Wygląd / Pismo', opis: 'Krój tekstu, liczb i podpisów w twarzach i oknach narzędzi: rodzina jak w CSS, do tego grubość i osie kroju zmiennego (na razie tylko kroje, które urządzenie już ma).' },
   { nazwa: 'wyglad.kroj.imiona', typ: 'kroj', domyslna: { z: 'wyglad.kroj.tekst' }, grupa: 'Wygląd / Pismo', dotyczy: ['karta'], opis: 'Krój imion, czyli nazw rzeczy na kartach i w nagłówkach. Dopóki nikt go nie ustawi, idzie za krojem tekstu.' },
+  { nazwa: 'wyglad.karta.drabina', typ: 'drabina', domyslna: DRABINA_DOMYSLNA, grupa: 'Wygląd / Karta', dotyczy: ['karta'], opis: 'Drabina przedstawień: od jakiej miary karty na ekranie pojawia się imię, podpis rodziny, wiersz życia, opis i gałęzie. Klocek konstrukcji: twarz tylko ją czyta, więc nowa twarz nie przepisuje tego rachunku.' },
   { nazwa: 'wyglad.karta.rog', typ: 'liczba', domyslna: 12, zakres: { od: 0, do: 40, krok: 1 }, twarde: { od: 0, do: 400 }, jednostka: 'px', grupa: 'Wygląd / Karta', dotyczy: ['karta'], opis: 'Największy promień zaokrąglenia rogu karty.' },
   { nazwa: 'odczucie.ruch.natezenie', typ: 'liczba', domyslna: 1, zakres: { od: 0, do: 2, krok: 0.05 }, twarde: { od: 0, do: 20 }, jednostka: '×', grupa: 'Odczucie / Ruch', opis: 'Mnożnik czasu wszystkich ruchów: 0 wyłącza ruch (wszystko przeskakuje), 1 to tempo domyślne, więcej zwalnia.' },
   { nazwa: 'odczucie.ruch.przelacznik', typ: 'czas', domyslna: 700, zakres: { od: 0, do: 2000, krok: 10 }, twarde: { od: 0, do: 60000 }, grupa: 'Odczucie / Ruch', dotyczy: ['uklad'], opis: 'Ile trwa przejście między układem z ręki a układem ciekłym.' },
@@ -63,6 +69,7 @@ export const pasuje = (d, w) => {
       && (w.plik === undefined || (obiekt(w.plik) && typeof w.plik.rzecz === 'string' && /^[0-9a-z]{26}$/.test(w.plik.rzecz) && typeof w.plik.odcisk === 'string' && /^[0-9a-f]{64}$/.test(w.plik.odcisk)));
     case 'cien': return obiekt(w) && liczba(w.x) && liczba(w.y) && liczba(w.rozmycie) && w.rozmycie >= 0 && typeof w.kolor === 'string' && KOLOR.test(w.kolor);
     case 'sprezyna': return obiekt(w) && liczba(w.czas) && w.czas >= 0 && liczba(w.odbicie) && w.odbicie >= 0 && w.odbicie <= 1;
+    case 'drabina': return wadaDrabiny(w) === null;
     default: return false;
   }
 };

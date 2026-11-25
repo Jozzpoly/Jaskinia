@@ -85,3 +85,104 @@ test('szczebel: brak w wartości bierze domyślny; „od = do = 0” znaczy zaws
   assert.equal(miara({ miara: {} }, 5, 10), Infinity);
   assert.equal(ucieta({ co: 'imie', rozmiar: { od: 9, do: 34 } }, 500, 500), null, 'bez `ucinaj` nie ma wersji uciętej');
 });
+
+// Podłączenie pokrętła (19 XI 2026, po PR 70): drabina jest wartością pokrętła wyglad.karta.drabina, a Start czyta ją
+// z ustawień przez tę samą tablicę (public/pokretla.mjs). Napisał Opus czatu.
+import { POKRETLA, Pokretla, pasuje } from '../public/pokretla.mjs';
+import { wadaDrabiny } from '../public/drabina.mjs';
+
+const POKRETLO = 'wyglad.karta.drabina';
+const deklaracja = () => POKRETLA.find((p) => p.nazwa === POKRETLO);
+const opis0 = { szczeble: [{ co: 'opis', miara: { szer: 1 }, od: 0, do: 0 }] };
+
+test('pokrętło wyglad.karta.drabina: typ drabina, wartość domyślna to stała czytelnika i przechodzi wspólną regułę', () => {
+  const d = deklaracja();
+  assert.ok(d, 'pozycja jest w tablicy pokręteł (z niej idzie ziarno w Miejscu)');
+  assert.equal(d.typ, 'drabina');
+  assert.equal(d.domyslna, DRABINA_DOMYSLNA, 'jedna stała, jedno miejsce');
+  assert.equal(wadaDrabiny(d.domyslna), null);
+  assert.equal(pasuje(d, d.domyslna), true);
+});
+
+test('pasuje przy drabinie mówi to samo co wspólna reguła zaplecza (także o polu krzywa, którego twarz nie czyta)', () => {
+  const d = deklaracja();
+  const proby = [
+    opis0,
+    { szczeble: [] },
+    { szczeble: [{ co: 'opis', miara: { szer: 1 }, od: 0, do: 0, krzywa: 'gladka' }] },
+    { szczeble: [{ co: 'opis', miara: {}, od: 0, do: 0 }] },
+    { szczeble: [{ co: 'opis', miara: { szer: 1 }, od: 5, do: 1 }] },
+    { szczeble: [{ co: 'nowy_element', miara: { wys: 2 }, od: 1, do: 2 }] },
+    'drabina',
+    null,
+  ];
+  for (const w of proby) assert.equal(pasuje(d, w), wadaDrabiny(w) === null, JSON.stringify(w));
+  assert.equal(pasuje(d, opis0), true);
+  assert.equal(pasuje(d, proby[2]), false, 'krzywa odrzucona, dopóki twarz jej nie czyta');
+});
+
+test('Start dostaje drabinę z Miejsca po sprawdzeniu; zła wartość i tryb bezpieczny zostawiają domyślną', () => {
+  const P = new Pokretla();
+  assert.equal(P.w(POKRETLO), DRABINA_DOMYSLNA, 'bez Miejsca: domyślna');
+  P.przyjmij({ wartosci: { [POKRETLO]: { wartosc: opis0 } }, akt: 1 });
+  assert.deepEqual(P.w(POKRETLO), opis0);
+  assert.equal(alfa(szczebel(P.w(POKRETLO), 'opis'), 1, 1), 1, 'opis zawsze, także na najmniejszej karcie');
+  assert.deepEqual(szczebel(P.w(POKRETLO), 'galezie'), szczebel(DRABINA_DOMYSLNA, 'galezie'), 'czego wartość nie wymienia, to z domyślnej');
+  P.przyjmij({ wartosci: { [POKRETLO]: { wartosc: { szczeble: [{ co: 'opis', miara: { szer: 1 }, od: 9, do: 1 }] } } }, akt: 2 });
+  assert.equal(P.w(POKRETLO), DRABINA_DOMYSLNA, 'wartość, której reguła nie przyjmuje, nie dochodzi do rysowania');
+  const B = new Pokretla({ bezpiecznie: true });
+  B.przyjmij({ wartosci: { [POKRETLO]: { wartosc: opis0 } }, akt: 1 });
+  assert.equal(B.w(POKRETLO), DRABINA_DOMYSLNA, '?bezpiecznie wraca do domyślnej');
+});
+
+test('szczebel innego rodzaju niż domyślny dla tego co twarz traktuje jak brak (reguła dopuszcza oba rodzaje)', () => {
+  const imieJakoPrzenikanie = { szczeble: [{ co: 'imie', miara: { szer: 1 }, od: 0, do: 10 }] };
+  const opisJakoRozmiar = { szczeble: [{ co: 'opis', miara: { szer: 1 }, rozmiar: { od: 9, do: 20 } }] };
+  assert.equal(wadaDrabiny(imieJakoPrzenikanie), null, 'reguła to przyjmuje');
+  assert.equal(wadaDrabiny(opisJakoRozmiar), null, 'reguła to przyjmuje');
+  assert.deepEqual(szczebel(imieJakoPrzenikanie, 'imie'), szczebel(DRABINA_DOMYSLNA, 'imie'));
+  assert.deepEqual(szczebel(opisJakoRozmiar, 'opis'), szczebel(DRABINA_DOMYSLNA, 'opis'));
+  assert.ok(rozmiarStartowy(szczebel(imieJakoPrzenikanie, 'imie'), 300, 300) >= 9, 'imię dalej ma rozmiar, rysowanie się nie wywraca');
+  const nowy = { szczeble: [{ co: 'nowy_element', miara: { szer: 1 }, rozmiar: { od: 1, do: 2 } }] };
+  assert.deepEqual(szczebel(nowy, 'nowy_element'), nowy.szczeble[0], 'element bez domyślnego: twarz, która go zna, dostaje go takim, jaki jest');
+});
+
+// Granice prób rozmiaru imienia (20 XI 2026, po drugiej linii Opusa Code na zgłoszeniu 72): wartość, którą wspólna
+// reguła przepuszcza, nie może kazać twarzy próbować rozmiarów w nieskończoność. Z wartością domyślną ciąg prób jest
+// dokładnie dawny. Napisał Opus czatu.
+import { probyRozmiaru, NAJWIECEJ_PROB } from '../public/start/drabina.mjs';
+
+const dawneProby = (w, h) => { const p = []; for (let r = dawnyRozmiar(w, h); r >= 9; r -= 1.5) p.push(r); return p; };
+
+test('probyRozmiaru z drabiną domyślną to dokładnie dawny ciąg prób imienia (1e-9), najwyżej 17 prób', () => {
+  const s = szczebel(DRABINA_DOMYSLNA, 'imie');
+  const r = los(2011);
+  for (let i = 0; i < 20000; i++) {
+    const w = r() * 1500, h = r() * 600;
+    const a = probyRozmiaru(s, w, h), b = dawneProby(w, h);
+    assert.equal(a.length, b.length, `liczba prób: w=${w} h=${h}`);
+    a.forEach((x, k) => assert.ok(Math.abs(x - b[k]) <= 1e-9, `próba ${k}: w=${w} h=${h}`));
+    assert.ok(a.length <= 17);
+  }
+  for (let w = 10; w <= 400; w += 0.25) assert.equal(probyRozmiaru(s, w, 1e6).length, dawneProby(w, 1e6).length, `siatka w=${w}`);
+});
+
+// Granica twarzy ma trzymać dla dowolnych liczb, niezależnie od tego, co przepuszcza reguła zaplecza (Opus Code w #73
+// dokłada regule górne granice liczb; ten sprawdzian nie zakłada ani jednego, ani drugiego).
+test('dowolne liczby w szczeblu imienia nie zawieszają twarzy: najwyżej NAJWIECEJ_PROB prób, start nie wyżej niż karta', () => {
+  const zla = { szczeble: [{ co: 'imie', miara: { szer: 1000000 }, rozmiar: { od: 0.000001, do: 1000000000 } }] };
+  const p = probyRozmiaru(szczebel(zla, 'imie'), 300, 200);
+  assert.ok(p.length <= NAJWIECEJ_PROB, `prób: ${p.length}`);
+  assert.ok(p[0] <= 200, `start: ${p[0]}`);
+  const r = los(7);
+  for (let i = 0; i < 5000; i++) {
+    const od = r() * 50 + 1e-6;
+    const s = { co: 'imie', miara: { szer: r() * 1e6 + 1e-9, wys: r() * 1e6 + 1e-9 }, rozmiar: { od, do: od + r() * 1e9 } };
+    const w = r() * 3000, h = r() * 3000;
+    const q = probyRozmiaru(s, w, h);
+    assert.ok(q.length >= 1 && q.length <= NAJWIECEJ_PROB, `w=${w} h=${h} prób=${q.length}`);
+  }
+  const u = { co: 'imie', miara: { szer: 1 }, rozmiar: { od: 9, do: 34 }, ucinaj: { szer_od: 0, wys_od: 0, rozmiar: 1e9 } };
+  assert.ok(ucieta(u, 300, 200) <= 200, 'wersja ucięta nie większa niż karta');
+  assert.equal(ucieta(szczebel(DRABINA_DOMYSLNA, 'imie'), 300, 200), 9.5, 'domyślna bez zmian');
+});

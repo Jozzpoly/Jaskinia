@@ -23,6 +23,13 @@
 // (druga linia Opusa czatu, 19 XI 19:56). Dopisanie jej później jest zgodne wstecz; usunięcie po zapisaniu nie byłoby.
 
 export const NAJWIECEJ_SZCZEBLI = 24;
+// Twarde granice liczb (20 XI 2026, druga linia zgłoszenia 72): szerokie, ale skończone. Liczba poza nimi nic nie znaczy
+// dla oka (pismo większe niż ekran, mnożnik miary w milionach), a twarz, która szuka rozmiaru krok po kroku, potrafiła
+// na niej stanąć: rozmiar {od: 0.000001, do: 1e9} przy mierze razy 1e6 dawał 2·10^8 prób na kartę w każdej klatce
+// (drabina domyślna: 17), a położyć taką wartość mógł agent w zasięgu swojego widoku. Granice chronią przed rozpadem
+// (zasada 5), nie stroją wyglądu; odmowa mówi, która liczba i jaka granica.
+export const GRANICE_DRABINY = Object.freeze({ px: 100000, miara: 100, pismo: Object.freeze({ od: 1, do: 1000 }) });
+const G = GRANICE_DRABINY;
 const CO = /^[a-z][a-z0-9_]{0,39}$/;
 const liczba = (x) => typeof x === 'number' && Number.isFinite(x);
 const obiekt = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -51,7 +58,7 @@ export function wadaDrabiny(w) {
     const wMierze = obce(s.miara, ['szer', 'wys']);
     if (wMierze !== undefined) return `${tu}: miara ma tylko szer i wys; pola ${JSON.stringify(wMierze)} nikt nie czyta`;
     if (!('szer' in s.miara) && !('wys' in s.miara)) return `${tu}: miara potrzebuje przynajmniej jednego pola (szer albo wys); bez nich nie ma czego mierzyć`;
-    for (const k of ['szer', 'wys']) if (k in s.miara && !(liczba(s.miara[k]) && s.miara[k] > 0)) return `${tu}: miara.${k} ma być liczbą większą od 0`;
+    for (const k of ['szer', 'wys']) if (k in s.miara && !(liczba(s.miara[k]) && s.miara[k] > 0 && s.miara[k] <= G.miara)) return `${tu}: miara.${k} ma być liczbą większą od 0 i nie większą niż ${G.miara}`;
     const przenika = 'od' in s || 'do' in s;
     const ciagly = 'rozmiar' in s;
     if (przenika && ciagly) return `${tu}: szczebel ma albo od i do (przenikanie), albo rozmiar (szczebel ciągły), nie oba naraz`;
@@ -59,14 +66,17 @@ export function wadaDrabiny(w) {
     if (przenika) {
       if (!(liczba(s.od) && liczba(s.do) && s.od >= 0 && s.do >= 0)) return `${tu}: od i do to liczby nie mniejsze niż 0 (px miary); od = do = 0 znaczy "zawsze"`;
       if (s.od > s.do) return `${tu}: od (${s.od}) jest większe niż do (${s.do}); przenikanie idzie od mniejszej miary do większej`;
+      if (s.do > G.px) return `${tu}: do (${s.do}) przekracza ${G.px} px miary; większej karty żaden ekran nie pokaże`;
       if ('ucinaj' in s) return `${tu}: ucinaj ma sens tylko przy szczeblu ciągłym (rozmiar)`;
     } else {
       const r = s.rozmiar;
       if (!obiekt(r) || obce(r, ['od', 'do']) !== undefined || !(liczba(r.od) && liczba(r.do) && r.od > 0 && r.do >= r.od)) return `${tu}: rozmiar to {od, do} w px pisma, od większe od 0, do nie mniejsze niż od`;
+      if (r.od < G.pismo.od || r.do > G.pismo.do) return `${tu}: rozmiar pisma mieści się między ${G.pismo.od} a ${G.pismo.do} px (jest ${r.od} do ${r.do})`;
       if ('ucinaj' in s) {
         const u = s.ucinaj;
         if (!obiekt(u) || obce(u, ['szer_od', 'wys_od', 'rozmiar']) !== undefined || !(liczba(u.szer_od) && u.szer_od >= 0 && liczba(u.wys_od) && u.wys_od >= 0 && liczba(u.rozmiar) && u.rozmiar > 0))
           return `${tu}: ucinaj to {szer_od >= 0, wys_od >= 0, rozmiar > 0} w px; wszystkie trzy pola`;
+        if (u.szer_od > G.px || u.wys_od > G.px || u.rozmiar < G.pismo.od || u.rozmiar > G.pismo.do) return `${tu}: ucinaj ma szer_od i wys_od najwyżej ${G.px} px, a rozmiar pisma między ${G.pismo.od} a ${G.pismo.do} px`;
       }
     }
   }

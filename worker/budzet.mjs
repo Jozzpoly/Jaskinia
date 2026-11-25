@@ -21,6 +21,8 @@ export function liczacySql(sql) {
   return {
     licznik,
     get databaseSize() { return sql.databaseSize; },
+    // transakcja bazy przechodzi bez zmian (w sprawdzianach daje ją sql-node.mjs; w obiekcie daje ją ctx.storage)
+    ...(typeof sql.transakcja === 'function' ? { transakcja: (fn) => sql.transakcja(fn) } : {}),
     exec(zapytanie, ...p) {
       const k = sql.exec(zapytanie, ...p);
       let cz = 0, zap = 0;
