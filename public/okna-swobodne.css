@@ -4,6 +4,9 @@
 @media (min-width: 40.01rem) {
   #okna > .okno .pasek { cursor: grab; user-select: none; touch-action: none; }
   #okna > .okno .pasek :is(button, a, input, select, textarea, label) { cursor: pointer; }
+  /* para A/B stoi tak, jak ją ułożyła strona: pasek nie chwyta, uchwytów nie ma */
+  #okna > .okno:is(.ab-a, .ab-b) .pasek { cursor: default; }
+  #okna > .okno:is(.ab-a, .ab-b) .okno-uchwyt { display: none; }
   #okna > .okno .okno-uchwyt { position: absolute; z-index: 3; touch-action: none; }
   #okna > .okno .okno-uchwyt[data-k="e"] { top: 2.4rem; right: 0; bottom: 16px; width: var(--okna-uchwyt); cursor: ew-resize; }
   #okna > .okno .okno-uchwyt[data-k="w"] { top: 2.4rem; left: 0; bottom: 16px; width: var(--okna-uchwyt); cursor: ew-resize; }

@@ -42,10 +42,21 @@
     s.classList.remove('okno-swobodne');
   };
   // klucz okna: jego adres (i rola w parze A/B), więc to samo okno otwarte jutro wraca w to samo miejsce
+  const adresOkna = (s) => { const f = s.querySelector('iframe'); return f ? f.getAttribute('src') : s.getAttribute('aria-label') || 'okno'; };
   const kluczOkna = (s) => {
-    const f = s.querySelector('iframe');
     const rola = (s.querySelector('.pasek .rola') || {}).textContent || '';
-    return (rola ? rola + ' ' : '') + (f ? f.getAttribute('src') : s.getAttribute('aria-label') || 'okno');
+    return (rola ? rola + ' ' : '') + adresOkna(s);
+  };
+  // para A/B: oba okna układa strona (obok siebie, pas porównania pod nimi), więc warstwa ich nie rusza i nie daje ich
+  // przesuwać. Okno przesunięte ręką przed „A/B” wchodzi w parę bez swojego położenia, a po rozstaniu pary wraca tam,
+  // gdzie je zostawiono (druga linia Opusa Code na 92, 25 XI: okno A przesunięte przed „A/B” nachodziło na B i na pas).
+  const wParze = (s) => s.classList.contains('ab-a') || s.classList.contains('ab-b');
+  const para = (s) => {
+    if (wParze(s)) { s.dataset.wParze = '1'; if (s.classList.contains('okno-swobodne')) zwolnij(s); return; }
+    if (!s.dataset.wParze) return;
+    delete s.dataset.wParze;
+    const pamiec = uklad[kluczOkna(s)] || uklad[adresOkna(s)];
+    if (pamiec && SZEROKI.matches) ustaw(s, wGranicach(pamiec));
   };
   const zapamietaj = (s) => {
     uklad[kluczOkna(s)] = { ...prostokat(s), ...(s.dataset.przedPelnym ? { przed: JSON.parse(s.dataset.przedPelnym) } : {}) };
@@ -78,7 +89,7 @@
 
   // jeden gest: przesunięcie (tryb „ruch”) albo zmiana rozmiaru od krawędzi (e, s, w, se, sw)
   function gest(s, e, tryb) {
-    if (!SZEROKI.matches || e.button !== 0) return;
+    if (!SZEROKI.matches || e.button !== 0 || wParze(s)) return;
     e.preventDefault();
     const start = prostokat(s), x0 = e.clientX, y0 = e.clientY;
     let przyklej = null;
@@ -119,7 +130,7 @@
   // dwuklik na pasku: okno, które nie zajmuje całego ekranu, rozciąga się na cały; drugi dwuklik wraca dokładnie tam,
   // gdzie okno było tuż przed nim (także na przyklejoną połowę)
   function pelny(s) {
-    if (!SZEROKI.matches) return;
+    if (!SZEROKI.matches || wParze(s)) return;
     const r = prostokat(s), g0 = gora(), caly = { x: 0, y: g0, w: szer(), h: dol() - g0 };
     const jestPelne = ['x', 'y', 'w', 'h'].every((k) => Math.abs(r[k] - caly[k]) <= 2);
     if (jestPelne && s.dataset.przedPelnym) { ustaw(s, wGranicach(JSON.parse(s.dataset.przedPelnym))); delete s.dataset.przedPelnym; }
@@ -150,7 +161,9 @@
     // (druga linia Fable na 94, 25 XI; poprawka jego, sprawdzona przez niego na scaleniu z pniem)
     s.addEventListener('pointerdown', () => { const a = document.activeElement; if (a && a.tagName === 'IFRAME' && a.closest('#okna > .okno') !== s) a.blur(); naWierzch(s); }, true);
     const pamiec = uklad[kluczOkna(s)];
-    if (pamiec && SZEROKI.matches) {
+    if (wParze(s)) {
+      para(s);
+    } else if (pamiec && SZEROKI.matches) {
       ustaw(s, wGranicach(pamiec));
       if (pamiec.przed) s.dataset.przedPelnym = JSON.stringify(pamiec.przed);
     } else if (SZEROKI.matches && !s.querySelector('.pasek .rola')) {
@@ -177,12 +190,15 @@
     if (!kontener) return;
     okna().forEach(przyjmij);
     new MutationObserver(() => okna().forEach(przyjmij)).observe(kontener, { childList: true });
+    // wejście w parę i wyjście z niej strona zaznacza klasą okna (ab-a, ab-b)
+    new MutationObserver((zmiany) => { for (const z of zmiany) if (z.target.parentElement === kontener && z.target.classList.contains('okno')) para(z.target); })
+      .observe(kontener, { attributes: true, attributeFilter: ['class'], subtree: true });
   };
   // telefon: bez położeń (okno na cały ekran, jak dotąd); powrót do szerokiego ekranu oddaje zapamiętany układ
   SZEROKI.addEventListener('change', () => {
     for (const s of okna()) {
       const pamiec = uklad[kluczOkna(s)];
-      if (!SZEROKI.matches) zwolnij(s); else if (pamiec) ustaw(s, wGranicach(pamiec));
+      if (!SZEROKI.matches) zwolnij(s); else if (pamiec && !wParze(s)) ustaw(s, wGranicach(pamiec));
     }
   });
   addEventListener('resize', () => { if (SZEROKI.matches) for (const s of okna()) if (s.classList.contains('okno-swobodne')) ustaw(s, wGranicach(prostokat(s))); });
