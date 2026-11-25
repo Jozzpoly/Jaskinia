@@ -227,7 +227,9 @@ ul.ust { list-style: none; margin: 0; padding: 0; }
 .okno .pasek .rola { flex: none; font-weight: 750; font-size: .75rem; padding: .05rem .45rem; border-radius: .3rem; border: 1px solid var(--linia); }
 .okno.ab-a .pasek .rola { color: var(--akcent); border-color: var(--akcent); }
 .okno.ab-b .pasek .rola { color: var(--znak); border-color: var(--znak); }
-#okna .ab { position: fixed; z-index: 20; left: .7rem; right: .7rem; bottom: 3.6rem; height: 8.8rem; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 22rem); grid-template-rows: auto minmax(0, 1fr); gap: .3rem 1rem; padding: .5rem .75rem; background: var(--plyta); border: 1px solid var(--linia); border-radius: .6rem; box-shadow: 0 10px 40px rgba(0, 0, 0, .35); overflow: hidden; }
+/* pas porównania nad oknami (one mają 21–29), na równi z dokiem, którego nie dotyka: trzecie okno otwarte przy parze
+   zasłaniało jego guziki (ślepa ręka na oknach, 25 XI, O7) */
+#okna .ab { position: fixed; z-index: 30; left: .7rem; right: .7rem; bottom: 3.6rem; height: 8.8rem; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 22rem); grid-template-rows: auto minmax(0, 1fr); gap: .3rem 1rem; padding: .5rem .75rem; background: var(--plyta); border: 1px solid var(--linia); border-radius: .6rem; box-shadow: 0 10px 40px rgba(0, 0, 0, .35); overflow: hidden; }
 #okna .ab[hidden] { display: none; }
 /* tło pod parą A/B: strona nie przebija między oknami a pasem; pasek górny zostaje widoczny */
 #okna.ab-tryb::before { content: ''; position: fixed; z-index: 19; left: 0; right: 0; top: 3.2rem; bottom: 0; background: var(--tlo); }
