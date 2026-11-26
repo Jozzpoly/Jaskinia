@@ -260,7 +260,13 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
         wynik.zmienione++;
         rz = s.rzecz(rz.id);
       }
-      const rozne = !rz || zarzadzane.some((k) => JSON.stringify(rz.cechy[k] ?? null) !== JSON.stringify(nowe[k] ?? null));
+      // Sama etykieta źródła nie robi wersji (wiek faktów, stan_na, nie robił jej nigdy). Zmierzone 27 XI 2026 na podglądzie
+      // pnia: 28 faktów o repozytoriach miało 1473 wersje, bo plik starej Jaskini odradza się co kilka godzin i za każdym
+      // razem wygląda na nowszy niż fakty, które API potwierdziło bez zmiany; obejście z pliku przepisywało wtedy fakt ze swoją
+      // etykietą, a następne obejście API z powrotem. Skutek: etykieta mówi, skąd była ostatnia ZMIANA TREŚCI, a nie kto
+      // ostatnio potwierdził (gałąź zapisana z pliku nie przeskoczy na etykietę API, dopóki jej commit się nie zmieni).
+      const istotne = zarzadzane.filter((k) => k !== 'zrodlo_faktow');
+      const rozne = !rz || (istotne.length ? istotne : zarzadzane).some((k) => JSON.stringify(rz.cechy[k] ?? null) !== JSON.stringify(nowe[k] ?? null));
       if (!rozne) { wynik.bez_zmian++; return rz.id; }
       const cechy = { ...(rz ? rz.cechy : {}), ...nowe, stan_na: stanNa };
       for (const k of zarzadzane) if (nowe[k] === undefined) delete cechy[k];
@@ -406,9 +412,15 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
       for (const pelna of klucze) {
         const r = plikRepos.get(pelna);
         const bylo = istnieja.get(pelna);
+        // Czego plik nie podaje, a rzecz znana z API już ma (adres strony, opis), tego obejście z pliku nie kasuje:
+        // brak w pliku to nie wiedza, że czegoś nie ma. Inaczej każde nowe pokolenie pliku zdejmowałoby adres, który zna
+        // tylko API, a następne obejście API by go przywracało.
+        const zApi = bylo && !bylo.odlozone && Number.isInteger(bylo.cechy.github_id) ? bylo.cechy : null;
+        const opisP = r.opis || (zApi && zApi.opis) || null;
+        const stronaP = r.strona || (zApi && zApi.strona) || null;
         const nowe = {
           pelna_nazwa: pelna, nazwa: r.nazwa, adres: r.adres || `https://github.com/${owner}/${r.nazwa}`,
-          ...(r.opis ? { opis: r.opis } : {}), ...(r.strona ? { strona: r.strona } : {}),
+          ...(opisP ? { opis: opisP } : {}), ...(stronaP ? { strona: stronaP } : {}),
           ...(r.ostatni_push ? { ostatni_push: r.ostatni_push } : {}), ...(r.utworzone ? { utworzone: r.utworzone } : {}),
           ...plikowe(r, bylo, rodz), zrodlo_faktow: ZR_PLIK,
           // liczbę gałęzi znamy dla repozytoriów tej partii: tylko im ją zapisujemy
@@ -518,10 +530,18 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
       const bylo = istnieja.get(pelna);
       const zPliku = plikRepos.get(pelna) || null;
       const pl = plikowe(zPliku, bylo, rodz);
+      // Adres strony: stara Jaskinia zna adresy światów, które stoją poza GitHub Pages, a API zgaduje adres z has_pages.
+      // Zmierzone 27 XI 2026: z 11 projektów z adresem dwa mają w pliku adres na workers.dev, który odpowiada 200; dla
+      // jednego z nich API nie ma nic, dla drugiego podaje adres github.io, który odpowiada 404. Dlatego adres z pliku
+      // wygrywa, a API jest zapasem. Gdy pliku w tym obejściu nie ma, zostaje adres, który był: inaczej każda przerwa
+      // w dostępie do pliku robiłaby wersję tam i z powrotem. Opis: najpierw API (tam się go pisze), potem plik.
+      const byloZywe = bylo && !bylo.odlozone ? bylo.cechy : null;
+      const strona = (plikOk ? (zPliku && zPliku.strona) : (byloZywe && byloZywe.strona)) || stronaRepo(r, owner) || null;
+      const opis = r.opis || (plikOk ? (zPliku && zPliku.opis) : (byloZywe && byloZywe.opis)) || null;
       const nowe = {
         pelna_nazwa: pelna, github_id: r.id, nazwa: r.nazwa, adres: r.adres,
-        ...(r.opis ? { opis: r.opis } : {}),
-        ...(stronaRepo(r, owner) ? { strona: stronaRepo(r, owner) } : {}),
+        ...(opis ? { opis } : {}),
+        ...(strona ? { strona } : {}),
         ...(r.jezyk ? { jezyk: r.jezyk } : {}),
         archiwum: !!r.archiwum,
         ...(r.ostatni_push ? { ostatni_push: r.ostatni_push } : {}),
