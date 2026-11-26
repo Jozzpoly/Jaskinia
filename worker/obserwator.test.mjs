@@ -1315,3 +1315,40 @@ test('10c. alarm zasypia po 24h bez żadnego żądania i otwartego gniazda (potr
   assert.equal(st.ustawienia.length, 1, 'nowe wejście ponownie uruchamia budzik');
 });
 
+// Dwa sprawdziany drugiej linii łatki Toru 3 (Opus Code, 27 XI 2026). 10d: dziura znaleziona przez Fable (Miejsce bez
+// zapisu obecności nie zasypiało nigdy). 10e: warunek „nikt nie patrzy na żywo”, którego nie łapał żaden sprawdzian
+// (mutacja, która go zdejmowała, przechodziła cały plik).
+test('10d. Miejsce, do którego od wdrożenia nikt nie wszedł: pierwszy alarm zaczyna liczyć dobę, a po dobie ciszy budzik zasypia także po uśpieniu obiektu', async () => {
+  const g = github({ repos: [repoGH(11, 'r1')], galezie: { r1: [galGH('main')] } });
+  const { obiekt, st } = obiektZAlarmem({ env: { OBSERWATOR: 'tak' } });
+  let t = Date.now();
+  obiekt.rdzen.teraz = () => t;
+  for (let i = 0; i < 3; i++) { await zPodstawionymGithubem(g, () => obiekt.alarm()); t += 30 * MINUTA; }
+  assert.equal(st.ustawienia.length, 3, 'w pierwszej dobie budzik chodzi, choć nikt nie wszedł');
+  // Obiekt mógł zasnąć między alarmami: nowy obiekt nad tą samą bazą wie tylko to, co zapisane
+  const drugi = new Miejsce(obiekt.ctx, obiekt.env);
+  assert.ok(Number(drugi.rdzen.meta('miejsce:ostatnia_obecnosc')) > 0, 'pierwszy alarm zapisał, od kiedy liczyć dobę');
+  drugi.rdzen.teraz = () => t + 24 * 60 * MINUTA;
+  st.ustawienia.length = 0;
+  await zPodstawionymGithubem(g, () => drugi.alarm());
+  assert.equal(st.ustawienia.length, 0, 'po dobie bez nikogo budzik nieodwiedzanego Miejsca zasypia');
+  assert.equal(drugi.alarmSprawdzony, false, 'następne wejście ustawi go od nowa');
+});
+
+test('10e. otwarta strona z kanałem na żywo trzyma budzik na chodzie także po dobie bez żądań; po jej zamknięciu budzik zasypia', async () => {
+  const g = github({ repos: [repoGH(11, 'r1')], galezie: { r1: [galGH('main')] } });
+  const { obiekt, st } = obiektZAlarmem({ env: { OBSERWATOR: 'tak' } });
+  let t = Date.now();
+  obiekt.rdzen.teraz = () => t;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  obiekt.ctx.getWebSockets = () => [{ send() {}, deserializeAttachment() { return null; } }];
+  t += 25 * 60 * MINUTA;
+  st.ustawienia.length = 0;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  assert.equal(st.ustawienia.length, 1, 'ktoś patrzy na żywo: budzik dalej chodzi');
+  obiekt.ctx.getWebSockets = () => [];
+  t += 30 * MINUTA;
+  st.ustawienia.length = 0;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  assert.equal(st.ustawienia.length, 0, 'strona zamknięta, a doba ciszy minęła: budzik zasypia');
+});

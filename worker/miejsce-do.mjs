@@ -177,10 +177,19 @@ export class Miejsce {
     } finally {
       // to, co obserwator przyniósł, otwarte strony widzą od razu, tak jak ruch ręki albo agenta
       try { this._rozglosZmiane(przed); } catch { /* rozgłoszenie to wygoda */ }
+      // Doba ciszy usypia budzik (poz. 201). Miejsce bez zapisu obecności (nikt nie wszedł od wdrożenia tej zasady) liczy
+      // dobę od pierwszego alarmu: inaczej nie zasnąłby budzik właśnie tego Miejsca, którego nikt nie odwiedza (uwaga
+      // Fable, 27 XI 2026). Błąd przy obecności zostawia budzik na chodzie, bo następny alarm ma się ustawić zawsze.
+      // Zapis obecności stoi przed zamknięciem budżetu, żeby wliczył się do kosztu tego obudzenia.
+      let spi = false;
+      try {
+        const teraz = this.rdzen.teraz();
+        let ost = this.ostatniaObecnosc || Number(this.rdzen.meta(OSTATNIA_OBECNOSC)) || 0;
+        if (!ost) { ost = teraz; this.ostatniaObecnosc = teraz; this.rdzen.ustawMeta(OSTATNIA_OBECNOSC, String(teraz)); }
+        spi = teraz - ost > SEN_OBSERWATORA_MS && this._gniazda().length === 0;
+      } catch { /* budzik zostaje na chodzie */ }
       this.budzet.zamknij(znacznik);
-      const teraz = this.rdzen.teraz();
-      const ost = this.ostatniaObecnosc || Number(this.rdzen.meta(OSTATNIA_OBECNOSC)) || 0;
-      if (ost > 0 && teraz - ost > SEN_OBSERWATORA_MS && this._gniazda().length === 0) {
+      if (spi) {
         this.alarmSprawdzony = false;
       } else {
         const co = rzadko ? Math.max(this._coMinut(), SPOKOJNE_KOLO_MIN) : this._coMinut();
