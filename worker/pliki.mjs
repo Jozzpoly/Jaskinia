@@ -17,7 +17,7 @@
 // Czego tu nie ma: magazynu na rzeczy większe niż półtora megabajta (build, model): wymaga osobnej usługi i jej dostępu.
 
 export const NAJWIEKSZY_PLIK = 1500000;                   // bajty jednego pliku (zapis ma limit 2 MB tekstu)
-export const NAJWIECEJ_BAJTOW_NA_DOBE = 50 * 1024 * 1024; // nowe bajty przyjęte przez Miejsce w jednej dobie UTC
+export const NAJWIECEJ_BAJTOW_NA_DOBE = 50 * 1024 * 1024; // nowe bajty plików i kodu gości przyjęte przez Miejsce w jednej dobie UTC
 // Uczestnicy poza właścicielem dostają razem połowę doby Miejsca, a każdy z nich najwyżej piątą część: jeden agent nie
 // zamknie wgrywania pozostałym, a wszyscy razem nie zamkną go właścicielowi.
 export const NAJWIECEJ_BAJTOW_INNYCH_NA_DOBE = 25 * 1024 * 1024;

@@ -2201,6 +2201,9 @@ export class Srodowisko {
   }
 
   // Kod gościa: niezmienny zapis rodzaju kod/1. Wskazuje go cecha `kod` rzeczy rodzaju gosc/1.
+  // Liczy się do tych samych dobowych granic bajtów co pliki (_granicaBajtow). Do 26 XI 2026 kod nie miał żadnej: jedno
+  // żądanie wnosiło do 2 MB, a bezpiecznik zapisów liczy wiersze, więc uczestnik z kluczem (na podglądzie klucz próbny
+  // jest jawny) mógł pięciuset żądaniami zapełnić bazę Miejsca, której sufit to 1 GB (Gemini Neon, raport Drugiego Świata z 24 XI, pkt 5).
   async kod(kto, tekst, { op, slad = null } = {}) {
     const rola = this.rola(kto);
     if (rola === 'zwiedzajacy') return blad(401, this.powodBrakuPrawa(kto, 'do zapisania kodu'));
@@ -2208,9 +2211,14 @@ export class Srodowisko {
     if (typeof tekst !== 'string' || !tekst.trim()) return blad(400, 'ciało żądania: tekst strony gościa (jeden plik HTML)');
     if (!opKlienta(op)) return blad(400, 'op: w adresie, ?op=<8 do 100 znaków z [A-Za-z0-9_-]>');
     return this._wKolejce(async () => {
+      const przyg = await this.r.przygotujZapis({ rodzaj: 'kod/1', tresc: tekst });
+      if (!przyg.ok) return przyg;
+      const g = this._granicaBajtow(kto, rola, przyg.id, przyg.rozmiar);
+      if (!g.ok) return g;
       const w = await this.r.wykonaj(kto, { op: op + '.kod', co: 'zapisz', rodzaj: 'kod/1', tresc: tekst }, { slad });
       if (!w.ok) return w;
-      return { ok: true, powtorzone: w.powtorzone, zapis: w.zapis ?? w.akt.zapis, adres: '/gosc/' + (w.zapis ?? w.akt.zapis), rozmiar: new TextEncoder().encode(tekst).length };
+      if (w.nowy === true) this._doliczBajty(g.liczniki, przyg.rozmiar);
+      return { ok: true, powtorzone: w.powtorzone, zapis: w.zapis ?? w.akt.zapis, adres: '/gosc/' + (w.zapis ?? w.akt.zapis), rozmiar: przyg.rozmiar };
     });
   }
 
@@ -2226,28 +2234,39 @@ export class Srodowisko {
     if (u8.length > NAJWIEKSZY_PLIK) return blad(413, `plik ma ${u8.length} bajtów, a jeden plik może mieć najwyżej ${NAJWIEKSZY_PLIK}; magazynu na większe rzeczy jeszcze nie ma`);
     if (!opKlienta(op)) return blad(400, 'op: w adresie, ?op=<8 do 100 znaków z [A-Za-z0-9_-]>');
     return this._wKolejce(async () => {
-      // Dobowe granice bajtów: bezpiecznik zapisów liczy wiersze, a jeden wiersz z plikiem waży tyle, co tysiące zwykłych.
-      // Liczą się tylko NOWE zapisy: te same bajty wysłane drugi raz niczego w magazynie nie dokładają, a liczone
-      // pozwalały jednemu agentowi tym samym plikiem pod nowymi op zamknąć wgrywanie całemu Miejscu do północy
-      // (niezależny atak, 18 XI 2026). Trzy granice: całe Miejsce, wszyscy poza właścicielem razem (połowa, więc
-      // właściciel zawsze ma swoją część) i każdy z nich z osobna.
       const tresc = naBase64(u8);
       const przyg = await this.r.przygotujZapis({ rodzaj: 'bajty/1', tresc, prywatne: true });
       if (!przyg.ok) return przyg;
-      const dzien = 'bajty:' + new Date(this.r.teraz()).toISOString().slice(0, 10);
-      const liczniki = [[dzien, NAJWIECEJ_BAJTOW_NA_DOBE, 'to Miejsce przyjęło dziś']];
-      if (rola !== 'wlasciciel') liczniki.push([dzien + ':inni', NAJWIECEJ_BAJTOW_INNYCH_NA_DOBE, 'uczestnicy poza właścicielem wgrali dziś razem'], [dzien + ':' + kto, NAJWIECEJ_BAJTOW_UCZESTNIKA_NA_DOBE, 'wgrałeś dziś']);
-      if (!this._maZapis(przyg.id)) {
-        for (const [klucz, granica, zdanie] of liczniki) {
-          const jest = Number(this.r.meta(klucz)) || 0;
-          if (jest + u8.length > granica) return blad(429, `${zdanie} ${jest} bajtów nowych plików; dobowa granica to ${granica} i chroni magazyn, wraca o północy czasu UTC`);
-        }
-      }
+      const g = this._granicaBajtow(kto, rola, przyg.id, u8.length);
+      if (!g.ok) return g;
       const w = await this.r.wykonaj(kto, { op: op + '.bajty', co: 'zapisz', rodzaj: 'bajty/1', tresc, prywatne: true }, { slad });
       if (!w.ok) return w;
-      if (w.nowy === true) for (const [klucz] of liczniki) this.r.ustawMeta(klucz, String((Number(this.r.meta(klucz)) || 0) + u8.length));
+      if (w.nowy === true) this._doliczBajty(g.liczniki, u8.length);
       return { ok: true, powtorzone: w.powtorzone, zapis: w.zapis ?? w.akt.zapis, rozmiar: u8.length };
     });
+  }
+
+  // Dobowe granice bajtów, wspólne dla plików (bajty/1) i kodu gości (kod/1): bezpiecznik zapisów liczy wiersze, a jeden
+  // wiersz z plikiem albo z kodem waży tyle, co tysiące zwykłych. Liczą się tylko NOWE zapisy: te same bajty wysłane drugi
+  // raz niczego w magazynie nie dokładają, a liczone pozwalały jednemu agentowi tym samym plikiem pod nowymi op zamknąć
+  // wgrywanie całemu Miejscu do północy (niezależny atak, 18 XI 2026). Trzy granice: całe Miejsce, wszyscy poza
+  // właścicielem razem (połowa, więc właściciel zawsze ma swoją część) i każdy z nich z osobna. Oddaje liczniki, którym
+  // _doliczBajty dolicza rozmiar dopiero po zapisie, który naprawdę coś dołożył.
+  _granicaBajtow(kto, rola, idZapisu, rozmiar) {
+    const dzien = 'bajty:' + new Date(this.r.teraz()).toISOString().slice(0, 10);
+    const liczniki = [[dzien, NAJWIECEJ_BAJTOW_NA_DOBE, 'to Miejsce przyjęło dziś']];
+    if (rola !== 'wlasciciel') liczniki.push([dzien + ':inni', NAJWIECEJ_BAJTOW_INNYCH_NA_DOBE, 'uczestnicy poza właścicielem wgrali dziś razem'], [dzien + ':' + kto, NAJWIECEJ_BAJTOW_UCZESTNIKA_NA_DOBE, 'wgrałeś dziś']);
+    if (!this._maZapis(idZapisu)) {
+      for (const [klucz, granica, zdanie] of liczniki) {
+        const jest = Number(this.r.meta(klucz)) || 0;
+        if (jest + rozmiar > granica) return blad(429, `${zdanie} ${jest} bajtów nowych plików i kodu gości; dobowa granica to ${granica} i chroni magazyn, wraca o północy czasu UTC`);
+      }
+    }
+    return { ok: true, liczniki };
+  }
+
+  _doliczBajty(liczniki, rozmiar) {
+    for (const [klucz] of liczniki) this.r.ustawMeta(klucz, String((Number(this.r.meta(klucz)) || 0) + rozmiar));
   }
 
   // Czy ten uczestnik sam wgrał ten zapis: ma przy nim własny akt zapisu. Zapis rodzaju bajty/1 powstaje tylko drzwiami

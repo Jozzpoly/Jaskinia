@@ -300,3 +300,50 @@ test('PL6. wejście po wycinku: spis oddaje kilka rodzajów naraz, po samej nazw
   const roznica = await (await pytanie('/api/srodowisko/spis?odlozone=razem&po=' + akt + '&rodzaje=projekt')).json();
   assert.deepEqual(roznica.rzeczy.map((r) => r.cechy.nazwa), ['Późniejszy']);
 });
+
+test('PL11. kod gościa liczy się do tych samych dobowych granic co pliki: tylko nowy kod, trzy granice, liczniki wspólne z plikami', async () => {
+  const { r, s, ok, bajty } = await swiat(['agent-a', 'agent-b']);
+  const dzien = 'bajty:' + new Date(r.teraz()).toISOString().slice(0, 10);
+  const strona = (n, znak = 'a') => '<!doctype html><title>k</title><p>' + znak.repeat(n) + '</p>';
+  const k1 = strona(40000);
+  const rozmiar = new TextEncoder().encode(k1).length;
+  for (let i = 0; i < 5; i++) ok(await s.kod('agent-a', k1, { op: 'pl11-ten-sam-' + i }));
+  assert.deepEqual([r.meta(dzien), r.meta(dzien + ':inni'), r.meta(dzien + ':agent-a')], [String(rozmiar), String(rozmiar), String(rozmiar)], 'ten sam kod pod pięcioma op liczy się raz');
+  ok(await s.bajty('agent-a', bajty(1000, 71), { op: 'pl11-plik' }));
+  assert.equal(r.meta(dzien + ':agent-a'), String(rozmiar + 1000), 'kod i pliki liczą się do tych samych liczników');
+  // jeden agent przy swojej granicy: jego nowy kod staje, znany kod przechodzi, drugi agent i właściciel nie stają
+  r.ustawMeta(dzien + ':agent-a', String(NAJWIECEJ_BAJTOW_UCZESTNIKA_NA_DOBE - 10));
+  const swoja = await s.kod('agent-a', strona(100, 'b'), { op: 'pl11-ponad-swoja' });
+  assert.equal(swoja.status, 429, JSON.stringify(swoja));
+  assert.match(swoja.blad, /wgrałeś dziś/);
+  assert.match(swoja.blad, /kodu gości/);
+  assert.equal(ok(await s.kod('agent-a', k1, { op: 'pl11-znany-kod' })).zapis.length, 64, 'kod, który już jest, przechodzi także przy granicy');
+  ok(await s.kod('agent-b', strona(100, 'c'), { op: 'pl11-drugi-agent' }));
+  ok(await s.kod('jozz', strona(100, 'd'), { op: 'pl11-wlasciciel-1' }));
+  // wszyscy poza właścicielem przy wspólnej granicy: agenci stają, właściciel nie
+  r.ustawMeta(dzien + ':inni', String(NAJWIECEJ_BAJTOW_INNYCH_NA_DOBE - 10));
+  const wspolna = await s.kod('agent-b', strona(100, 'e'), { op: 'pl11-ponad-wspolna' });
+  assert.equal(wspolna.status, 429, JSON.stringify(wspolna));
+  assert.match(wspolna.blad, /poza właścicielem/);
+  ok(await s.kod('jozz', strona(100, 'f'), { op: 'pl11-wlasciciel-2' }));
+  // granica całego Miejsca zatrzymuje także właściciela, i kod, i plik
+  r.ustawMeta(dzien, String(NAJWIECEJ_BAJTOW_NA_DOBE - 10));
+  const cale = await s.kod('jozz', strona(100, 'g'), { op: 'pl11-ponad-miejsce' });
+  assert.equal(cale.status, 429, JSON.stringify(cale));
+  assert.match(cale.blad, /to Miejsce przyjęło dziś/);
+  assert.equal((await s.bajty('jozz', bajty(100, 72), { op: 'pl11-plik-ponad' })).status, 429, 'plik przy tej samej granicy też staje');
+});
+
+test('PL12. pęknięcie z raportu Neona (24 XI): uczestnik nie zapełni bazy kodem gości; szósty nowy kod po 1,9 MB tego samego dnia dostaje 429, a czytelne zdanie mówi dlaczego', async () => {
+  const { r, s, ok } = await swiat(['agent-a']);
+  const dzien = 'bajty:' + new Date(r.teraz()).toISOString().slice(0, 10);
+  const duzy = (i) => '<!doctype html><title>' + i + '</title><p>' + String(i).repeat(1900000) + '</p>';
+  for (let i = 1; i <= 5; i++) ok(await s.kod('agent-a', duzy(i), { op: 'pl12-duzy-kod-' + i }));
+  const szosty = await s.kod('agent-a', duzy(6), { op: 'pl12-duzy-kod-6' });
+  assert.equal(szosty.status, 429, JSON.stringify({ status: szosty.status, blad: szosty.blad }));
+  assert.match(szosty.blad, /wgrałeś dziś .* bajtów nowych plików i kodu gości; dobowa granica to 10485760/);
+  assert.ok(Number(r.meta(dzien + ':agent-a')) <= NAJWIECEJ_BAJTOW_UCZESTNIKA_NA_DOBE, 'licznik nie przekracza granicy');
+  // przez drzwi HTTP to ta sama odmowa z tym samym kodem odpowiedzi
+  const h = await obsluzSrodowisko(s, new Request('https://proba.example/api/srodowisko/kod?op=pl12-przez-drzwi', { method: 'POST', headers: { 'x-kto': 'agent-a', 'content-type': 'text/html' }, body: duzy(7) }));
+  assert.equal(h.status, 429);
+});
