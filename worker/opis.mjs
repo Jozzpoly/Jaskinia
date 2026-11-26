@@ -495,7 +495,7 @@ export function umowaOkna() {
     '  read     {id, what: "spis", rodzaj?, obszar?, pomin?, po?, odlozone?}   lista rzeczy; rodzaj np. "projekt/1" (z pokoleniem) albo samo "projekt" (wszystkie pokolenia);',
     '                                                    po: numer aktu, wraca tylko to, co zmieniło się po nim (z odlozone: "razem" także rzeczy odłożone po nim);',
     '                                                    wynik niesie akt, do którego doczytano; po "changed" wystarczy zapytać o zmiany po swoim akcie',
-    '  read     {id, what: "rzecz", rzecz: "<id>"}       jedna rzecz z historią',
+    '  read     {id, what: "rzecz", rzecz: "<id>", historia?}   jedna rzecz z historią: najnowsze wersje, domyślnie 50, historia: ile (do 1000)',
     '  read     {id, what: "ksztalty"}                   rodzaje rzeczy z opisem cech',
     '  read     {id, what: "ja"}                         kim jest czytający, jako który gość jesteś otwarty i czy to okno może pisać',
     '  move     {id, move: {co: "poloz"|"odloz"|"przywroc"|"cofnij", rodzaj, cechy, rzecz?, wersja?, obszar?, powod?, do?}, op?}   ruch z okna (tylko okno/3): te same pola co w drzwiach,',

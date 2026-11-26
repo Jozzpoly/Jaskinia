@@ -734,6 +734,7 @@ test('AR3. drzwi mówią to, co robią po Torze 3: trasa rzecz i umowa okna znaj
   assert.match(trasa.opis, /domyślnie 50, najwyżej 1000/);
   assert.match(umowaOkna(), /read rzecz .*historia_wiecej\?/);
   assert.match(umowaOkna(), /historia\?: <ile wersji>/);
+  assert.match(umowaOkna(), /read +\{id, what: "rzecz", rzecz: "<id>", historia\?\}/, 'wiersz żądania też zna historia');
   const k = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'wezel/1', opis: 'Węzeł: leży tam, gdzie jego dom.', lezy_z: 'dom', cechy: { nazwa: { typ: 'tekst', wymagana: true }, dom: { typ: 'rzecz', wymagana: true } } } });
   assert.equal(k.ok, true, JSON.stringify(k));
   const strona = stronaRzeczy(s, k.rzecz, { kto: 'jozz' });
