@@ -721,3 +721,22 @@ test('AR2. historia rzeczy z limitem: trasa /api/srodowisko/rzecz zwraca domyśl
   assert.equal(odp100.historia_wiecej, undefined);
 });
 
+// Druga linia łatki Toru 3 (Opus Code, 27 XI 2026): łatka zmieniła to, co oddają drzwi, a ich opis został stary
+// (uwaga Fable). Ten sprawdzian pilnuje, żeby opis trasy i umowa okna mówiły o limicie historii, a kształt kształtów
+// o lezy_z, którego dopisku żaden wcześniejszy sprawdzian nie łapał (mutacja zdejmująca go przechodziła wszystkie).
+test('AR3. drzwi mówią to, co robią po Torze 3: trasa rzecz i umowa okna znają limit historii i historia_wiecej, a kształt kształtów opisuje lezy_z', async () => {
+  const { czasowniki } = await import('./opis.mjs');
+  const { s } = await swiat();
+  const trasa = czasowniki(s).find((c) => c.nazwa === 'rzecz');
+  assert.ok(trasa, 'trasa rzecz stoi w spisie czasowników');
+  assert.match(trasa.ktoredy, /historia=/);
+  assert.match(trasa.wynik, /historia_wiecej\?/);
+  assert.match(trasa.opis, /domyślnie 50, najwyżej 1000/);
+  assert.match(umowaOkna(), /read rzecz .*historia_wiecej\?/);
+  assert.match(umowaOkna(), /historia\?: <ile wersji>/);
+  const k = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'wezel/1', opis: 'Węzeł: leży tam, gdzie jego dom.', lezy_z: 'dom', cechy: { nazwa: { typ: 'tekst', wymagana: true }, dom: { typ: 'rzecz', wymagana: true } } } });
+  assert.equal(k.ok, true, JSON.stringify(k));
+  const strona = stronaRzeczy(s, k.rzecz, { kto: 'jozz' });
+  assert.match(strona, /lezy_z: dom/);
+  assert.doesNotMatch(strona, /lezy_z \[cecha spoza kształtu\]/, 'kształt kształtów zna cechę lezy_z');
+});
