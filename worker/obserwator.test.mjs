@@ -1352,3 +1352,20 @@ test('10e. otwarta strona z kanałem na żywo trzyma budzik na chodzie także po
   await zPodstawionymGithubem(g, () => obiekt.alarm());
   assert.equal(st.ustawienia.length, 0, 'strona zamknięta, a doba ciszy minęła: budzik zasypia');
 });
+
+// Uwaga Fable z drugiej linii (27 XI 2026): gałąź błędu nie miała sprawdzianu, a mutacja `catch { spi = true; }`
+// przechodziła cały plik. Wyjątek przy odczycie obecności ma zostawić budzik na chodzie, bo następny alarm ustawia się zawsze.
+test('10f. wyjątek przy odczycie obecności zostawia budzik na chodzie także po dobie: następny alarm ustawia się zawsze', async () => {
+  const g = github({ repos: [repoGH(11, 'r1')], galezie: { r1: [galGH('main')] } });
+  const { obiekt, st } = obiektZAlarmem({ env: { OBSERWATOR: 'tak' } });
+  let t = Date.now();
+  obiekt.rdzen.teraz = () => t;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  const zwykle = obiekt.rdzen.meta.bind(obiekt.rdzen);
+  obiekt.rdzen.meta = (k) => { if (k === 'miejsce:ostatnia_obecnosc') throw new Error('odczyt obecności nie wyszedł'); return zwykle(k); };
+  obiekt.ostatniaObecnosc = 0;
+  t += 25 * 60 * MINUTA;
+  st.ustawienia.length = 0;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  assert.equal(st.ustawienia.length, 1, 'bez wiedzy o obecności budzik nie zasypia');
+});
