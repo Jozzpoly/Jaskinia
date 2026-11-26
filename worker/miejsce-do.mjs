@@ -21,7 +21,9 @@ const MINUTA_MS = 60 * 1000;
 // Plik starej Jaskini zmienia się zwykle dwa razy na dobę: gdy koło gałęzi jest domknięte i nic się nie zmieniło,
 // zaglądamy do niego co godzinę, a nie co kilka minut.
 const SPOKOJNE_KOLO_MIN = 60;
+const SEN_OBSERWATORA_MS = 24 * 60 * MINUTA_MS; // po dobie bez żadnego żądania i otwartego gniazda budzik zasypia do następnego wejścia (poz. 201)
 const ADRES_MIEJSCA = 'miejsce:adres';
+const OSTATNIA_OBECNOSC = 'miejsce:ostatnia_obecnosc';
 const odmowa = (o) => new Response(JSON.stringify(o, null, 2), { status: o.status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 
 export class Miejsce {
@@ -82,6 +84,14 @@ export class Miejsce {
   // Pod jakim adresem stoi to Miejsce. Alarm nie ma żądania, z którego dałoby się to odczytać, więc adres z ostatniego
   // wejścia zostaje w zapisie (jeden zapis, gdy się zmieni).
   _zapamietajAdres(request) {
+    const teraz = this.rdzen.teraz();
+    if (!this.ostatniaObecnosc || teraz - this.ostatniaObecnosc >= 15 * MINUTA_MS) {
+      this.ostatniaObecnosc = teraz;
+      try {
+        const wMeta = Number(this.rdzen.meta(OSTATNIA_OBECNOSC)) || 0;
+        if (teraz - wMeta >= 15 * MINUTA_MS) this.rdzen.ustawMeta(OSTATNIA_OBECNOSC, String(teraz));
+      } catch { /* obecność to wygoda dla uśpienia alarmu */ }
+    }
     let host = null;
     try { host = new URL(request.headers.get('x-origin') || request.url).host.toLowerCase(); } catch { /* bez adresu zostaje poprzedni */ }
     if (!host || host === this.host) return;
@@ -168,8 +178,14 @@ export class Miejsce {
       // to, co obserwator przyniósł, otwarte strony widzą od razu, tak jak ruch ręki albo agenta
       try { this._rozglosZmiane(przed); } catch { /* rozgłoszenie to wygoda */ }
       this.budzet.zamknij(znacznik);
-      const co = rzadko ? Math.max(this._coMinut(), SPOKOJNE_KOLO_MIN) : this._coMinut();
-      try { await this.ctx.storage?.setAlarm?.(Date.now() + co * MINUTA_MS); } catch { /* następne wejście ustawi alarm od nowa */ }
+      const teraz = this.rdzen.teraz();
+      const ost = this.ostatniaObecnosc || Number(this.rdzen.meta(OSTATNIA_OBECNOSC)) || 0;
+      if (ost > 0 && teraz - ost > SEN_OBSERWATORA_MS && this._gniazda().length === 0) {
+        this.alarmSprawdzony = false;
+      } else {
+        const co = rzadko ? Math.max(this._coMinut(), SPOKOJNE_KOLO_MIN) : this._coMinut();
+        try { await this.ctx.storage?.setAlarm?.(Date.now() + co * MINUTA_MS); } catch { /* następne wejście ustawi alarm od nowa */ }
+      }
     }
   }
 

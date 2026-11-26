@@ -673,3 +673,51 @@ test('ZS1. obudzone Miejsce nie pyta bazy o każde ziarno z osobna: ten sam zasi
   assert.equal(s.spis({ rodzaj: 'projekt/1', gdzie: { nazwa: 'Projekt liczony funkcją' }, limit: 1 })[0].cechy.opis, 'druga wersja');
   assert.deepEqual(await s.zasiej(zFunkcja()), []);
 });
+
+test('AR1. indeks złożony rzeczy_rodzaj (rodzaj, odlozone, zmieniono DESC, id): przegląd rodzaju nie sortuje w pamięci (brak TEMP B-TREE) i migruje stary jednokolumnowy indeks', async () => {
+  const sql = sqlZNode();
+  const r = new Rdzen(sql, { wlasciciel: 'jozz' });
+  // Symulujemy bazę ze starym jednokolumnowym indeksem rzeczy_rodzaj
+  sql.exec(`CREATE TABLE IF NOT EXISTS rzeczy (id TEXT PRIMARY KEY, rodzaj TEXT NOT NULL, obszar TEXT, zapis TEXT NOT NULL, akt INTEGER NOT NULL, numer INTEGER NOT NULL DEFAULT 1, odlozone INTEGER NOT NULL DEFAULT 0, szukane TEXT NOT NULL DEFAULT '', utworzyl TEXT NOT NULL, utworzono INTEGER NOT NULL, zmienil TEXT NOT NULL, zmieniono INTEGER NOT NULL)`);
+  sql.exec(`CREATE INDEX rzeczy_rodzaj ON rzeczy (rodzaj)`);
+  const s = new Srodowisko(r);
+  void s;
+  const def = sql.exec(`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'rzeczy_rodzaj'`).toArray()[0];
+  assert.match(String(def && def.sql), /zmieniono\s+DESC/i, 'stary indeks został zastąpiony indeksem złożonym ze zmieniono DESC');
+  const plan = sql.exec(`EXPLAIN QUERY PLAN SELECT r.*, z.tresc FROM rzeczy r JOIN zapisy z ON z.id = r.zapis WHERE r.odlozone = 0 AND r.rodzaj = ? ORDER BY r.zmieniono DESC, r.id LIMIT 50`, 'projekt/1').toArray();
+  const opisPlanu = plan.map((w) => w.detail).join(' | ');
+  assert.match(opisPlanu, /USING INDEX rzeczy_rodzaj/);
+  assert.doesNotMatch(opisPlanu, /USE TEMP B-TREE/i, 'kolejność idzie prosto z indeksu rzeczy_rodzaj bez sortowania w pamięci');
+});
+
+test('AR2. historia rzeczy z limitem: trasa /api/srodowisko/rzecz zwraca domyślnie 50 najnowszych wersji z zachowaniem ich numerów i znacznikiem historia_wiecej', async () => {
+  const { s } = await swiat();
+  const zap = (sciezka, { kto = 'jozz' } = {}) => obsluzSrodowisko(s, new Request('https://przyklad.test' + sciezka, { headers: { 'x-kto': kto } }), { podglad: true });
+  const p0 = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'P-0' } });
+  assert.equal(p0.ok, true);
+  const id = p0.rzecz;
+  let aktWersji = p0.wersja;
+  for (let i = 1; i < 65; i++) {
+    const w = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'projekt/1', rzecz: id, wersja: aktWersji, cechy: { nazwa: 'P-' + i } });
+    assert.equal(w.ok, true, JSON.stringify(w));
+    aktWersji = w.wersja;
+  }
+  // Pełna historia bez limitu nadal ma wszystkie 65 wersji (1..65)
+  const pelna = s.historia(id);
+  assert.equal(pelna.length, 65);
+  assert.equal(pelna[0].numer, 1);
+  assert.equal(pelna[64].numer, 65);
+  // Domyślny odczyt przez drzwi HTTP oddaje 50 najnowszych wersji (numery 16..65) i historia_wiecej: true
+  const odp50 = await (await zap('/api/srodowisko/rzecz?id=' + id)).json();
+  assert.equal(odp50.ok, true);
+  assert.equal(odp50.historia.length, 50);
+  assert.equal(odp50.historia[0].numer, 16);
+  assert.equal(odp50.historia[49].numer, 65);
+  assert.equal(odp50.historia_wiecej, true);
+  // Jawne ?historia=100 oddaje wszystkie 65 wersji bez historia_wiecej
+  const odp100 = await (await zap('/api/srodowisko/rzecz?id=' + id + '&historia=100')).json();
+  assert.equal(odp100.historia.length, 65);
+  assert.equal(odp100.historia[0].numer, 1);
+  assert.equal(odp100.historia_wiecej, undefined);
+});
+

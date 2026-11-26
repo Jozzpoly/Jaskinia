@@ -1267,3 +1267,51 @@ test('G9. pelny: prawda tylko dla spójnego estate.coverage, równej liczby prze
   const z2 = kopia(PROBKA); z2.repos.push({ ...kopia(z2.repos[0]), name: 'Pryw', private: true });
   assert.equal((await czytaj(z2)).pelny, true);
 });
+
+test('F4c. brak pętli ping-ponga między API+plik a plikiem (403): strona obecna tylko w pliku nie tworzy nowej wersji przy przemiennych obejściach', async () => {
+  const { s } = await swiat();
+  // ReflexBrain-Lab w PROBKA ma pages ("https://jozzpoly.github.io/ReflexBrain-Lab/"), a w API dajemy has_pages: false
+  const g = github({
+    repos: [repoGH(11, 'ReflexBrain-Lab', { description: 'opis z API', pushed_at: '2026-11-10T10:00:00Z' })],
+    galezie: { 'ReflexBrain-Lab': [galGH('main', '373bb40aaaaaa')] },
+  });
+  // 1. Obejście API + plik
+  await zBiblioteka(s, siec(g), { teraz: T0 });
+  const r1 = repoN(s, ZREFLEX);
+  assert.equal(r1.cechy.strona, undefined, 'z API nie ma strony');
+  assert.equal(r1.numer, 1);
+  // 2. Obejście z samego pliku (API = 403): nie dokłada strona z pliku na nowszą rzecz z API
+  g.lista = 403;
+  const w2 = await zBiblioteka(s, siec(g), { teraz: T0 + 30 * MINUTA });
+  assert.equal(w2.zrodlo, 'plik');
+  const r2 = repoN(s, ZREFLEX);
+  assert.equal(r2.cechy.strona, undefined, 'plik nie dołożył strona na rzecz z API');
+  assert.equal(r2.numer, 1, 'brak nowej wersji przy przejściu API -> plik (403)');
+  // 3. Powrót API + plik: zero nowych wersji
+  g.lista = null;
+  const w3 = await zBiblioteka(s, siec(g), { teraz: T0 + 60 * MINUTA });
+  assert.equal(w3.zrodlo, 'api');
+  assert.equal(repoN(s, ZREFLEX).numer, 1, 'brak nowej wersji przy powrocie plik -> API');
+});
+
+test('10c. alarm zasypia po 24h bez żadnego żądania i otwartego gniazda (potrzeba 201), a kolejne wejście budzi go na nowo', async () => {
+  const g = github({ repos: [repoGH(11, 'r1')], galezie: { r1: [galGH('main')] } });
+  const { obiekt, st } = obiektZAlarmem({ env: { OBSERWATOR: 'tak' } });
+  const wejdz = (sciezka = '/co-tu-jest') => obiekt.fetch(new Request('https://x.test' + sciezka));
+  assert.equal((await wejdz()).status, 200);
+  assert.equal(st.ustawienia.length, 1, 'pierwsze wejście ustawiło alarm');
+  // Symulujemy upływ ponad 24h od ostatniej obecności
+  const dobaMs = 24 * 60 * MINUTA;
+  const dawno = Date.now() - dobaMs - 5 * MINUTA;
+  obiekt.ostatniaObecnosc = dawno;
+  obiekt.rdzen.ustawMeta('miejsce:ostatnia_obecnosc', String(dawno));
+  st.ustawienia.length = 0;
+  st.alarm = null;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  assert.equal(st.ustawienia.length, 0, 'po 24h ciszy alarm nie planuje kolejnego wybudzenia');
+  assert.equal(obiekt.alarmSprawdzony, false, 'flaga alarmu zresetowana pod kolejne wejście');
+  // Kolejne wejście człowieka lub agenta budzi obserwatora na nowo
+  assert.equal((await wejdz()).status, 200);
+  assert.equal(st.ustawienia.length, 1, 'nowe wejście ponownie uruchamia budzik');
+});
+
