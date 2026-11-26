@@ -239,6 +239,48 @@ test('strony tekstem: rzecz, rodzaj, lista, umowa okna', async () => {
   assert.match(umowaOkna(), /NAJMNIEJSZY DZIAŁAJĄCY GOŚĆ/);
 });
 
+test('umowa okna opisuje program wejścia: play i record od gospodarza, played i recorded od gościa, umie w hello (A/B, 21 XI 2026)', () => {
+  const u = umowaOkna();
+  // gość, który to umie (JV Web), mówi to w hello; gospodarz bez tego pola o nic nie prosi
+  const ma = (tekst) => assert.ok(u.includes(tekst), 'umowa okna mówi: ' + tekst);
+  ma('umie: ["play", "record"] mówi, co zrobisz na prośbę gospodarza');
+  assert.match(u, /\n {2}play {5}\{id, program\} +przejedź ten program wejścia od startu/);
+  assert.match(u, /\n {2}record {3}\{id\} +oddaj jako program/);
+  assert.match(u, /\n {2}played {3}\{id, ok: true, przebieg\} albo \{id, ok: false, error\}/);
+  assert.match(u, /\n {2}recorded \{id, ok: true, program, obciete\}/);
+  ma('PROGRAM WEJŚCIA (play, record)');
+  // obietnice, na których stoi porównanie: ten sam start, stały krok, żywe wejście wyłączone, limit po stronie gospodarza
+  ma('stawia się od nowa na starcie');
+  ma('żywe wejście (klawisze, palec) w tym czasie nie działa');
+  ma('czeka na played z własnym limitem');
+  ma('{schemat: "wejscie/1"');
+  ma('format przebieg/1');
+  ma('równe skróty z dwóch okien znaczą przejazd bit w bit taki sam');
+  // druga linia Opusa czatu na 89: przechył, z którego gospodarz mówi o przewrotce, granice programu, nagranie bez pokręteł
+  ma('przechyl_max_st, t_przechyl_max');
+  ma('0 stoi, 90 na boku, 180 na dachu');
+  ma('Granice: najwyżej 5 minut (18 000 kroków), 20 000 odcinków, nazwa do 80 znaków');
+  ma('nie pokrętła: puszczone przez play jedzie dokładnie tak samo przy tych samych pokrętłach');
+  // świat mówi sam za siebie (25 XI; list Gemini Neona i głos Fable po przerwie): schematy w hello, serie nazwane przez świat
+  ma('programy: ["wejscie/1"] mówi, jakie schematy programu grasz; gospodarz wysyła play tylko z takim');
+  ma('serie: [{klucz, nazwa, jednostka}], po jednej na kolumnę');
+  ma('Gospodarz porównuje i rysuje tylko serie, które oba okna nazwały tym samym kluczem i tą samą jednostką, nazwą z okna A');
+  // uwagi Opusa czatu do 1166a32 (25 XI): jednostka w „tak samo”, czas jako seria t, cisza o przechyle zamiast języka auta, warunki
+  ma('ten sam klucz w innej jednostce pokazuje bez porównania');
+  ma('Seria o kluczu t to czas od startu programu w sekundach (jednostka s)');
+  ma('świat, który ich nie poda, nic o nich nie usłyszy');
+  assert.ok(!u.includes('świat nie podaje przechyłu'), 'gospodarz nie mówi do świata językiem auta');
+  ma('warunki: co świat miał ustawione w chwili startu programu');
+  ma('nie przebiera się za auto');
+  ma('nowy poprawny play przerywa');
+  // przykład z umowy to cała wiadomość, z polem jaskinia (bez niego świat milczy), i program, który da się przeczytać
+  const linia = u.split('\n').find((l) => l.startsWith('Przykład') && l.includes('type: "play"'));
+  const przyklad = JSON.parse(linia.slice(linia.indexOf('{')).replace(/([{,]\s*)([a-z_]+):/g, '$1"$2":'));
+  assert.equal(przyklad.jaskinia, 1, 'przykład skopiowany dosłownie dostaje odpowiedź');
+  assert.equal(przyklad.program.schemat, 'wejscie/1');
+  assert.ok(przyklad.program.odcinki.length >= 2);
+});
+
 test('spis da się odbudować z samych głów i dziennika', async () => {
   const { s } = await swiat();
   const p = await s.ruch('jozz', { op: op(), co: 'poloz', rodzaj: 'projekt/1', cechy: { nazwa: 'P' } });
