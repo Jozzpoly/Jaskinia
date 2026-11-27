@@ -69,8 +69,8 @@ test('OK4. okno jest osobiste: kładzie je i zmienia tylko ten, czyje jest, a st
     const w = await okno('jozz', op, czyje, {}, { gosc: gosc.id });
     assert.equal(w.status, 403, JSON.stringify(w));
   }
-  // następne pokolenie kształtu okna ustala tylko właściciel
-  const pokolenie = ok(await s.ruch('agent-a', { op: 'ok4-okno-2-ksztalt', co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'okno/2', tytul: 'nazwa', opis: 'okno bez właściciela', cechy: { nazwa: { typ: 'tekst' } } } }));
+  // następne pokolenie kształtu okna ustala tylko właściciel (od 27 XI 2026 okno/2 przychodzi z zasiewu, więc następnym jest okno/3)
+  const pokolenie = ok(await s.ruch('agent-a', { op: 'ok4-okno-3-ksztalt', co: 'poloz', rodzaj: 'ksztalt/1', cechy: { dla: 'okno/3', tytul: 'nazwa', opis: 'okno bez właściciela', cechy: { nazwa: { typ: 'tekst' } } } }));
   assert.equal(pokolenie.skutek, 'propozycja');
   // strona: wraca samo tylko okno, które zapisałem sam, i tylko do narzędzia w wersji, którą otworzyła moja ręka
   const g = { ...s.rzecz(gosc.id), tytul: 'Słowa' };

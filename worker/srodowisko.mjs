@@ -1754,8 +1754,12 @@ export class Srodowisko {
     const { akt, widok } = ch.cechy;
     if (!Number.isInteger(akt) || akt < 0 || akt > this.ostatniNr()) return blad(422, 'zapisany układ wskazuje akt, którego w tym Miejscu nie ma');
     const polozenia = this.wszystkie({ rodzaj: 'miejsce', gdzie: { widok }, odlozone: 'razem' });
-    if (polozenia.length > NAJWIECEJ_W_GESCIE) return blad(413, `widok ma ${polozenia.length} położeń, a jedną czynnością wraca najwyżej ${NAJWIECEJ_W_GESCIE}`);
-    const cele = [], stany = this._stanyNa(polozenia.map((p) => p.id), akt);
+    // Okna płótna (okno/2) wracają razem z kartami, ale tylko okna tego, kto przywraca: cudze okno zmienia tylko jego
+    // właściciel, a jedna rzecz bez skutku odrzuciłaby cały gest (_zapiszWiele). Powrót wołany z narzędzia w oknie nie
+    // rusza okien wcale, bo okna otwiera i przesuwa ręka, nie inne okno (reguła osobistego okna w ocen()).
+    const okna = przezZ(slad) ? [] : this.wszystkie({ rodzaj: 'okno/2', gdzie: { widok, czyje: kto } });
+    if (polozenia.length + okna.length > NAJWIECEJ_W_GESCIE) return blad(413, `widok ma ${polozenia.length} położeń${okna.length ? ` i ${okna.length} Twoich okien` : ''}, a jedną czynnością wraca najwyżej ${NAJWIECEJ_W_GESCIE}`);
+    const cele = [], stany = this._stanyNa([...polozenia, ...okna].map((p) => p.id), akt);
     for (const p of polozenia) {
       const rz = widzi(p.id);
       if (!rz) continue;
@@ -1765,6 +1769,28 @@ export class Srodowisko {
       if (!d) { if (!rz.odlozone) cele.push({ rz, rodzaj: rz.rodzaj, obszar: rz.obszar, cechy: rz.cechy, odlozone: true, powod: 'nie było tego położenia w przywróconym układzie' }); continue; }
       if (d.rodzaj === rz.rodzaj && d.odlozone === !!rz.odlozone && JSON.stringify(d.cechy) === JSON.stringify(rz.cechy)) continue;
       cele.push({ rz, ...d, przed: this._przedDawnej(rz, d) });
+    }
+    // Przywrócenie układu nigdy nie zamyka okna (atak Fable na kształt okna płótna, jego § 14, 27 XI 2026). Zapisany układ
+    // jest rodzajem układu, więc tam, gdzie agentom wolno porządkować, założy go także agent, z dowolnym aktem; okno
+    // potraktowane jak położenie karty zostałoby wtedy odłożone, a strona zamknęłaby świat otwarty po tamtej chwili.
+    // Dlatego okno, którego wtedy nie było (albo było odłożone), zostaje, jak jest. Okno, które było, dostaje tamto
+    // położenie, rozmiar i zwinięcie, a otwarte jest, gdy było otwarte wtedy albo jest teraz. Zamknięte od tamtej pory
+    // może więc wrócić, ale stronę otwiera wyłącznie reguła oknoWracaSamo (public/okna.mjs): własne okno, w tej wersji
+    // narzędzia, którą otworzyła ręka. Dlatego okno otwarte teraz zostaje przy dzisiejszej wersji narzędzia, a zamknięte
+    // dostaje tamtą: po zmianie narzędzia samo się nie otworzy.
+    for (const o of okna) {
+      const rz = widzi(o.id);
+      if (!rz) continue;
+      const d = stany.get(rz.id) || null;
+      if (!d || d.odlozone || d.rodzaj !== rz.rodzaj) continue;
+      if (!widzi.dawna(d)) return blad(409, 'zapisany układ sięga chwili, w której te położenia leżały poza tym, do czego masz wstęp; nie przywracam niczego');
+      const teraz = rz.cechy, wtedy = d.cechy || {};
+      const cechy = { ...teraz };
+      for (const k of ['x', 'y', 'szer', 'wys', 'zwiniete']) { if (wtedy[k] === undefined) delete cechy[k]; else cechy[k] = wtedy[k]; }
+      cechy.otwarte = teraz.otwarte === true || wtedy.otwarte === true;
+      if (teraz.otwarte !== true) { if (wtedy.wersja_goscia === undefined) delete cechy.wersja_goscia; else cechy.wersja_goscia = wtedy.wersja_goscia; }
+      if (JSON.stringify(cechy) === JSON.stringify(teraz)) continue;
+      cele.push({ rz, rodzaj: rz.rodzaj, obszar: rz.obszar, cechy, przed: this._przedDawnej(rz, d) });
     }
     return this._zapiszWiele(kto, c.op, slad, cele, { skutek: 'przywrocony-uklad', chwila: ch.id, akt }, { publikuj: c.publikuj === true, opis: 'powrót do tego układu pokazałby coś większemu gronu niż dotąd' });
   }
