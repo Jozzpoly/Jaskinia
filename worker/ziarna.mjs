@@ -356,6 +356,25 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
         zwiniete: { typ: 'tak-nie' },
         x: { typ: 'liczba' }, y: { typ: 'liczba' }, szer: { typ: 'liczba' }, wys: { typ: 'liczba' },
       } }),
+    // Okno na płótnie, pokolenie 2 (Opus Code, 27 XI 2026; tor 1, atak Fable na kształt w jego § 14). Pokolenie 1 zostaje
+    // dla strony gospodarza: dopisanie widoku i roli do jego klucza zmieniłoby tożsamość jego okien (klucz liczy ją
+    // z listy wartości), a cecha klucza musi być wymagana, więc stare okna przestałyby przechodzić sprawdzenie.
+    k('okno-2', { dla: 'okno/2', tytul: 'nazwa', klucz: ['czyje', 'gosc', 'widok', 'rola'], uklad: true, lezy_z: 'widok', opis: 'Okno na płótnie: narzędzie otwarte przez jednego uczestnika na jednym widoku. Mówi, które narzędzie, na którym płótnie i w której roli, czy jest otwarte i gdzie leży. Położenie i rozmiar to części obszaru okien (od 0 do 1), więc na innym ekranie okno staje w tych samych proporcjach; to, co wychodzi poza ekran, strona przycina. Okno leży tam, gdzie jego widok, a jego położenie to układanie, nie treść. Zapisany układ (chwila) przywraca położenia okien tego, kto przywraca, i może okno otworzyć, ale nigdy go nie zamyka. Okna strony gospodarza zostają w pokoleniu 1.',
+      cechy: {
+        nazwa: { typ: 'tekst', wymagana: true },
+        czyje: { typ: 'tekst', wymagana: true, opis: 'imię uczestnika, którego to okno; okno kładzie i zmienia tylko on sam, swoim kluczem' },
+        gosc: { typ: 'rzecz', rodzaj: 'gosc', wymagana: true, opis: 'narzędzie otwarte w tym oknie' },
+        widok: { typ: 'rzecz', rodzaj: 'widok/1', wymagana: true, opis: 'płótno, na którym leży okno' },
+        rola: { typ: 'wybor', wymagana: true, wartosci: ['A', 'B', '2', '3', '4', '5', '6', '7', '8', '9'], opis: 'A to pierwsze okno tego narzędzia na tym płótnie, B okno pary porównania, kolejne kopie numerem od 2 do 9 (najmniejszy wolny). Ten sam numer wraca z ostatnim położeniem tego numeru, a dwie karty, które w tej samej chwili wezmą ten sam numer, dzielą jedno okno i wygrywa ostatni zapis.' },
+        z_czym: { typ: 'rzecz', opis: 'rzecz, przy której narzędzie otwarto' },
+        otwarte: { typ: 'tak-nie', wymagana: true },
+        wersja_goscia: { typ: 'liczba', opis: 'wersja narzędzia z chwili otwarcia; strona wraca do okna sama tylko wtedy, gdy narzędzie od tego czasu się nie zmieniło' },
+        zwiniete: { typ: 'tak-nie' },
+        x: { typ: 'liczba', opis: 'lewa krawędź jako część szerokości obszaru okien, od 0 do 1' },
+        y: { typ: 'liczba', opis: 'górna krawędź jako część wysokości obszaru okien (między paskiem u góry a dokiem), od 0 do 1' },
+        szer: { typ: 'liczba', opis: 'szerokość jako część szerokości obszaru okien, od 0 do 1' },
+        wys: { typ: 'liczba', opis: 'wysokość jako część wysokości obszaru okien, od 0 do 1' },
+      } }),
     k('plik', { dla: 'plik/1', tytul: 'nazwa', opis: 'Plik: duża treść (krój pisma, obraz, dźwięk), której bajty leżą poza rzeczą jako niezmienny zapis. Rzecz niesie wskazanie: odcisk zapisu (cecha tresc), typ i rozmiar. Treść pliku jest niezmienna: nowe bajty to nowy plik, zmieniać można nazwę i opis; kto wskazuje plik razem z odciskiem, dostaje zawsze te same bajty, także po odłożeniu pliku. Bajty: GET /api/srodowisko/bajty?rzecz=<id>.',
       cechy: {
         nazwa: { typ: 'tekst', wymagana: true },
