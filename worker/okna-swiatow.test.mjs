@@ -83,3 +83,14 @@ test('OS7. zablokowana pamięć przeglądarki nie zatrzymuje warstwy: wyjątek p
   const zly = M.pamiecPrzegladarki(undefined, magazyn({ 'jaskinia:okna:uklad:v1': '{niejson' }));
   assert.equal(zly.czytaj('/gosc/abc'), null);
 });
+
+test('OS8. kaskada liczy tylko okna już przyjęte: dwa okna położone naraz (po przeładowaniu) stają jedno pod drugim, a nie jedno na drugim', () => {
+  // jeden przebieg przyjmowania, jak w warstwie: okno dostaje znacznik przyjęcia, zanim policzy, ile leży przed nim
+  const partia = [{ hidden: false, dataset: {} }, { hidden: false, dataset: {} }, { hidden: false, dataset: {} }];
+  const kroki = partia.map((s) => { s.dataset.swobodne = '1'; return M.ileOkienPrzedNim(partia, s); });
+  assert.deepEqual(kroki, [0, 1, 2], 'każde następne okno o jeden krok kaskady dalej');
+  // okno schowane (zwinięte do doku) i okno spoza warstwy nie liczą się
+  const stol = [{ hidden: false, dataset: { swobodne: '1' } }, { hidden: true, dataset: { swobodne: '1' } }, { hidden: false, dataset: {} }];
+  const nowe = { hidden: false, dataset: { swobodne: '1' } };
+  assert.equal(M.ileOkienPrzedNim([...stol, nowe], nowe), 1);
+});
