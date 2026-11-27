@@ -225,6 +225,7 @@ export function ziarna({ wlasciciel, uczestnicy = [] }) {
         tytul: { typ: 'tekst', opis: 'nazwa cechy, która jest nazwą rzeczy; domyślnie cecha nazwa' },
         klucz: { typ: 'lista', z: 'tekst', opis: 'nazwy cech, z których liczy się tożsamość rzeczy: druga rzecz o tym samym kluczu nie powstanie' },
         uklad: { typ: 'tak-nie', opis: 'true, gdy rzeczy tego rodzaju są układaniem, a nie treścią; ustala to tylko właściciel' },
+        lezy_z: { typ: 'tekst', opis: 'nazwa wymaganej cechy typu rzecz: rzecz tego rodzaju leży zawsze w obszarze rzeczy, na którą wskazuje ta cecha; ustala to tylko właściciel' },
       } }),
     k('obszar', { dla: 'obszar/1', tytul: 'nazwa', opis: 'Obszar: miejsce z własnymi ustawieniami. Rzecz leży w jednym obszarze, obszar może leżeć w obszarze. Pole na Starcie to obszar z wyglądem.',
       cechy: {

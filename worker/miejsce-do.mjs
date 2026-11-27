@@ -21,7 +21,9 @@ const MINUTA_MS = 60 * 1000;
 // Plik starej Jaskini zmienia się zwykle dwa razy na dobę: gdy koło gałęzi jest domknięte i nic się nie zmieniło,
 // zaglądamy do niego co godzinę, a nie co kilka minut.
 const SPOKOJNE_KOLO_MIN = 60;
+const SEN_OBSERWATORA_MS = 24 * 60 * MINUTA_MS; // po dobie bez żadnego żądania i otwartego gniazda budzik zasypia do następnego wejścia (poz. 201)
 const ADRES_MIEJSCA = 'miejsce:adres';
+const OSTATNIA_OBECNOSC = 'miejsce:ostatnia_obecnosc';
 const odmowa = (o) => new Response(JSON.stringify(o, null, 2), { status: o.status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 
 export class Miejsce {
@@ -87,6 +89,21 @@ export class Miejsce {
     if (!host || host === this.host) return;
     this.host = host;
     try { if (this.rdzen.meta(ADRES_MIEJSCA) !== host) this.rdzen.ustawMeta(ADRES_MIEJSCA, host); } catch { /* adres to wygoda dla alarmu */ }
+  }
+
+  // Ślad ostatniego ważnego wejścia (co najwyżej raz na 15 minut): używany wyłącznie do uśpienia budzika obserwatora
+  // po 24h ciszy. Pisany tylko tam, gdzie obserwator ma wstęp, po sprawdzeniu sesji i gdy budżet zapisów nie jest
+  // przekroczony (druga linia Neona, 27 XI 2026).
+  _odnotujObecnosc() {
+    if (!this._wolnoObserwatorowi()) return; // obecność służy wyłącznie uśpieniu budzika
+    const teraz = this.rdzen.teraz();
+    if (this.ostatniaObecnosc && teraz - this.ostatniaObecnosc < 15 * MINUTA_MS) return;
+    if (this.budzet.przekroczony()) return;
+    this.ostatniaObecnosc = teraz;
+    try {
+      const wMeta = Number(this.rdzen.meta(OSTATNIA_OBECNOSC)) || 0;
+      if (teraz - wMeta >= 15 * MINUTA_MS) this.rdzen.ustawMeta(OSTATNIA_OBECNOSC, String(teraz));
+    } catch { /* obecność to wygoda dla uśpienia alarmu */ }
   }
 
   _host() {
@@ -167,9 +184,24 @@ export class Miejsce {
     } finally {
       // to, co obserwator przyniósł, otwarte strony widzą od razu, tak jak ruch ręki albo agenta
       try { this._rozglosZmiane(przed); } catch { /* rozgłoszenie to wygoda */ }
+      // Doba ciszy usypia budzik (poz. 201). Miejsce bez zapisu obecności (nikt nie wszedł od wdrożenia tej zasady) liczy
+      // dobę od pierwszego alarmu: inaczej nie zasnąłby budzik właśnie tego Miejsca, którego nikt nie odwiedza (uwaga
+      // Fable, 27 XI 2026). Błąd przy obecności zostawia budzik na chodzie, bo następny alarm ma się ustawić zawsze.
+      // Zapis obecności stoi przed zamknięciem budżetu, żeby wliczył się do kosztu tego obudzenia.
+      let spi = false;
+      try {
+        const teraz = this.rdzen.teraz();
+        let ost = this.ostatniaObecnosc || Number(this.rdzen.meta(OSTATNIA_OBECNOSC)) || 0;
+        if (!ost) { ost = teraz; this.ostatniaObecnosc = teraz; this.rdzen.ustawMeta(OSTATNIA_OBECNOSC, String(teraz)); }
+        spi = teraz - ost > SEN_OBSERWATORA_MS && this._gniazda().length === 0;
+      } catch { /* budzik zostaje na chodzie */ }
       this.budzet.zamknij(znacznik);
-      const co = rzadko ? Math.max(this._coMinut(), SPOKOJNE_KOLO_MIN) : this._coMinut();
-      try { await this.ctx.storage?.setAlarm?.(Date.now() + co * MINUTA_MS); } catch { /* następne wejście ustawi alarm od nowa */ }
+      if (spi) {
+        this.alarmSprawdzony = false;
+      } else {
+        const co = rzadko ? Math.max(this._coMinut(), SPOKOJNE_KOLO_MIN) : this._coMinut();
+        try { await this.ctx.storage?.setAlarm?.(Date.now() + co * MINUTA_MS); } catch { /* następne wejście ustawi alarm od nowa */ }
+      }
     }
   }
 
@@ -218,6 +250,7 @@ export class Miejsce {
         request = new Request(request, { headers: h });
       }
     }
+    this._odnotujObecnosc();
     if (sciezka === ADRES_ZYWEGO) return this._zywe(request);
     if (sciezka.startsWith(ADRES_DRZWI)) {
       await this._zasiew();

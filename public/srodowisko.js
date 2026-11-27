@@ -755,8 +755,10 @@
           const d = await czytajOknem(o, '/api/srodowisko/spis?' + p);
           dane = { rzeczy: d.rzeczy, razem: d.razem, pokazane: d.pokazane, pominiete: d.pominiete, wszystko: d.wszystko, akt: d.akt };
         } else if (m.what === 'rzecz') {
-          const d = await czytajOknem(o, '/api/srodowisko/rzecz?id=' + encodeURIComponent(String(m.rzecz || '')));
-          dane = { rzecz: d.rzecz, historia: d.historia, wskazuja: d.wskazuja };
+          // historia: ile najnowszych wersji (drzwi oddają domyślnie 50, najwyżej 1000); historia_wiecej mówi, że są starsze
+          const ileH = Number.isInteger(m.historia) && m.historia > 0 ? '&historia=' + Math.min(1000, m.historia) : '';
+          const d = await czytajOknem(o, '/api/srodowisko/rzecz?id=' + encodeURIComponent(String(m.rzecz || '')) + ileH);
+          dane = { rzecz: d.rzecz, historia: d.historia, ...(d.historia_wiecej ? { historia_wiecej: true } : {}), wskazuja: d.wskazuja };
         } else if (m.what === 'ksztalty') {
           dane = { ksztalty: (await czytajOknem(o, '/api/srodowisko/ksztalty')).ksztalty };
         } else if (m.what === 'ja') {

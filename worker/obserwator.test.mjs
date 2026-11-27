@@ -1429,3 +1429,114 @@ test('G9. pelny: prawda tylko dla spójnego estate.coverage, równej liczby prze
   const z2 = kopia(PROBKA); z2.repos.push({ ...kopia(z2.repos[0]), name: 'Pryw', private: true });
   assert.equal((await czytaj(z2)).pelny, true);
 });
+
+test('10c. alarm zasypia po 24h bez żadnego żądania i otwartego gniazda (potrzeba 201), a kolejne wejście budzi go na nowo', async () => {
+  const g = github({ repos: [repoGH(11, 'r1')], galezie: { r1: [galGH('main')] } });
+  const { obiekt, st } = obiektZAlarmem({ env: { OBSERWATOR: 'tak' } });
+  const wejdz = (sciezka = '/co-tu-jest') => obiekt.fetch(new Request('https://x.test' + sciezka));
+  assert.equal((await wejdz()).status, 200);
+  assert.equal(st.ustawienia.length, 1, 'pierwsze wejście ustawiło alarm');
+  // Symulujemy upływ ponad 24h od ostatniej obecności
+  const dobaMs = 24 * 60 * MINUTA;
+  const dawno = Date.now() - dobaMs - 5 * MINUTA;
+  obiekt.ostatniaObecnosc = dawno;
+  obiekt.rdzen.ustawMeta('miejsce:ostatnia_obecnosc', String(dawno));
+  st.ustawienia.length = 0;
+  st.alarm = null;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  assert.equal(st.ustawienia.length, 0, 'po 24h ciszy alarm nie planuje kolejnego wybudzenia');
+  assert.equal(obiekt.alarmSprawdzony, false, 'flaga alarmu zresetowana pod kolejne wejście');
+  // Kolejne wejście człowieka lub agenta budzi obserwatora na nowo
+  assert.equal((await wejdz()).status, 200);
+  assert.equal(st.ustawienia.length, 1, 'nowe wejście ponownie uruchamia budzik');
+});
+
+// Dwa sprawdziany drugiej linii łatki Toru 3 (Opus Code, 27 XI 2026). 10d: dziura znaleziona przez Fable (Miejsce bez
+// zapisu obecności nie zasypiało nigdy). 10e: warunek „nikt nie patrzy na żywo”, którego nie łapał żaden sprawdzian
+// (mutacja, która go zdejmowała, przechodziła cały plik).
+test('10d. Miejsce, do którego od wdrożenia nikt nie wszedł: pierwszy alarm zaczyna liczyć dobę, a po dobie ciszy budzik zasypia także po uśpieniu obiektu', async () => {
+  const g = github({ repos: [repoGH(11, 'r1')], galezie: { r1: [galGH('main')] } });
+  const { obiekt, st } = obiektZAlarmem({ env: { OBSERWATOR: 'tak' } });
+  let t = Date.now();
+  obiekt.rdzen.teraz = () => t;
+  for (let i = 0; i < 3; i++) { await zPodstawionymGithubem(g, () => obiekt.alarm()); t += 30 * MINUTA; }
+  assert.equal(st.ustawienia.length, 3, 'w pierwszej dobie budzik chodzi, choć nikt nie wszedł');
+  // Obiekt mógł zasnąć między alarmami: nowy obiekt nad tą samą bazą wie tylko to, co zapisane
+  const drugi = new Miejsce(obiekt.ctx, obiekt.env);
+  assert.ok(Number(drugi.rdzen.meta('miejsce:ostatnia_obecnosc')) > 0, 'pierwszy alarm zapisał, od kiedy liczyć dobę');
+  drugi.rdzen.teraz = () => t + 24 * 60 * MINUTA;
+  st.ustawienia.length = 0;
+  await zPodstawionymGithubem(g, () => drugi.alarm());
+  assert.equal(st.ustawienia.length, 0, 'po dobie bez nikogo budzik nieodwiedzanego Miejsca zasypia');
+  assert.equal(drugi.alarmSprawdzony, false, 'następne wejście ustawi go od nowa');
+});
+
+test('10e. otwarta strona z kanałem na żywo trzyma budzik na chodzie także po dobie bez żądań; po jej zamknięciu budzik zasypia', async () => {
+  const g = github({ repos: [repoGH(11, 'r1')], galezie: { r1: [galGH('main')] } });
+  const { obiekt, st } = obiektZAlarmem({ env: { OBSERWATOR: 'tak' } });
+  let t = Date.now();
+  obiekt.rdzen.teraz = () => t;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  obiekt.ctx.getWebSockets = () => [{ send() {}, deserializeAttachment() { return null; } }];
+  t += 25 * 60 * MINUTA;
+  st.ustawienia.length = 0;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  assert.equal(st.ustawienia.length, 1, 'ktoś patrzy na żywo: budzik dalej chodzi');
+  obiekt.ctx.getWebSockets = () => [];
+  t += 30 * MINUTA;
+  st.ustawienia.length = 0;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  assert.equal(st.ustawienia.length, 0, 'strona zamknięta, a doba ciszy minęła: budzik zasypia');
+});
+
+// Uwaga Fable z drugiej linii (27 XI 2026): gałąź błędu nie miała sprawdzianu, a mutacja `catch { spi = true; }`
+// przechodziła cały plik. Wyjątek przy odczycie obecności ma zostawić budzik na chodzie, bo następny alarm ustawia się zawsze.
+test('10f. wyjątek przy odczycie obecności zostawia budzik na chodzie także po dobie: następny alarm ustawia się zawsze', async () => {
+  const g = github({ repos: [repoGH(11, 'r1')], galezie: { r1: [galGH('main')] } });
+  const { obiekt, st } = obiektZAlarmem({ env: { OBSERWATOR: 'tak' } });
+  let t = Date.now();
+  obiekt.rdzen.teraz = () => t;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  const zwykle = obiekt.rdzen.meta.bind(obiekt.rdzen);
+  obiekt.rdzen.meta = (k) => { if (k === 'miejsce:ostatnia_obecnosc') throw new Error('odczyt obecności nie wyszedł'); return zwykle(k); };
+  obiekt.ostatniaObecnosc = 0;
+  t += 25 * 60 * MINUTA;
+  st.ustawienia.length = 0;
+  await zPodstawionymGithubem(g, () => obiekt.alarm());
+  assert.equal(st.ustawienia.length, 1, 'bez wiedzy o obecności budzik nie zasypia');
+});
+
+// Druga linia Neona (27 XI 2026): zapis obecności nie może pisać do bazy tam, gdzie obserwator jest wyłączony, po
+// przekroczeniu budżetu zapisów ani dla odrzuconego 401 z martwej sesji poza podglądem.
+test('10g. obecność zapisuje się tylko dla ważnego wejścia przy włączonym obserwatorze i wolnym budżecie zapisów', async () => {
+  // 1. Gdy obserwator wyłączony albo host spoza OBSERWATOR_ADRESY: wejście nie pisze miejsce:ostatnia_obecnosc
+  const { obiekt: bezObs } = obiektZAlarmem({ env: {} });
+  assert.equal((await bezObs.fetch(new Request('https://x.test/co-tu-jest'))).status, 200);
+  assert.equal(bezObs.rdzen.meta('miejsce:ostatnia_obecnosc'), null, 'bez obserwatora obecność nie zaśmieca meta');
+  const { obiekt: innyHost } = obiektZAlarmem({ env: { OBSERWATOR: 'tak', OBSERWATOR_ADRESY: 'fable-srodowisko-' } });
+  assert.equal((await innyHost.fetch(new Request('https://x.test/co-tu-jest'))).status, 200);
+  assert.equal(innyHost.rdzen.meta('miejsce:ostatnia_obecnosc'), null, 'podgląd spoza OBSERWATOR_ADRESY nie pisze obecności');
+
+  // 2. Gdy obserwator włączony, ale żądanie ma martwą sesję poza podglądem (401): nie odświeża obecności
+  const { obiekt: zObs } = obiektZAlarmem({ env: { OBSERWATOR: 'tak', PODGLAD: 'nie' } });
+  const dawno = Date.now() - 25 * 60 * MINUTA;
+  zObs.ostatniaObecnosc = dawno;
+  zObs.rdzen.ustawMeta('miejsce:ostatnia_obecnosc', String(dawno));
+  const odp401 = await zObs.fetch(new Request('https://x.test/co-tu-jest', { headers: { 'x-sesja-pos': 'martwe-poswiadczenie' } }));
+  assert.equal(odp401.status, 401);
+  assert.equal(zObs.ostatniaObecnosc, dawno, 'odrzucone 401 nie przedłuża czuwania budzika');
+  assert.equal(Number(zObs.rdzen.meta('miejsce:ostatnia_obecnosc')), dawno);
+
+  // 3. Gdy budżet zapisów przekroczony: ważne wejście przed limitem zapisuje obecność, a po przekroczeniu GET nie pisze do SQLite
+  const { obiekt: bezBudzetu } = obiektZAlarmem({ env: { OBSERWATOR: 'tak', BUDZET_ZAPISOW_NA_DOBE: '5' } });
+  assert.equal((await bezBudzetu.fetch(new Request('https://x.test/co-tu-jest'))).status, 200);
+  const zapisanePoZasiewie = Number(bezBudzetu.rdzen.meta('miejsce:ostatnia_obecnosc')) || 0;
+  assert.ok(zapisanePoZasiewie > 0, 'ważne wejście przed przekroczeniem budżetu zapisało obecność');
+  bezBudzetu.sql.licznik.zapisane = 10;
+  assert.equal(bezBudzetu.budzet.przekroczony(), true);
+  bezBudzetu.ostatniaObecnosc = 0;
+  bezBudzetu.rdzen.teraz = () => Date.now() + 20 * MINUTA;
+  const odpGet = await bezBudzetu.fetch(new Request('https://x.test/co-tu-jest'));
+  assert.equal(odpGet.status, 200);
+  assert.equal(Number(bezBudzetu.rdzen.meta('miejsce:ostatnia_obecnosc')) || 0, zapisanePoZasiewie, 'po przekroczeniu budżetu GET nie pisze obecności do meta');
+});

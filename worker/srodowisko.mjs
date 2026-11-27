@@ -318,7 +318,7 @@ const SPIS_SCHEMAT = [
   `CREATE TABLE IF NOT EXISTS rzeczy (id TEXT PRIMARY KEY, rodzaj TEXT NOT NULL, obszar TEXT, zapis TEXT NOT NULL, akt INTEGER NOT NULL,
      numer INTEGER NOT NULL DEFAULT 1, odlozone INTEGER NOT NULL DEFAULT 0, szukane TEXT NOT NULL DEFAULT '',
      utworzyl TEXT NOT NULL, utworzono INTEGER NOT NULL, zmienil TEXT NOT NULL, zmieniono INTEGER NOT NULL)`,
-  `CREATE INDEX IF NOT EXISTS rzeczy_rodzaj ON rzeczy (rodzaj)`,
+  `CREATE INDEX IF NOT EXISTS rzeczy_rodzaj ON rzeczy (rodzaj, odlozone, zmieniono DESC, id)`,
   `CREATE INDEX IF NOT EXISTS rzeczy_obszar ON rzeczy (obszar)`,
   // Pytanie "co zmieniło się po akcie N" zadaje każda otwarta strona po każdej zmianie: bez indeksu czytałoby cały spis.
   `CREATE INDEX IF NOT EXISTS rzeczy_akt ON rzeczy (akt)`,
@@ -342,6 +342,10 @@ export class Srodowisko {
     const kolumny = sql.exec(`PRAGMA table_info(rzeczy)`).toArray().map((k) => k.name);
     const stary = kolumny.length > 0 && !['numer', 'odlozone', 'szukane'].every((k) => kolumny.includes(k));
     if (stary) { sql.exec(`DROP TABLE rzeczy`); sql.exec(`DROP TABLE IF EXISTS odniesienia`); }
+    else {
+      const idx = sql.exec(`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'rzeczy_rodzaj'`).toArray()[0];
+      if (idx && !/zmieniono/i.test(String(idx.sql || ''))) sql.exec(`DROP INDEX IF EXISTS rzeczy_rodzaj`);
+    }
     for (const s of SPIS_SCHEMAT) sql.exec(s);
     this._kolejka = Promise.resolve();
     this._role = { nr: -1, mapa: new Map() };
@@ -734,7 +738,20 @@ export class Srodowisko {
   }
 
   // Historia rzeczy: każda wersja ma kolejny numer (1, 2, 3…) i znacznik `akt`, czyli numer aktu, który ją ustawił.
-  historia(id) {
+  // Z opcjonalnym `limit` (np. 50 przy GET /api/srodowisko/rzecz) czyta od końca B-drzewa akty_glowa najwyżej `limit + 1`
+  // najnowszych wpisów: z nadmiarowego wiersza wie od razu, czy historia jest ucięta (`lista.wiecej = true`), a numery
+  // wersji wylicza z rzeczy.numer.
+  historia(id, { limit = null, numer = null } = {}) {
+    if (Number.isInteger(limit) && limit > 0) {
+      const pobrane = this.q(`SELECT nr, kto, kiedy, cialo, zapis FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr DESC LIMIT ?`, 'rzecz:' + id, limit + 1);
+      const wiecej = pobrane.length > limit;
+      const w = (wiecej ? pobrane.slice(0, limit) : pobrane).reverse();
+      const ile = Number.isInteger(numer) ? numer : (this.q(`SELECT numer FROM rzeczy WHERE id = ?`, id)[0]?.numer || w.length);
+      const start = ile >= w.length ? ile - w.length : 0;
+      const lista = w.map((a, i) => ({ numer: start + i + 1, akt: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), zapis: a.zapis, ...(a.cialo ? { cialo: a.cialo } : {}) }));
+      if (wiecej) Object.defineProperty(lista, 'wiecej', { value: true });
+      return lista;
+    }
     return this.q(`SELECT nr, kto, kiedy, cialo, zapis FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr`, 'rzecz:' + id)
       .map((a, i) => ({ numer: i + 1, akt: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), zapis: a.zapis, ...(a.cialo ? { cialo: a.cialo } : {}) }));
   }
