@@ -796,7 +796,7 @@ test('F2. drugie takie samo obejście z pliku nie zapisuje żadnej rzeczy rodzin
   assert.equal(s.ostatniNr(), aktPrzed, 'nie zmieniła się nawet miara: jej treść nie zależy od chwili obejścia');
 });
 
-test('F3. API działa i jest biblioteka: fakty z API zostają, z pliku dochodzą tylko rodzina, tożsamość, ładna nazwa, życie, stos i commity', async () => {
+test('F3. API działa i jest biblioteka: fakty z API zostają, z pliku dochodzą rodzina, tożsamość, ładna nazwa, życie, stos, commity i adres strony', async () => {
   const { s } = await swiat();
   const g = github({
     repos: [repoGH(11, 'ReflexBrain-Lab', { description: 'opis z API', pushed_at: '2026-11-10T10:00:00Z', language: 'TypeScript' }), repoGH(12, 'Nowe-Tylko-W-API')],
@@ -810,7 +810,7 @@ test('F3. API działa i jest biblioteka: fakty z API zostają, z pliku dochodzą
   assert.equal(r.cechy.ostatni_push, '2026-11-10T10:00:00Z', 'ostatni push z API, nie z pliku');
   assert.equal(r.cechy.opis, 'opis z API');
   assert.equal(r.cechy.jezyk, 'TypeScript');
-  assert.equal(r.cechy.strona, undefined, 'strona jest faktem API: plik jej nie dokłada');
+  assert.equal(r.cechy.strona, 'https://jozzpoly.github.io/ReflexBrain-Lab/', 'adres strony, którego API nie podaje, przychodzi z pliku (27 XI 2026)');
   assert.equal(r.cechy.stan_na, new Date(T0).toISOString(), 'fakty z API mają wiek obejścia');
   assert.equal(r.cechy.ladna_nazwa, 'ReflexBrain');
   assert.match(r.cechy.tozsamosc, /^Czy tani/);
@@ -1075,6 +1075,168 @@ test('F12. drzwi ręczne przyjmują ?ile=<1..50> i przekazują je obejściu; war
   const zap = (zapytanie) => obsluzSrodowisko(s, new Request('https://przyklad.test/api/srodowisko/obejdz' + zapytanie, { method: 'POST', headers: { 'x-kto': 'jozz' } }), { podglad: true, obejdz: zwiazane });
   for (const z of ['', '?ile=7', '?ile=50', '?ile=0', '?ile=51', '?ile=abc', '?ile=2.5']) assert.equal((await zap(z)).status, 200);
   assert.deepEqual(dostane.map((o) => (o && o.ileRepoNaRaz) ?? null), [null, 7, 50, null, null, null, null]);
+});
+
+// --- 27 XI 2026 (Fable): adres strony z pliku i wersje bez zmiany treści ---------------------------------------------
+// Pomiar na podglądzie pnia: 28 faktów repo/1 miało 1473 wersje; trzy ostatnie wersje jednego faktu różniły się tylko
+// etykietą źródła i wiekiem. Osobno: adres strony znany tylko plikowi był na przemian dokładany i kasowany.
+const REFLEX_JAK_W_PLIKU = { description: null, pushed_at: '2026-10-11T19:22:17Z', created_at: '2026-09-19T21:42:27Z' };
+const GALEZIE_JAK_W_PLIKU = [galGH('research/living-organism-runtime-a-2026-10-08', 'cb03fcd1caaaaaaa'), galGH('research/pre-o0-foundations-campaign', '5c213e5eacaaaaaa'), galGH('docs/world-d1-public-qualified-handoff-2026-10-11', '699a9e0a48aaaaaa')];
+
+test('F13. adres strony, który zna tylko plik, zostaje przy fakcie i nie robi wersji tam i z powrotem (API, plik, API, plik)', async () => {
+  const { s } = await swiat();
+  const g = github({ repos: [repoGH(11, 'ReflexBrain-Lab', REFLEX_JAK_W_PLIKU)], galezie: { 'ReflexBrain-Lab': GALEZIE_JAK_W_PLIKU } });
+  await zBiblioteka(s, siec(g), { teraz: T0, ileRepoNaRaz: 50 });
+  const r1 = repoN(s, ZREFLEX);
+  assert.equal(r1.cechy.strona, 'https://jozzpoly.github.io/ReflexBrain-Lab/', 'API nie zna adresu, plik zna');
+  for (let i = 1; i <= 4; i++) {
+    g.lista = i % 2 ? 403 : null;
+    const w = await zBiblioteka(s, siec(g), { teraz: T0 + i * 30 * MINUTA, ileRepoNaRaz: 50 });
+    assert.equal(w.zrodlo, i % 2 ? 'plik' : 'api');
+    const r = repoN(s, ZREFLEX);
+    assert.equal(r.numer, r1.numer, `obejście ${i + 1} (${w.zrodlo}) nie robi nowej wersji`);
+    assert.equal(r.cechy.strona, 'https://jozzpoly.github.io/ReflexBrain-Lab/');
+  }
+});
+
+test('F14. gdy plik i API podają różne adresy strony, zostaje adres z pliku; obejście API bez pliku go nie cofa', async () => {
+  const { s } = await swiat();
+  const g = github({ repos: [repoGH(11, 'ReflexBrain-Lab', { ...REFLEX_JAK_W_PLIKU, homepage: 'https://inny.przyklad.org/' })], galezie: { 'ReflexBrain-Lab': GALEZIE_JAK_W_PLIKU } });
+  await zBiblioteka(s, siec(g), { teraz: T0, ileRepoNaRaz: 50 });
+  const r1 = repoN(s, ZREFLEX);
+  assert.equal(r1.cechy.strona, 'https://jozzpoly.github.io/ReflexBrain-Lab/', 'adres z pliku wygrywa z adresem z API');
+  const w2 = await zBiblioteka(s, siec(g, { tryb: 404 }), { teraz: T0 + 30 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(w2.zrodlo, 'api');
+  const r2 = repoN(s, ZREFLEX);
+  assert.equal(r2.cechy.strona, 'https://jozzpoly.github.io/ReflexBrain-Lab/', 'przerwa w dostępie do pliku nie zamienia adresu na ten z API');
+  assert.equal(r2.numer, r1.numer, 'przerwa w dostępie do pliku nie robi wersji');
+  // repozytorium, którego plik nie zna, dostaje adres z API
+  g.repos.push(repoGH(12, 'Tylko-W-API', { homepage: 'https://tylko.przyklad.org/' }));
+  await zBiblioteka(s, siec(g), { teraz: T0 + 60 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(repoN(s, 'jozzpoly/tylko-w-api').cechy.strona, 'https://tylko.przyklad.org/');
+});
+
+test('F15. świeży plik, nowszy niż fakty potwierdzone przez API, nie robi wersji, gdy treść się nie zmieniła', async () => {
+  const { s } = await swiat();
+  const g = github({ repos: [repoGH(11, 'ReflexBrain-Lab', { ...REFLEX_JAK_W_PLIKU, has_pages: true })], galezie: { 'ReflexBrain-Lab': GALEZIE_JAK_W_PLIKU } });
+  await zBiblioteka(s, siec(g), { teraz: T0, ileRepoNaRaz: 50 });
+  // drugie obejście API domyka to, co pierwsze mogło zostawić (koło gałęzi), żeby stan wyjściowy był spokojny
+  await zBiblioteka(s, siec(g), { teraz: T0 + 10 * MINUTA, ileRepoNaRaz: 50 });
+  const r1 = repoN(s, ZREFLEX);
+  const numeryGalezi = () => galezieRepo(s, r1.id, 'razem').map((x) => `${x.cechy.nazwa}:${x.numer}:${!!x.odlozone}`).sort();
+  const galeziePrzed = numeryGalezi();
+  assert.equal(galeziePrzed.length, 3);
+  // stara Jaskinia opublikowała plik na nowo: ta sama treść, wiek nowszy niż stan_na faktów
+  const swiezy = kopia(PROBKA);
+  swiezy.estate.generated = new Date(T0 + 60 * MINUTA).toISOString();
+  g.lista = 403;
+  const w2 = await zBiblioteka(s, siec(g, { tresc: swiezy }), { teraz: T0 + 120 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(w2.zrodlo, 'plik');
+  const r2 = repoN(s, ZREFLEX);
+  assert.equal(r2.numer, r1.numer, 'obejście ze świeżego pliku nie robi wersji repozytorium bez zmiany treści');
+  assert.match(r2.cechy.zrodlo_faktow, /GitHub API/, 'etykieta nie zmienia się bez zmiany treści');
+  assert.deepEqual(numeryGalezi(), galeziePrzed, 'obejście ze świeżego pliku nie robi wersji gałęzi bez zmiany treści');
+  g.lista = null;
+  const w3 = await zBiblioteka(s, siec(g, { tresc: swiezy }), { teraz: T0 + 150 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(w3.zrodlo, 'api');
+  assert.equal(repoN(s, ZREFLEX).numer, r1.numer, 'powrót API też nie robi wersji');
+  assert.deepEqual(numeryGalezi(), galeziePrzed, 'żadna gałąź tego repozytorium nie dostała wersji');
+});
+
+test('F16. adres strony, który zna tylko API, nie znika po obejściu ze świeżego pliku, w którym repozytorium nie ma adresu', async () => {
+  const { s } = await swiat();
+  const wPliku = PROBKA.repos.find((x) => x.name === 'Jozz-Cave-Workbench');
+  assert.equal(wPliku.pages, null, 'próbka: plik zna repozytorium, ale bez adresu strony');
+  const g = github({
+    repos: [repoGH(21, 'Jozz-Cave-Workbench', { description: wPliku.desc, pushed_at: wPliku.pushed, created_at: wPliku.created, has_pages: true })],
+    galezie: { 'Jozz-Cave-Workbench': wPliku.branches.map((b) => galGH(b.n, b.sha + 'aaaaaaaa')) },
+  });
+  const ZJASKINIA = 'jozzpoly/jozz-cave-workbench';
+  await zBiblioteka(s, siec(g), { teraz: T0, ileRepoNaRaz: 50 });
+  await zBiblioteka(s, siec(g), { teraz: T0 + 10 * MINUTA, ileRepoNaRaz: 50 });
+  const r1 = repoN(s, ZJASKINIA);
+  assert.equal(r1.cechy.strona, 'https://jozzpoly.github.io/Jozz-Cave-Workbench/', 'adres z API (has_pages)');
+  const swiezy = kopia(PROBKA);
+  swiezy.estate.generated = new Date(T0 + 60 * MINUTA).toISOString();
+  g.lista = 403;
+  const w2 = await zBiblioteka(s, siec(g, { tresc: swiezy }), { teraz: T0 + 120 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(w2.zrodlo, 'plik');
+  const r2 = repoN(s, ZJASKINIA);
+  assert.equal(r2.cechy.strona, 'https://jozzpoly.github.io/Jozz-Cave-Workbench/', 'brak adresu w pliku nie kasuje adresu, który zna API');
+  assert.equal(r2.numer, r1.numer, 'obejście ze świeżego pliku nie robi wersji');
+  g.lista = null;
+  await zBiblioteka(s, siec(g, { tresc: swiezy }), { teraz: T0 + 150 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(repoN(s, ZJASKINIA).numer, r1.numer, 'powrót API też nie robi wersji');
+});
+
+// --- 27 XI 2026 (Fable), po drugiej linii Argona (rodzina Gemini) na tej zmianie -------------------------------------
+// Dwa znaleziska: mutacja zdejmująca zapas opisu w drodze pliku przechodziła F13–F16 (stąd F17), a w Miejscu bez pliku
+// faktów zapas "zostaje to, co było" trzymał opis i adres usunięte u źródła na zawsze (stąd F18; F19 pilnuje, żeby
+// poprawka nie zabrała tego zapasu tam, gdzie jest potrzebny: przy przerwie w dostępie do ustawionego pliku).
+test('F17. opis, który zna tylko API, nie znika po obejściu ze świeżego pliku, w którym repozytorium nie ma opisu', async () => {
+  const { s } = await swiat();
+  const wPliku = PROBKA.repos.find((x) => x.name === 'Llm-Live-NPC');
+  assert.equal(wPliku.desc, null, 'próbka: plik zna repozytorium, ale bez opisu');
+  const g = github({
+    repos: [repoGH(31, 'Llm-Live-NPC', { description: 'opis znany tylko API', pushed_at: wPliku.pushed, created_at: wPliku.created })],
+    galezie: { 'Llm-Live-NPC': wPliku.branches.map((b) => galGH(b.n, b.sha + 'aaaaaaaa')) },
+  });
+  const ZNPC = 'jozzpoly/llm-live-npc';
+  await zBiblioteka(s, siec(g), { teraz: T0, ileRepoNaRaz: 50 });
+  await zBiblioteka(s, siec(g), { teraz: T0 + 10 * MINUTA, ileRepoNaRaz: 50 });
+  const r1 = repoN(s, ZNPC);
+  assert.equal(r1.cechy.opis, 'opis znany tylko API');
+  const swiezy = kopia(PROBKA);
+  swiezy.estate.generated = new Date(T0 + 60 * MINUTA).toISOString();
+  g.lista = 403;
+  const w2 = await zBiblioteka(s, siec(g, { tresc: swiezy }), { teraz: T0 + 120 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(w2.zrodlo, 'plik');
+  const r2 = repoN(s, ZNPC);
+  assert.equal(r2.cechy.opis, 'opis znany tylko API', 'brak opisu w pliku nie kasuje opisu, który zna API');
+  assert.equal(r2.numer, r1.numer, 'obejście ze świeżego pliku nie robi wersji');
+  g.lista = null;
+  await zBiblioteka(s, siec(g, { tresc: swiezy }), { teraz: T0 + 150 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(repoN(s, ZNPC).numer, r1.numer, 'powrót API też nie robi wersji');
+});
+
+test('F18. w Miejscu bez pliku faktów opis i adres strony usunięte u źródła znikają z faktu', async () => {
+  const { s } = await swiat();
+  const g = github({ repos: [repoGH(11, 'r1', { has_pages: true })] });
+  await obejscie(s, g);
+  const r1 = repo(s, 11);
+  assert.equal(r1.cechy.opis, 'opis r1');
+  assert.ok(r1.cechy.strona, 'API podaje adres strony (has_pages)');
+  g.repos[0] = repoGH(11, 'r1', { description: null, has_pages: false });
+  await obejscie(s, g, { teraz: T0 + 5 * MINUTA });
+  const r2 = repo(s, 11);
+  assert.equal(r2.numer, r1.numer + 1, 'zmiana u źródła robi jedną wersję');
+  assert.ok(!('opis' in r2.cechy), 'opis usunięty u źródła znika z faktu');
+  assert.ok(!('strona' in r2.cechy), 'adres strony wyłączonej u źródła znika z faktu');
+  // i nie wraca przy następnym obejściu
+  await obejscie(s, g, { teraz: T0 + 10 * MINUTA });
+  assert.equal(repo(s, 11).numer, r2.numer);
+});
+
+test('F19. przerwa w dostępie do ustawionego pliku nie kasuje opisu, który zna tylko plik', async () => {
+  const { s } = await swiat();
+  const wPliku = PROBKA.repos.find((x) => x.name === 'Jozz-Cave-Workbench');
+  assert.ok(wPliku.desc, 'próbka: plik zna opis tego repozytorium');
+  const g = github({
+    repos: [repoGH(21, 'Jozz-Cave-Workbench', { description: null, pushed_at: wPliku.pushed, created_at: wPliku.created })],
+    galezie: { 'Jozz-Cave-Workbench': wPliku.branches.map((b) => galGH(b.n, b.sha + 'aaaaaaaa')) },
+  });
+  const ZJASKINIA = 'jozzpoly/jozz-cave-workbench';
+  await zBiblioteka(s, siec(g), { teraz: T0, ileRepoNaRaz: 50 });
+  await zBiblioteka(s, siec(g), { teraz: T0 + 10 * MINUTA, ileRepoNaRaz: 50 });
+  const r1 = repoN(s, ZJASKINIA);
+  assert.equal(r1.cechy.opis, wPliku.desc, 'API nie ma opisu, plik ma');
+  const w2 = await zBiblioteka(s, siec(g, { tryb: 404 }), { teraz: T0 + 30 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(w2.zrodlo, 'api');
+  const r2 = repoN(s, ZJASKINIA);
+  assert.equal(r2.cechy.opis, wPliku.desc, 'przerwa w dostępie do pliku nie kasuje opisu z pliku');
+  assert.equal(r2.numer, r1.numer, 'przerwa w dostępie do pliku nie robi wersji');
+  await zBiblioteka(s, siec(g), { teraz: T0 + 60 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(repoN(s, ZJASKINIA).numer, r1.numer, 'powrót pliku też nie robi wersji');
 });
 
 // =====================================================================================================================
