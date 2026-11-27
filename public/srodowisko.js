@@ -1981,6 +1981,9 @@
   }
   import('/oko.mjs').then((m) => { modulOka = m; }).catch(() => { /* bez tego modułu słowo idzie bez stanu oka */ });
   import('/okna.mjs').then((m) => { modulOkien = m; wrocOkna(); }).catch(() => { /* bez tego modułu żadne okno nie wraca samo */ });
+  // Warstwa okien (public/okna-swiatow.mjs, do 27 XI okna-swobodne.js; tor 1): okno świata da się przesunąć, zmienić mu
+  // rozmiar i przykleić do krawędzi, a układ pamięta ta przeglądarka. Bez modułu okna leżą tam, gdzie kładzie je arkusz stylów.
+  import('/okna-swiatow.mjs').then((m) => m.zamontujOkna($('okna'))).catch(() => { /* bez warstwy okna leżą na stałym miejscu */ });
   import('/kroje.mjs').then((m) => { modulKrojow = m; zastosujWyglad(); }).catch(() => { /* bez tego modułu kroje zostają przy rodzinach, które urządzenie już ma */ });
   import('/pokretla.mjs').then((m) => {
     modulPokretel = m;
