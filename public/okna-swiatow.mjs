@@ -56,6 +56,12 @@ export function strefaPrzyklejania(x, y, e, prog) {
 }
 
 // Czy prostokąt zajmuje cały obszar okien (z tolerancją zaokrągleń).
+// Ile okien leży już na stole przed nowym oknem bez pamięci: o tyle kroków kaskady staje ono niżej i w lewo, żeby nie
+// przykryło ich w całości. Liczą się tylko okna widoczne i już przyjęte przez warstwę. Po przeładowaniu strona kładzie kilka
+// okien naraz, a jeden przebieg przyjmowania liczył każde z pozostałymi z tej samej partii: wszystkie stawały w tym samym
+// miejscu, jedno dokładnie na drugim (na pniu od 21 XI; druga linia Fable na zgłoszeniu 100, 27 XI 2026).
+export const ileOkienPrzedNim = (okna, s) => okna.filter((x) => x !== s && !x.hidden && !!(x.dataset && x.dataset.swobodne)).length;
+
 export const jestCaly = (r, e) => {
   const c = prostokatPrzyklejenia('calosc', e);
   return ['x', 'y', 'w', 'h'].every((k) => Math.abs(r[k] - c[k]) <= 2);
@@ -257,7 +263,7 @@ export function zamontujOkna(kontener, opcje = {}) {
     } else if (SZEROKI.matches && !s.querySelector('.pasek .rola')) {
       // nowe okno bez pamięci staje kaskadą, przesunięte względem widocznych, żeby nie przykryło ich w całości;
       // parę A/B układa strona (pas porównania pod nią), więc jej nie ruszamy
-      const inne = okna().filter((x) => x !== s && !x.hidden).length;
+      const inne = ileOkienPrzedNim(okna(), s);
       // wysokość przycięta do miejsca nad dokiem, inaczej róg do zmiany rozmiaru chowa się pod nim
       if (inne) { const r = prostokat(s); const y = r.y + 36 * inne; ustaw(s, wGranicachEkranu({ ...r, x: r.x - 36 * inne, y, h: Math.min(r.h, dol() - y) })); }
     }
