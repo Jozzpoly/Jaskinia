@@ -1169,6 +1169,76 @@ test('F16. adres strony, który zna tylko API, nie znika po obejściu ze śwież
   assert.equal(repoN(s, ZJASKINIA).numer, r1.numer, 'powrót API też nie robi wersji');
 });
 
+// --- 27 XI 2026 (Fable), po drugiej linii Argona (rodzina Gemini) na tej zmianie -------------------------------------
+// Dwa znaleziska: mutacja zdejmująca zapas opisu w drodze pliku przechodziła F13–F16 (stąd F17), a w Miejscu bez pliku
+// faktów zapas "zostaje to, co było" trzymał opis i adres usunięte u źródła na zawsze (stąd F18; F19 pilnuje, żeby
+// poprawka nie zabrała tego zapasu tam, gdzie jest potrzebny: przy przerwie w dostępie do ustawionego pliku).
+test('F17. opis, który zna tylko API, nie znika po obejściu ze świeżego pliku, w którym repozytorium nie ma opisu', async () => {
+  const { s } = await swiat();
+  const wPliku = PROBKA.repos.find((x) => x.name === 'Llm-Live-NPC');
+  assert.equal(wPliku.desc, null, 'próbka: plik zna repozytorium, ale bez opisu');
+  const g = github({
+    repos: [repoGH(31, 'Llm-Live-NPC', { description: 'opis znany tylko API', pushed_at: wPliku.pushed, created_at: wPliku.created })],
+    galezie: { 'Llm-Live-NPC': wPliku.branches.map((b) => galGH(b.n, b.sha + 'aaaaaaaa')) },
+  });
+  const ZNPC = 'jozzpoly/llm-live-npc';
+  await zBiblioteka(s, siec(g), { teraz: T0, ileRepoNaRaz: 50 });
+  await zBiblioteka(s, siec(g), { teraz: T0 + 10 * MINUTA, ileRepoNaRaz: 50 });
+  const r1 = repoN(s, ZNPC);
+  assert.equal(r1.cechy.opis, 'opis znany tylko API');
+  const swiezy = kopia(PROBKA);
+  swiezy.estate.generated = new Date(T0 + 60 * MINUTA).toISOString();
+  g.lista = 403;
+  const w2 = await zBiblioteka(s, siec(g, { tresc: swiezy }), { teraz: T0 + 120 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(w2.zrodlo, 'plik');
+  const r2 = repoN(s, ZNPC);
+  assert.equal(r2.cechy.opis, 'opis znany tylko API', 'brak opisu w pliku nie kasuje opisu, który zna API');
+  assert.equal(r2.numer, r1.numer, 'obejście ze świeżego pliku nie robi wersji');
+  g.lista = null;
+  await zBiblioteka(s, siec(g, { tresc: swiezy }), { teraz: T0 + 150 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(repoN(s, ZNPC).numer, r1.numer, 'powrót API też nie robi wersji');
+});
+
+test('F18. w Miejscu bez pliku faktów opis i adres strony usunięte u źródła znikają z faktu', async () => {
+  const { s } = await swiat();
+  const g = github({ repos: [repoGH(11, 'r1', { has_pages: true })] });
+  await obejscie(s, g);
+  const r1 = repo(s, 11);
+  assert.equal(r1.cechy.opis, 'opis r1');
+  assert.ok(r1.cechy.strona, 'API podaje adres strony (has_pages)');
+  g.repos[0] = repoGH(11, 'r1', { description: null, has_pages: false });
+  await obejscie(s, g, { teraz: T0 + 5 * MINUTA });
+  const r2 = repo(s, 11);
+  assert.equal(r2.numer, r1.numer + 1, 'zmiana u źródła robi jedną wersję');
+  assert.ok(!('opis' in r2.cechy), 'opis usunięty u źródła znika z faktu');
+  assert.ok(!('strona' in r2.cechy), 'adres strony wyłączonej u źródła znika z faktu');
+  // i nie wraca przy następnym obejściu
+  await obejscie(s, g, { teraz: T0 + 10 * MINUTA });
+  assert.equal(repo(s, 11).numer, r2.numer);
+});
+
+test('F19. przerwa w dostępie do ustawionego pliku nie kasuje opisu, który zna tylko plik', async () => {
+  const { s } = await swiat();
+  const wPliku = PROBKA.repos.find((x) => x.name === 'Jozz-Cave-Workbench');
+  assert.ok(wPliku.desc, 'próbka: plik zna opis tego repozytorium');
+  const g = github({
+    repos: [repoGH(21, 'Jozz-Cave-Workbench', { description: null, pushed_at: wPliku.pushed, created_at: wPliku.created })],
+    galezie: { 'Jozz-Cave-Workbench': wPliku.branches.map((b) => galGH(b.n, b.sha + 'aaaaaaaa')) },
+  });
+  const ZJASKINIA = 'jozzpoly/jozz-cave-workbench';
+  await zBiblioteka(s, siec(g), { teraz: T0, ileRepoNaRaz: 50 });
+  await zBiblioteka(s, siec(g), { teraz: T0 + 10 * MINUTA, ileRepoNaRaz: 50 });
+  const r1 = repoN(s, ZJASKINIA);
+  assert.equal(r1.cechy.opis, wPliku.desc, 'API nie ma opisu, plik ma');
+  const w2 = await zBiblioteka(s, siec(g, { tryb: 404 }), { teraz: T0 + 30 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(w2.zrodlo, 'api');
+  const r2 = repoN(s, ZJASKINIA);
+  assert.equal(r2.cechy.opis, wPliku.desc, 'przerwa w dostępie do pliku nie kasuje opisu z pliku');
+  assert.equal(r2.numer, r1.numer, 'przerwa w dostępie do pliku nie robi wersji');
+  await zBiblioteka(s, siec(g), { teraz: T0 + 60 * MINUTA, ileRepoNaRaz: 50 });
+  assert.equal(repoN(s, ZJASKINIA).numer, r1.numer, 'powrót pliku też nie robi wersji');
+});
+
 // =====================================================================================================================
 // Druga runda (17 XI 2026): plik starej Jaskini jest świeży (odświeża go jej automat), więc z pełnego i nowszego pliku
 // wolno odkładać i przywracać, zawsze odwracalnie i według wieku.

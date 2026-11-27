@@ -533,9 +533,13 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
       // Adres strony: stara Jaskinia zna adresy światów, które stoją poza GitHub Pages, a API zgaduje adres z has_pages.
       // Zmierzone 27 XI 2026: z 11 projektów z adresem dwa mają w pliku adres na workers.dev, który odpowiada 200; dla
       // jednego z nich API nie ma nic, dla drugiego podaje adres github.io, który odpowiada 404. Dlatego adres z pliku
-      // wygrywa, a API jest zapasem. Gdy pliku w tym obejściu nie ma, zostaje adres, który był: inaczej każda przerwa
-      // w dostępie do pliku robiłaby wersję tam i z powrotem. Opis: najpierw API (tam się go pisze), potem plik.
-      const byloZywe = bylo && !bylo.odlozone ? bylo.cechy : null;
+      // wygrywa, a API jest zapasem. Gdy plik jest ustawiony, ale w tym obejściu go nie ma, zostaje adres, który był:
+      // inaczej każda przerwa w dostępie do pliku robiłaby wersję tam i z powrotem. Opis: najpierw API (tam się go
+      // pisze), potem plik. W Miejscu bez pliku jedynym źródłem jest API i fakt idzie za nim: ten zapas trzymałby tam
+      // na zawsze opis albo adres usunięty u źródła (druga linia Argona, 27 XI 2026).
+      // ZNANE OGRANICZENIE: przy pliku ustawionym, ale trwale niedostępnym (zły adres), stary opis i adres zostają do
+      // naprawy adresu; widać to jako lukę w mierze obserwatora.
+      const byloZywe = !plikOk && adresPliku && bylo && !bylo.odlozone ? bylo.cechy : null;
       const strona = (plikOk ? (zPliku && zPliku.strona) : (byloZywe && byloZywe.strona)) || stronaRepo(r, owner) || null;
       const opis = r.opis || (plikOk ? (zPliku && zPliku.opis) : (byloZywe && byloZywe.opis)) || null;
       const nowe = {
