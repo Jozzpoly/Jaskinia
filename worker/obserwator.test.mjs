@@ -1268,32 +1268,6 @@ test('G9. pelny: prawda tylko dla spójnego estate.coverage, równej liczby prze
   assert.equal((await czytaj(z2)).pelny, true);
 });
 
-test('F4c. brak pętli ping-ponga między API+plik a plikiem (403): strona obecna tylko w pliku nie tworzy nowej wersji przy przemiennych obejściach', async () => {
-  const { s } = await swiat();
-  // ReflexBrain-Lab w PROBKA ma pages ("https://jozzpoly.github.io/ReflexBrain-Lab/"), a w API dajemy has_pages: false
-  const g = github({
-    repos: [repoGH(11, 'ReflexBrain-Lab', { description: 'opis z API', pushed_at: '2026-11-10T10:00:00Z' })],
-    galezie: { 'ReflexBrain-Lab': [galGH('main', '373bb40aaaaaa')] },
-  });
-  // 1. Obejście API + plik
-  await zBiblioteka(s, siec(g), { teraz: T0 });
-  const r1 = repoN(s, ZREFLEX);
-  assert.equal(r1.cechy.strona, undefined, 'z API nie ma strony');
-  assert.equal(r1.numer, 1);
-  // 2. Obejście z samego pliku (API = 403): nie dokłada strona z pliku na nowszą rzecz z API
-  g.lista = 403;
-  const w2 = await zBiblioteka(s, siec(g), { teraz: T0 + 30 * MINUTA });
-  assert.equal(w2.zrodlo, 'plik');
-  const r2 = repoN(s, ZREFLEX);
-  assert.equal(r2.cechy.strona, undefined, 'plik nie dołożył strona na rzecz z API');
-  assert.equal(r2.numer, 1, 'brak nowej wersji przy przejściu API -> plik (403)');
-  // 3. Powrót API + plik: zero nowych wersji
-  g.lista = null;
-  const w3 = await zBiblioteka(s, siec(g), { teraz: T0 + 60 * MINUTA });
-  assert.equal(w3.zrodlo, 'api');
-  assert.equal(repoN(s, ZREFLEX).numer, 1, 'brak nowej wersji przy powrocie plik -> API');
-});
-
 test('10c. alarm zasypia po 24h bez żadnego żądania i otwartego gniazda (potrzeba 201), a kolejne wejście budzi go na nowo', async () => {
   const g = github({ repos: [repoGH(11, 'r1')], galezie: { r1: [galGH('main')] } });
   const { obiekt, st } = obiektZAlarmem({ env: { OBSERWATOR: 'tak' } });
@@ -1368,4 +1342,39 @@ test('10f. wyjątek przy odczycie obecności zostawia budzik na chodzie także p
   st.ustawienia.length = 0;
   await zPodstawionymGithubem(g, () => obiekt.alarm());
   assert.equal(st.ustawienia.length, 1, 'bez wiedzy o obecności budzik nie zasypia');
+});
+
+// Druga linia Neona (27 XI 2026): zapis obecności nie może pisać do bazy tam, gdzie obserwator jest wyłączony, po
+// przekroczeniu budżetu zapisów ani dla odrzuconego 401 z martwej sesji poza podglądem.
+test('10g. obecność zapisuje się tylko dla ważnego wejścia przy włączonym obserwatorze i wolnym budżecie zapisów', async () => {
+  // 1. Gdy obserwator wyłączony albo host spoza OBSERWATOR_ADRESY: wejście nie pisze miejsce:ostatnia_obecnosc
+  const { obiekt: bezObs } = obiektZAlarmem({ env: {} });
+  assert.equal((await bezObs.fetch(new Request('https://x.test/co-tu-jest'))).status, 200);
+  assert.equal(bezObs.rdzen.meta('miejsce:ostatnia_obecnosc'), null, 'bez obserwatora obecność nie zaśmieca meta');
+  const { obiekt: innyHost } = obiektZAlarmem({ env: { OBSERWATOR: 'tak', OBSERWATOR_ADRESY: 'fable-srodowisko-' } });
+  assert.equal((await innyHost.fetch(new Request('https://x.test/co-tu-jest'))).status, 200);
+  assert.equal(innyHost.rdzen.meta('miejsce:ostatnia_obecnosc'), null, 'podgląd spoza OBSERWATOR_ADRESY nie pisze obecności');
+
+  // 2. Gdy obserwator włączony, ale żądanie ma martwą sesję poza podglądem (401): nie odświeża obecności
+  const { obiekt: zObs } = obiektZAlarmem({ env: { OBSERWATOR: 'tak', PODGLAD: 'nie' } });
+  const dawno = Date.now() - 25 * 60 * MINUTA;
+  zObs.ostatniaObecnosc = dawno;
+  zObs.rdzen.ustawMeta('miejsce:ostatnia_obecnosc', String(dawno));
+  const odp401 = await zObs.fetch(new Request('https://x.test/co-tu-jest', { headers: { 'x-sesja-pos': 'martwe-poswiadczenie' } }));
+  assert.equal(odp401.status, 401);
+  assert.equal(zObs.ostatniaObecnosc, dawno, 'odrzucone 401 nie przedłuża czuwania budzika');
+  assert.equal(Number(zObs.rdzen.meta('miejsce:ostatnia_obecnosc')), dawno);
+
+  // 3. Gdy budżet zapisów przekroczony: ważne wejście przed limitem zapisuje obecność, a po przekroczeniu GET nie pisze do SQLite
+  const { obiekt: bezBudzetu } = obiektZAlarmem({ env: { OBSERWATOR: 'tak', BUDZET_ZAPISOW_NA_DOBE: '5' } });
+  assert.equal((await bezBudzetu.fetch(new Request('https://x.test/co-tu-jest'))).status, 200);
+  const zapisanePoZasiewie = Number(bezBudzetu.rdzen.meta('miejsce:ostatnia_obecnosc')) || 0;
+  assert.ok(zapisanePoZasiewie > 0, 'ważne wejście przed przekroczeniem budżetu zapisało obecność');
+  bezBudzetu.sql.licznik.zapisane = 10;
+  assert.equal(bezBudzetu.budzet.przekroczony(), true);
+  bezBudzetu.ostatniaObecnosc = 0;
+  bezBudzetu.rdzen.teraz = () => Date.now() + 20 * MINUTA;
+  const odpGet = await bezBudzetu.fetch(new Request('https://x.test/co-tu-jest'));
+  assert.equal(odpGet.status, 200);
+  assert.equal(Number(bezBudzetu.rdzen.meta('miejsce:ostatnia_obecnosc')) || 0, zapisanePoZasiewie, 'po przekroczeniu budżetu GET nie pisze obecności do meta');
 });

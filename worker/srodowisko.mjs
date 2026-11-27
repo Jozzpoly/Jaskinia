@@ -738,14 +738,19 @@ export class Srodowisko {
   }
 
   // Historia rzeczy: każda wersja ma kolejny numer (1, 2, 3…) i znacznik `akt`, czyli numer aktu, który ją ustawił.
-  // Z opcjonalnym `limit` (np. 50 przy GET /api/srodowisko/rzecz) czyta od końca B-drzewa akty_glowa tylko najnowsze
-  // wersje, zachowując ich prawdziwy numer wersji (z rzeczy.numer).
+  // Z opcjonalnym `limit` (np. 50 przy GET /api/srodowisko/rzecz) czyta od końca B-drzewa akty_glowa najwyżej `limit + 1`
+  // najnowszych wpisów: z nadmiarowego wiersza wie od razu, czy historia jest ucięta (`lista.wiecej = true`), a numery
+  // wersji wylicza z rzeczy.numer.
   historia(id, { limit = null, numer = null } = {}) {
     if (Number.isInteger(limit) && limit > 0) {
-      const w = this.q(`SELECT nr, kto, kiedy, cialo, zapis FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr DESC LIMIT ?`, 'rzecz:' + id, limit).reverse();
+      const pobrane = this.q(`SELECT nr, kto, kiedy, cialo, zapis FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr DESC LIMIT ?`, 'rzecz:' + id, limit + 1);
+      const wiecej = pobrane.length > limit;
+      const w = (wiecej ? pobrane.slice(0, limit) : pobrane).reverse();
       const ile = Number.isInteger(numer) ? numer : (this.q(`SELECT numer FROM rzeczy WHERE id = ?`, id)[0]?.numer || w.length);
       const start = ile >= w.length ? ile - w.length : 0;
-      return w.map((a, i) => ({ numer: start + i + 1, akt: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), zapis: a.zapis, ...(a.cialo ? { cialo: a.cialo } : {}) }));
+      const lista = w.map((a, i) => ({ numer: start + i + 1, akt: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), zapis: a.zapis, ...(a.cialo ? { cialo: a.cialo } : {}) }));
+      if (wiecej) Object.defineProperty(lista, 'wiecej', { value: true });
+      return lista;
     }
     return this.q(`SELECT nr, kto, kiedy, cialo, zapis FROM akty WHERE glowa = ? AND co = 'przesun' ORDER BY nr`, 'rzecz:' + id)
       .map((a, i) => ({ numer: i + 1, akt: a.nr, kto: a.kto, kiedy: new Date(a.kiedy).toISOString(), zapis: a.zapis, ...(a.cialo ? { cialo: a.cialo } : {}) }));

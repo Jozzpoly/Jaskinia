@@ -141,7 +141,8 @@ export async function obsluzSrodowisko(s, request, { podglad = false, kluczProbn
       if (!rz) return json({ ok: false, status: 404, blad: 'nie ma takiej rzeczy' });
       const wsk = w.wskazujaNa(rz.id);
       const limitHist = Math.max(1, Math.min(1000, liczba(p.get('historia')) || 50));
-      return json({ ok: true, rzecz: { ...rz, tytul: w.tytul(rz) }, historia: w.historia(rz.id, { limit: limitHist, numer: rz.numer }), ...(rz.numer > limitHist ? { historia_wiecej: true } : {}), wskazuja: wsk, ...(wsk.wiecej ? { wskazuja_wiecej: true } : {}), pochodzenie: w.pochodzenieDla(rz.id) });
+      const hist = w.historia(rz.id, { limit: limitHist, numer: rz.numer });
+      return json({ ok: true, rzecz: { ...rz, tytul: w.tytul(rz) }, historia: hist, ...(hist.wiecej ? { historia_wiecej: true } : {}), wskazuja: wsk, ...(wsk.wiecej ? { wskazuja_wiecej: true } : {}), pochodzenie: w.pochodzenieDla(rz.id) });
     }
     if (sciezka === '/api/srodowisko/wersja') {
       const ws = w.wersja(p.get('id') || '', liczba(p.get('akt')));

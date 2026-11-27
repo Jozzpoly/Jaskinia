@@ -84,19 +84,26 @@ export class Miejsce {
   // Pod jakim adresem stoi to Miejsce. Alarm nie ma żądania, z którego dałoby się to odczytać, więc adres z ostatniego
   // wejścia zostaje w zapisie (jeden zapis, gdy się zmieni).
   _zapamietajAdres(request) {
-    const teraz = this.rdzen.teraz();
-    if (!this.ostatniaObecnosc || teraz - this.ostatniaObecnosc >= 15 * MINUTA_MS) {
-      this.ostatniaObecnosc = teraz;
-      try {
-        const wMeta = Number(this.rdzen.meta(OSTATNIA_OBECNOSC)) || 0;
-        if (teraz - wMeta >= 15 * MINUTA_MS) this.rdzen.ustawMeta(OSTATNIA_OBECNOSC, String(teraz));
-      } catch { /* obecność to wygoda dla uśpienia alarmu */ }
-    }
     let host = null;
     try { host = new URL(request.headers.get('x-origin') || request.url).host.toLowerCase(); } catch { /* bez adresu zostaje poprzedni */ }
     if (!host || host === this.host) return;
     this.host = host;
     try { if (this.rdzen.meta(ADRES_MIEJSCA) !== host) this.rdzen.ustawMeta(ADRES_MIEJSCA, host); } catch { /* adres to wygoda dla alarmu */ }
+  }
+
+  // Ślad ostatniego ważnego wejścia (co najwyżej raz na 15 minut): używany wyłącznie do uśpienia budzika obserwatora
+  // po 24h ciszy. Pisany tylko tam, gdzie obserwator ma wstęp, po sprawdzeniu sesji i gdy budżet zapisów nie jest
+  // przekroczony (druga linia Neona, 27 XI 2026).
+  _odnotujObecnosc() {
+    if (!this._wolnoObserwatorowi()) return; // obecność służy wyłącznie uśpieniu budzika
+    const teraz = this.rdzen.teraz();
+    if (this.ostatniaObecnosc && teraz - this.ostatniaObecnosc < 15 * MINUTA_MS) return;
+    if (this.budzet.przekroczony()) return;
+    this.ostatniaObecnosc = teraz;
+    try {
+      const wMeta = Number(this.rdzen.meta(OSTATNIA_OBECNOSC)) || 0;
+      if (teraz - wMeta >= 15 * MINUTA_MS) this.rdzen.ustawMeta(OSTATNIA_OBECNOSC, String(teraz));
+    } catch { /* obecność to wygoda dla uśpienia alarmu */ }
   }
 
   _host() {
@@ -243,6 +250,7 @@ export class Miejsce {
         request = new Request(request, { headers: h });
       }
     }
+    this._odnotujObecnosc();
     if (sciezka === ADRES_ZYWEGO) return this._zywe(request);
     if (sciezka.startsWith(ADRES_DRZWI)) {
       await this._zasiew();

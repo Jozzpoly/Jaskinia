@@ -707,6 +707,8 @@ test('AR2. historia rzeczy z limitem: trasa /api/srodowisko/rzecz zwraca domyśl
   assert.equal(pelna.length, 65);
   assert.equal(pelna[0].numer, 1);
   assert.equal(pelna[64].numer, 65);
+  assert.equal(s.historia(id, { limit: 50 }).wiecej, true);
+  assert.equal(s.historia(id, { limit: 100 }).wiecej, undefined);
   // Domyślny odczyt przez drzwi HTTP oddaje 50 najnowszych wersji (numery 16..65) i historia_wiecej: true
   const odp50 = await (await zap('/api/srodowisko/rzecz?id=' + id)).json();
   assert.equal(odp50.ok, true);

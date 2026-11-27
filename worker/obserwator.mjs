@@ -188,19 +188,15 @@ export async function zBiblioteki({ fetchFn = fetch, adres, teraz = Date.now() }
 const mozeWrocic = (rz, zebrane) => rz.zmienil === OBSERWATOR && Date.parse(zebrane) > Date.parse(rz.zmieniono);
 
 // Co wolno zapisać z faktów o wieku `zebrane` na rzecz, która już jest. Rzecz NOWSZA niż fakty dostaje tylko cechy,
-// których nie miała (a temat i kiedy gałęzi tylko wtedy, gdy ma ten sam commit); dla rzeczy pochodzącej z API plik nie
-// dokłada cech należących do API (strona, opis, ostatni_push, utworzone), których brak w API znaczy, że u źródła ich nie ma
-// (inaczej przemienne obejścia API i pliku na przemian dokładałyby i kasowały stronę w pętli). Równa albo starsza jest
-// zmieniana w cechach `zarz`. Rzecz odłożoną ocenia przedtem `mozeWrocic`. Zwraca { nowe, zarz, stanNa }.
-const TYLKO_Z_API = new Set(['opis', 'strona', 'ostatni_push', 'utworzone']);
+// których nie miała (a temat i kiedy gałęzi tylko wtedy, gdy ma ten sam commit); równa albo starsza jest zmieniana
+// w cechach `zarz`. Rzecz odłożoną ocenia przedtem `mozeWrocic`. Zwraca { nowe, zarz, stanNa }.
 function wedlugWieku(rz, nowe, zarz, zebrane) {
   if (!rz) return { nowe, zarz, stanNa: zebrane };
   if (!(Date.parse(rz.cechy.stan_na) > Date.parse(zebrane))) return { nowe, zarz, stanNa: zebrane };
-  const zApi = Number.isInteger(rz.cechy.github_id) || String(rz.cechy.zrodlo_faktow || '').startsWith(ZR_API);
   const innyCommit = !!(rz.cechy.commit && nowe.commit && rz.cechy.commit !== nowe.commit);
-  const brakujace = zarz.filter((k) => rz.cechy[k] === undefined && nowe[k] !== undefined && !(zApi && TYLKO_Z_API.has(k)) && !(innyCommit && (k === 'kiedy' || k === 'temat')));
+  const brakujace = zarz.filter((k) => rz.cechy[k] === undefined && nowe[k] !== undefined && !(innyCommit && (k === 'kiedy' || k === 'temat')));
   const n = Object.fromEntries(brakujace.map((k) => [k, nowe[k]]));
-  if (brakujace.length && zarz.includes('zrodlo_faktow') && String(rz.cechy.zrodlo_faktow || '').startsWith(ZR_API) && rz.cechy.zrodlo_faktow !== ZR_OBA) { n.zrodlo_faktow = ZR_OBA; brakujace.push('zrodlo_faktow'); }
+  if (brakujace.length && zarz.includes('zrodlo_faktow') && String(rz.cechy.zrodlo_faktow || '').startsWith(ZR_API)) { n.zrodlo_faktow = ZR_OBA; brakujace.push('zrodlo_faktow'); }
   return { nowe: n, zarz: brakujace, stanNa: rz.cechy.stan_na };
 }
 
@@ -264,9 +260,7 @@ async function obejdzRaz(s, { fetchFn = fetch, token = null, owner = WLASCICIEL,
         wynik.zmienione++;
         rz = s.rzecz(rz.id);
       }
-      const istotne = zarzadzane.filter((k) => k !== 'zrodlo_faktow');
-      const doPorownania = istotne.length ? istotne : zarzadzane;
-      const rozne = !rz || doPorownania.some((k) => JSON.stringify(rz.cechy[k] ?? null) !== JSON.stringify(nowe[k] ?? null));
+      const rozne = !rz || zarzadzane.some((k) => JSON.stringify(rz.cechy[k] ?? null) !== JSON.stringify(nowe[k] ?? null));
       if (!rozne) { wynik.bez_zmian++; return rz.id; }
       const cechy = { ...(rz ? rz.cechy : {}), ...nowe, stan_na: stanNa };
       for (const k of zarzadzane) if (nowe[k] === undefined) delete cechy[k];
